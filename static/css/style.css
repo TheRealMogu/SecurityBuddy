@@ -606,7 +606,307 @@ footer {
     border-radius: 4px;
 }
 
-/* Dark mode support (future enhancement) */
+/* User-Friendly Result Styles */
+.status-emoji {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.summary-card {
+    background: hsl(var(--surface));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.summary-icon {
+    font-size: 2rem;
+    margin-bottom: 0.75rem;
+}
+
+.explanation-box {
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.05), hsl(var(--primary) / 0.1));
+    border: 1px solid hsl(var(--primary) / 0.2);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+
+.analogy-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    background: hsl(var(--surface));
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    border-left: 4px solid hsl(var(--primary));
+    margin: 1rem 0;
+}
+
+.analogy-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.analogy-text {
+    flex: 1;
+    line-height: 1.5;
+}
+
+.action-needed {
+    background: hsl(var(--warning) / 0.1);
+    border: 1px solid hsl(var(--warning) / 0.3);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+}
+
+.simple-steps {
+    padding-left: 1.2rem;
+    margin: 0.5rem 0;
+}
+
+.simple-steps li {
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+}
+
+.help-note {
+    background: hsl(var(--info) / 0.1);
+    padding: 0.75rem;
+    border-radius: var(--border-radius);
+    border-left: 3px solid hsl(var(--info));
+    margin-top: 1rem;
+}
+
+/* Interactive Tutorial Styles */
+.tutorial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: none;
+}
+
+.tutorial-step {
+    position: absolute;
+    background: white;
+    border-radius: var(--border-radius-lg);
+    padding: 2rem;
+    box-shadow: var(--shadow-lg);
+    max-width: 300px;
+    z-index: 10000;
+}
+
+.tutorial-step::before {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 0;
+    border: 10px solid transparent;
+}
+
+.tutorial-step.bottom::before {
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-bottom-color: white;
+}
+
+.tutorial-step.top::before {
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-top-color: white;
+}
+
+.tutorial-highlight {
+    position: relative;
+    z-index: 9998;
+    border-radius: var(--border-radius);
+    box-shadow: 0 0 0 4px hsl(var(--primary)), 0 0 0 8px rgba(0, 123, 255, 0.3);
+}
+
+/* Tooltip Styles */
+.security-tooltip {
+    position: relative;
+    cursor: help;
+    border-bottom: 1px dotted hsl(var(--primary));
+}
+
+.security-tooltip:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: hsl(var(--text-primary));
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    font-size: 0.875rem;
+    white-space: nowrap;
+    z-index: 1000;
+    margin-bottom: 5px;
+}
+
+.security-tooltip:hover::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: hsl(var(--text-primary));
+    margin-bottom: -5px;
+}
+
+/* Progress Indicators */
+.progress-ring {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto;
+}
+
+.progress-ring-circle {
+    stroke: hsl(var(--border));
+    stroke-width: 4;
+    fill: transparent;
+    r: 52;
+    cx: 60;
+    cy: 60;
+}
+
+.progress-ring-progress {
+    stroke: hsl(var(--primary));
+    stroke-width: 6;
+    stroke-linecap: round;
+    fill: transparent;
+    r: 52;
+    cx: 60;
+    cy: 60;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    transition: stroke-dasharray 1s ease;
+}
+
+/* Mobile Improvements */
+@media (max-width: 768px) {
+    .summary-card {
+        margin-bottom: 1rem;
+    }
+    
+    .analogy-box {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .explanation-box {
+        padding: 1rem;
+    }
+    
+    .tutorial-step {
+        max-width: 90vw;
+        padding: 1.5rem;
+    }
+    
+    .status-emoji {
+        font-size: 1.5rem;
+    }
+}
+
+/* Interactive Elements */
+.scan-again-btn {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-dark)));
+    border: none;
+    color: white;
+    padding: 1rem 2rem;
+    border-radius: var(--border-radius-lg);
+    font-weight: 600;
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
+
+.scan-again-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    color: white;
+}
+
+.share-result-btn {
+    background: linear-gradient(135deg, hsl(var(--success)), #2d8f5a);
+    border: none;
+    color: white;
+    transition: all 0.3s ease;
+}
+
+.share-result-btn:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #2d8f5a, hsl(var(--success)));
+}
+
+/* Animated Check Icons */
+@keyframes checkmark {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.animated-check {
+    animation: checkmark 0.6s ease-out;
+}
+
+/* Loading States */
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Dark mode support */
 @media (prefers-color-scheme: dark) {
-    /* Dark mode styles would go here */
+    :root {
+        --background: 210 11% 15%;
+        --surface: 210 11% 20%;
+        --text-primary: 210 11% 95%;
+        --text-secondary: 210 9% 80%;
+        --text-muted: 210 9% 65%;
+        --border: 210 14% 30%;
+    }
+    
+    .explanation-box {
+        background: linear-gradient(135deg, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.15));
+    }
+    
+    .analogy-box {
+        background: hsl(var(--surface));
+        border-left-color: hsl(var(--primary));
+    }
 }

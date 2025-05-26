@@ -7,6 +7,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 
+    // Initialize user-friendly features
+    initializeUserGuidance();
+    initializeTutorial();
+    addSecurityTooltips();
+    improveAccessibility();
+
     // Scan form validation and enhancement
     const scanForm = document.querySelector('.scan-form');
     if (scanForm) {
@@ -339,6 +345,343 @@ function showScanProgress() {
     }, 800);
 }
 
+/**
+ * Initialize user guidance features for non-technical users
+ */
+function initializeUserGuidance() {
+    // Add helpful explanations to the main form
+    const targetInput = document.getElementById('targetInput');
+    if (targetInput) {
+        // Add example text and guidance
+        targetInput.addEventListener('focus', function() {
+            if (!document.querySelector('.input-help')) {
+                const helpText = document.createElement('div');
+                helpText.className = 'input-help mt-2';
+                helpText.innerHTML = `
+                    <small class="text-muted">
+                        <i data-feather="help-circle" style="width: 14px; height: 14px;"></i>
+                        <strong>Esempi:</strong> miosito.com, negozio.it, blog.wordpress.com
+                        <br>💡 <strong>Suggerimento:</strong> Non serve scrivere "www" o "https://"
+                    </small>
+                `;
+                targetInput.parentNode.appendChild(helpText);
+                feather.replace();
+            }
+        });
+    }
+
+    // Add encouraging messages
+    addEncouragingMessages();
+}
+
+/**
+ * Add encouraging messages throughout the interface
+ */
+function addEncouragingMessages() {
+    const scoreElements = document.querySelectorAll('.score-value');
+    scoreElements.forEach(scoreEl => {
+        const score = parseInt(scoreEl.textContent);
+        const encouragement = document.createElement('div');
+        encouragement.className = 'encouragement-message mt-1';
+        
+        if (score >= 90) {
+            encouragement.innerHTML = '<small class="text-success">🌟 Fantastico!</small>';
+        } else if (score >= 70) {
+            encouragement.innerHTML = '<small class="text-info">👍 Ottimo lavoro!</small>';
+        } else if (score >= 50) {
+            encouragement.innerHTML = '<small class="text-warning">💪 Quasi perfetto!</small>';
+        } else {
+            encouragement.innerHTML = '<small class="text-primary">🚀 Ti aiutiamo noi!</small>';
+        }
+        
+        scoreEl.parentNode.appendChild(encouragement);
+    });
+}
+
+/**
+ * Initialize interactive tutorial for first-time users
+ */
+function initializeTutorial() {
+    // Check if user has seen tutorial
+    if (!localStorage.getItem('security_buddy_tutorial_completed')) {
+        // Show tutorial only on homepage
+        if (window.location.pathname === '/' || window.location.pathname === '') {
+            setTimeout(startTutorial, 1000);
+        }
+    }
+
+    // Add tutorial trigger button
+    addTutorialButton();
+}
+
+/**
+ * Start the interactive tutorial
+ */
+function startTutorial() {
+    const tutorialSteps = [
+        {
+            target: '#scanForm',
+            title: 'Benvenuto in Security Buddy! 👋',
+            content: 'Ti aiuteremo a controllare quanto è sicuro il tuo sito web, spiegandoti tutto in modo semplice!',
+            position: 'bottom'
+        },
+        {
+            target: '#targetInput',
+            title: 'Inserisci il tuo sito 🌐',
+            content: 'Scrivi l\'indirizzo del tuo sito qui. Ad esempio: "miosito.com" (senza www o https)',
+            position: 'bottom'
+        },
+        {
+            target: '#scanButton',
+            title: 'Avvia la scansione 🔍',
+            content: 'Clicca qui e noi controlleremo tutto per te! Ti spiegheremo ogni risultato in parole semplici.',
+            position: 'bottom'
+        },
+        {
+            target: '.feature-card',
+            title: 'Cosa controlliamo 📋',
+            content: 'Verifichiamo che il tuo sito sia sicuro per te e per i tuoi visitatori. Non serve essere esperti!',
+            position: 'top'
+        }
+    ];
+
+    let currentStep = 0;
+    const overlay = createTutorialOverlay();
+    
+    function showStep(stepIndex) {
+        if (stepIndex >= tutorialSteps.length) {
+            completeTutorial();
+            return;
+        }
+
+        const step = tutorialSteps[stepIndex];
+        const target = document.querySelector(step.target);
+        
+        if (!target) {
+            showStep(stepIndex + 1);
+            return;
+        }
+
+        // Highlight target
+        target.classList.add('tutorial-highlight');
+        
+        // Create step popup
+        const stepPopup = createStepPopup(step, stepIndex, tutorialSteps.length);
+        positionStepPopup(stepPopup, target, step.position);
+        
+        overlay.appendChild(stepPopup);
+        overlay.style.display = 'block';
+
+        // Next button handler
+        stepPopup.querySelector('.tutorial-next').onclick = () => {
+            target.classList.remove('tutorial-highlight');
+            stepPopup.remove();
+            showStep(stepIndex + 1);
+        };
+
+        // Skip tutorial handler
+        stepPopup.querySelector('.tutorial-skip').onclick = () => {
+            completeTutorial();
+        };
+    }
+
+    function completeTutorial() {
+        overlay.style.display = 'none';
+        document.querySelectorAll('.tutorial-highlight').forEach(el => {
+            el.classList.remove('tutorial-highlight');
+        });
+        localStorage.setItem('security_buddy_tutorial_completed', 'true');
+        
+        // Show completion message
+        showAlert('Perfetto! Ora sei pronto per controllare la sicurezza del tuo sito! 🎉', 'success');
+    }
+
+    showStep(0);
+}
+
+/**
+ * Create tutorial overlay
+ */
+function createTutorialOverlay() {
+    let overlay = document.querySelector('.tutorial-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'tutorial-overlay';
+        document.body.appendChild(overlay);
+    }
+    return overlay;
+}
+
+/**
+ * Create step popup
+ */
+function createStepPopup(step, stepIndex, totalSteps) {
+    const popup = document.createElement('div');
+    popup.className = `tutorial-step ${step.position}`;
+    popup.innerHTML = `
+        <div class="tutorial-header">
+            <h5>${step.title}</h5>
+            <span class="tutorial-progress">${stepIndex + 1}/${totalSteps}</span>
+        </div>
+        <p>${step.content}</p>
+        <div class="tutorial-actions">
+            <button class="btn btn-outline-secondary btn-sm tutorial-skip">Salta tutorial</button>
+            <button class="btn btn-primary btn-sm tutorial-next">
+                ${stepIndex === totalSteps - 1 ? 'Completa' : 'Avanti'} →
+            </button>
+        </div>
+    `;
+    return popup;
+}
+
+/**
+ * Position step popup relative to target
+ */
+function positionStepPopup(popup, target, position) {
+    const targetRect = target.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    
+    let top, left;
+    
+    if (position === 'bottom') {
+        top = targetRect.bottom + 20;
+        left = targetRect.left + (targetRect.width / 2) - (popup.offsetWidth / 2);
+    } else if (position === 'top') {
+        top = targetRect.top - popup.offsetHeight - 20;
+        left = targetRect.left + (targetRect.width / 2) - (popup.offsetWidth / 2);
+    }
+    
+    // Keep popup within viewport
+    left = Math.max(20, Math.min(left, window.innerWidth - popup.offsetWidth - 20));
+    top = Math.max(20, Math.min(top, window.innerHeight - popup.offsetHeight - 20));
+    
+    popup.style.top = top + 'px';
+    popup.style.left = left + 'px';
+}
+
+/**
+ * Add tutorial button to navigation
+ */
+function addTutorialButton() {
+    const nav = document.querySelector('.navbar-nav');
+    if (nav && !document.querySelector('.tutorial-trigger')) {
+        const tutorialBtn = document.createElement('li');
+        tutorialBtn.className = 'nav-item tutorial-trigger';
+        tutorialBtn.innerHTML = `
+            <a class="nav-link" href="#" onclick="startTutorial(); return false;">
+                <i data-feather="help-circle" class="me-1"></i>Tutorial
+            </a>
+        `;
+        nav.appendChild(tutorialBtn);
+        feather.replace();
+    }
+}
+
+/**
+ * Add security tooltips for technical terms
+ */
+function addSecurityTooltips() {
+    const securityTerms = {
+        'HTTPS': 'Connessione sicura che protegge i dati',
+        'SSL': 'Certificato che verifica l\'identità del sito',
+        'Headers': 'Regole di sicurezza per il browser',
+        'Certificate': 'Documento digitale di identità',
+        'Vulnerability': 'Punto debole che va sistemato',
+        'Encryption': 'Codifica dei dati per proteggerli'
+    };
+
+    // Find and enhance security terms
+    Object.keys(securityTerms).forEach(term => {
+        const regex = new RegExp(`\\b${term}\\b`, 'gi');
+        document.querySelectorAll('p, li, div:not(.security-tooltip)').forEach(element => {
+            if (element.children.length === 0) { // Only text nodes
+                const newHTML = element.innerHTML.replace(regex, 
+                    `<span class="security-tooltip" data-tooltip="${securityTerms[term]}">$&</span>`
+                );
+                if (newHTML !== element.innerHTML) {
+                    element.innerHTML = newHTML;
+                }
+            }
+        });
+    });
+}
+
+/**
+ * Improve accessibility for non-technical users
+ */
+function improveAccessibility() {
+    // Add ARIA labels for screen readers
+    document.querySelectorAll('.security-score').forEach(scoreEl => {
+        const score = scoreEl.textContent;
+        scoreEl.setAttribute('aria-label', `Punteggio di sicurezza: ${score} su 100`);
+    });
+
+    // Add keyboard navigation for tooltips
+    document.querySelectorAll('.security-tooltip').forEach(tooltip => {
+        tooltip.setAttribute('tabindex', '0');
+        tooltip.addEventListener('focus', function() {
+            this.classList.add('tooltip-focused');
+        });
+        tooltip.addEventListener('blur', function() {
+            this.classList.remove('tooltip-focused');
+        });
+    });
+
+    // Improve form accessibility
+    const targetInput = document.getElementById('targetInput');
+    if (targetInput) {
+        targetInput.setAttribute('aria-describedby', 'target-help');
+        
+        // Add screen reader friendly description
+        const helpDesc = document.createElement('div');
+        helpDesc.id = 'target-help';
+        helpDesc.className = 'sr-only';
+        helpDesc.textContent = 'Inserisci l\'indirizzo del tuo sito web da controllare, ad esempio miosito.com';
+        targetInput.parentNode.appendChild(helpDesc);
+    }
+}
+
+/**
+ * Enhanced progress display with user-friendly messages
+ */
+function showScanProgress() {
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const scanButton = document.getElementById('scanButton');
+    const progressBar = document.getElementById('progressBar');
+    const loadingStep = document.getElementById('loadingStep');
+    
+    if (!loadingIndicator || !scanButton || !progressBar || !loadingStep) return;
+    
+    // Show loading indicator and disable button
+    loadingIndicator.style.display = 'block';
+    scanButton.disabled = true;
+    scanButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analizzando...';
+    
+    // User-friendly progress steps
+    const steps = [
+        { text: '🌐 Mi sto collegando al tuo sito...', progress: 15 },
+        { text: '🔒 Controllo se i dati sono protetti...', progress: 35 },
+        { text: '🆔 Verifico l\'identità del sito...', progress: 55 },
+        { text: '🛡️ Analizzo le protezioni di sicurezza...', progress: 75 },
+        { text: '📊 Calcolo il punteggio finale...', progress: 90 },
+        { text: '✅ Quasi pronto!', progress: 100 }
+    ];
+    
+    let currentStep = 0;
+    
+    const progressInterval = setInterval(() => {
+        if (currentStep < steps.length) {
+            const step = steps[currentStep];
+            loadingStep.textContent = step.text;
+            progressBar.style.width = step.progress + '%';
+            progressBar.setAttribute('aria-valuenow', step.progress);
+            currentStep++;
+        } else {
+            clearInterval(progressInterval);
+        }
+    }, 1200); // Slower, more reassuring pace
+}
+
 // Export functions for testing
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -346,6 +689,8 @@ if (typeof module !== 'undefined' && module.exports) {
         cleanTarget,
         formatSecurityScore,
         formatRiskLevel,
-        showScanProgress
+        showScanProgress,
+        startTutorial,
+        initializeUserGuidance
     };
 }

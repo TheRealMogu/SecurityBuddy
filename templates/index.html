@@ -8,12 +8,28 @@
         <div class="row justify-content-center">
             <div class="col-lg-8 text-center">
                 <h1 class="display-4 fw-bold text-dark mb-4">
-                    Secure Your Website in Minutes
+                    Il tuo sito è sicuro? Scopriamolo insieme! 🛡️
                 </h1>
                 <p class="lead text-muted mb-5">
-                    Get instant security insights for your website. Check for vulnerabilities, 
-                    SSL issues, and security headers with our easy-to-use scanner.
+                    Controlli automatici di sicurezza spiegati in modo semplice. 
+                    Non serve essere esperti - ti guidiamo passo dopo passo! 
                 </p>
+                
+                <!-- Trust indicators -->
+                <div class="trust-indicators mb-4">
+                    <span class="trust-item">
+                        <i data-feather="check-circle" class="text-success me-1"></i>
+                        <small>Gratis e veloce</small>
+                    </span>
+                    <span class="trust-item">
+                        <i data-feather="shield" class="text-primary me-1"></i>
+                        <small>Spiegazioni semplici</small>
+                    </span>
+                    <span class="trust-item">
+                        <i data-feather="users" class="text-info me-1"></i>
+                        <small>Già usato da 1000+ siti</small>
+                    </span>
+                </div>
                 
                 <!-- Scan Form -->
                 <form method="POST" action="{{ url_for('scan') }}" class="scan-form" id="scanForm">

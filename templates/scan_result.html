@@ -22,25 +22,86 @@
                 </div>
             </div>
 
-            <!-- Overall Status -->
-            <div class="alert alert-{% if results.risk_level == 'low' %}success{% elif results.risk_level == 'medium' %}warning{% else %}danger{% endif %} mb-4">
+            <!-- Overall Status with User-Friendly Explanation -->
+            <div class="alert alert-{% if results.overall_score >= 70 %}success{% elif results.overall_score >= 50 %}warning{% else %}danger{% endif %} mb-4">
                 <div class="d-flex align-items-center">
-                    <i data-feather="{% if results.risk_level == 'low' %}check-circle{% elif results.risk_level == 'medium' %}alert-circle{% else %}x-circle{% endif %}" class="me-2"></i>
-                    <div>
-                        <strong>
-                            {% if results.risk_level == 'low' %}
-                                Great job! Your website has good security.
-                            {% elif results.risk_level == 'medium' %}
-                                Your website has moderate security. Some improvements needed.
-                            {% elif results.risk_level == 'high' %}
-                                Your website has several security issues that should be addressed.
+                    <div class="status-emoji me-3">
+                        {% if results.overall_score >= 90 %}🛡️
+                        {% elif results.overall_score >= 70 %}✅
+                        {% elif results.overall_score >= 50 %}⚠️
+                        {% else %}🚨{% endif %}
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="status-title">
+                            {% if results.overall_score >= 90 %}
+                                <strong>Eccellente! Il tuo sito è molto sicuro! 🌟</strong>
+                                <div class="small mt-1 text-muted">Il tuo sito web ha ottime protezioni. I visitatori possono navigare in tranquillità.</div>
+                            {% elif results.overall_score >= 70 %}
+                                <strong>Ottimo lavoro! Il tuo sito è abbastanza sicuro 👍</strong>
+                                <div class="small mt-1 text-muted">Hai buone protezioni di base. Qualche piccolo miglioramento e sarai perfetto!</div>
+                            {% elif results.overall_score >= 50 %}
+                                <strong>Il tuo sito ha bisogno di qualche attenzione 💪</strong>
+                                <div class="small mt-1 text-muted">Ci sono alcune cose importanti da sistemare per proteggere meglio i tuoi visitatori.</div>
                             {% else %}
-                                Critical security issues detected. Immediate action required.
+                                <strong>Attenzione: il tuo sito ha seri problemi di sicurezza 🚨</strong>
+                                <div class="small mt-1 text-muted">Non preoccuparti! Ti aiutiamo a sistemare tutto passo dopo passo.</div>
                             {% endif %}
-                        </strong>
-                        <div class="small mt-1">
-                            Scanned on {{ results.scan_time[:19] | replace('T', ' ') }} UTC
                         </div>
+                        <div class="scan-info mt-2">
+                            <small class="text-muted">
+                                <i data-feather="clock" style="width: 14px; height: 14px;"></i>
+                                Scansione del {{ results.scan_time[:19] | replace('T', ' alle ') }}
+                                <span class="ms-3">
+                                    <i data-feather="target" style="width: 14px; height: 14px;"></i>
+                                    {{ results.target }}
+                                </span>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simple Summary Cards -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="summary-card text-center">
+                        <div class="summary-icon">
+                            {% if results.checks.https.https_available %}🔒{% else %}🔓{% endif %}
+                        </div>
+                        <h6>Connessione Sicura</h6>
+                        <p class="small text-muted">
+                            {% if results.checks.https.https_available %}
+                                ✅ I dati sono protetti
+                            {% else %}
+                                ❌ I dati potrebbero essere spiati
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="summary-card text-center">
+                        <div class="summary-icon">
+                            {% if results.checks.ssl.valid %}🆔{% else %}❓{% endif %}
+                        </div>
+                        <h6>Identità Verificata</h6>
+                        <p class="small text-muted">
+                            {% if results.checks.ssl.valid %}
+                                ✅ Il sito è autentico
+                            {% else %}
+                                ❌ Identità non verificata
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="summary-card text-center">
+                        <div class="summary-icon">
+                            {% if results.checks.headers.headers_found|length > 3 %}🛡️{% else %}⚠️{% endif %}
+                        </div>
+                        <h6>Protezioni Extra</h6>
+                        <p class="small text-muted">
+                            {{ results.checks.headers.headers_found|length }}/6 protezioni attive
+                        </p>
                     </div>
                 </div>
             </div>
@@ -95,11 +156,33 @@
                         </div>
                     {% endif %}
                     
-                    <div class="why-matters mt-3">
-                        <small class="text-muted">
-                            <strong>Why this matters:</strong> HTTPS encrypts data between your website and visitors, 
-                            preventing eavesdropping and tampering. Modern browsers mark HTTP sites as "Not Secure".
-                        </small>
+                    <div class="user-friendly-explanation mt-3">
+                        <div class="explanation-box">
+                            <h6>🤔 Cosa significa questo?</h6>
+                            <p class="mb-2">HTTPS è come una <strong>conversazione in codice segreto</strong> tra il tuo sito e i visitatori.</p>
+                            
+                            <div class="analogy-box">
+                                <div class="analogy-icon">📬</div>
+                                <div class="analogy-text">
+                                    <strong>Pensa così:</strong> HTTP è come mandare cartoline (tutti possono leggere), 
+                                    HTTPS è come mandare lettere in buste sigillate (solo tu e il destinatario potete aprirle).
+                                </div>
+                            </div>
+                            
+                            {% if not results.checks.https.https_available %}
+                            <div class="action-needed mt-3">
+                                <h6>🛠️ Come sistemare:</h6>
+                                <ol class="simple-steps">
+                                    <li>Chiama il tuo fornitore di hosting</li>
+                                    <li>Chiedi di attivare il "certificato SSL gratuito"</li>
+                                    <li>Di solito ci vogliono 10-30 minuti</li>
+                                </ol>
+                                <div class="help-note">
+                                    <small>💡 <strong>Non sai chi chiamare?</strong> Controlla le email di quando hai comprato il dominio/hosting</small>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>
