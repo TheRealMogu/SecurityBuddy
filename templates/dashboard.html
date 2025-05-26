@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Security Buddy{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 fw-bold text-dark mb-1">Dashboard</h1>
+                    <p class="text-muted mb-0">Welcome back, {{ current_user.username }}!</p>
+                </div>
+                <div>
+                    <a href="{{ url_for('index') }}" class="btn btn-primary">
+                        <i data-feather="plus" class="me-2"></i>New Scan
+                    </a>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="row g-4 mb-5">
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i data-feather="search"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 class="stat-number">{{ recent_scans|length }}</h3>
+                            <p class="stat-label">Recent Scans</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i data-feather="shield"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 class="stat-number">
+                                {% if recent_scans %}
+                                    {{ (recent_scans | sum(attribute='security_score') / recent_scans|length) | round | int }}
+                                {% else %}
+                                    0
+                                {% endif %}
+                            </h3>
+                            <p class="stat-label">Avg. Security Score</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i data-feather="{% if current_user.is_premium %}star{% else %}lock{% endif %}"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 class="stat-number">{% if current_user.is_premium %}Pro{% else %}Free{% endif %}</h3>
+                            <p class="stat-label">Account Type</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Scans -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i data-feather="clock" class="me-2"></i>Recent Scans
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_scans %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Target</th>
+                                        <th>Type</th>
+                                        <th>Score</th>
+                                        <th>Risk Level</th>
+                                        <th>Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for scan in recent_scans %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ scan.target }}</strong>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-light text-dark">
+                                                {{ scan.scan_type.title() }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="score-badge score-{{ 'success' if scan.security_score >= 80 else 'warning' if scan.security_score >= 60 else 'danger' }}">
+                                                {{ scan.security_score }}/100
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {% set risk = 'low' if scan.security_score >= 80 else 'medium' if scan.security_score >= 60 else 'high' if scan.security_score >= 40 else 'critical' %}
+                                            <span class="badge bg-{{ 'success' if risk == 'low' else 'warning' if risk == 'medium' else 'danger' }}">
+                                                {{ risk.title() }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('view_scan', scan_id=scan.id) }}" 
+                                               class="btn btn-sm btn-outline-primary">
+                                                View Report
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i data-feather="search" class="text-muted mb-3" style="width: 48px; height: 48px;"></i>
+                            <h5 class="text-muted">No scans yet</h5>
+                            <p class="text-muted">Start by scanning your first website or domain.</p>
+                            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                                <i data-feather="plus" class="me-2"></i>Start Your First Scan
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Premium Upgrade CTA -->
+            {% if not current_user.is_premium %}
+            <div class="premium-cta mt-5">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h4 class="fw-bold text-dark mb-2">Unlock Premium Features</h4>
+                        <p class="text-muted mb-0">
+                            Get PDF reports, scheduled monitoring, email alerts, and advanced vulnerability scanning.
+                        </p>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <a href="{{ url_for('premium') }}" class="btn btn-warning">
+                            <i data-feather="star" class="me-2"></i>Upgrade to Premium
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

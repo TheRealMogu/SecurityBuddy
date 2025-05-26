@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Security Buddy - Web Security Scanner{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 text-center">
+                <h1 class="display-4 fw-bold text-dark mb-4">
+                    Secure Your Website in Minutes
+                </h1>
+                <p class="lead text-muted mb-5">
+                    Get instant security insights for your website. Check for vulnerabilities, 
+                    SSL issues, and security headers with our easy-to-use scanner.
+                </p>
+                
+                <!-- Scan Form -->
+                <form method="POST" action="{{ url_for('scan') }}" class="scan-form">
+                    <div class="input-group input-group-lg mb-4">
+                        <input type="text" 
+                               class="form-control" 
+                               name="target" 
+                               placeholder="Enter domain or IP address (e.g., example.com)" 
+                               required
+                               pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$|^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                               title="Please enter a valid domain name or IP address">
+                        <button class="btn btn-primary btn-lg" type="submit">
+                            <i data-feather="search" class="me-2"></i>Scan Now
+                        </button>
+                    </div>
+                </form>
+                
+                <p class="text-muted small">
+                    <i data-feather="shield-check" class="me-1"></i>
+                    Free basic scanning • No registration required
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="container my-5">
+    <div class="row">
+        <div class="col-lg-12 text-center mb-5">
+            <h2 class="fw-bold text-dark mb-3">What We Check</h2>
+            <p class="text-muted">Comprehensive security analysis in seconds</p>
+        </div>
+    </div>
+    
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-feather="lock"></i>
+                </div>
+                <h5 class="fw-semibold">HTTPS & SSL</h5>
+                <p class="text-muted">Check if your site uses secure connections and valid SSL certificates.</p>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-feather="shield"></i>
+                </div>
+                <h5 class="fw-semibold">Security Headers</h5>
+                <p class="text-muted">Verify important security headers like CSP, HSTS, and X-Frame-Options.</p>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-feather="globe"></i>
+                </div>
+                <h5 class="fw-semibold">Domain Info</h5>
+                <p class="text-muted">Get basic information about domain registration and DNS configuration.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Premium Preview -->
+{% if not current_user.is_authenticated or not current_user.is_premium %}
+<div class="premium-preview">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-8 text-center">
+                <h3 class="fw-bold text-dark mb-3">Unlock Premium Features</h3>
+                <p class="text-muted mb-4">
+                    Get advanced security scanning, detailed reports, and monitoring tools.
+                </p>
+                
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="premium-feature">
+                            <i data-feather="file-text" class="premium-icon"></i>
+                            <span>PDF Reports</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="premium-feature">
+                            <i data-feather="calendar" class="premium-icon"></i>
+                            <span>Scheduled Scans</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="premium-feature">
+                            <i data-feather="bell" class="premium-icon"></i>
+                            <span>Email Alerts</span>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if not current_user.is_authenticated %}
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary">
+                    Sign Up for Premium
+                </a>
+                {% else %}
+                <a href="{{ url_for('premium') }}" class="btn btn-outline-primary">
+                    Upgrade to Premium
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

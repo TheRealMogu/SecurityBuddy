@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Scan Results - Security Buddy{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 fw-bold text-dark mb-1">Security Report</h1>
+                    <p class="text-muted mb-0">{{ results.target }}</p>
+                </div>
+                <div class="text-end">
+                    <div class="security-score mb-2">
+                        <span class="score-value">{{ results.overall_score }}/100</span>
+                    </div>
+                    <div class="risk-badge risk-{{ results.risk_level }}">
+                        {{ results.risk_level.title() }} Risk
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overall Status -->
+            <div class="alert alert-{% if results.risk_level == 'low' %}success{% elif results.risk_level == 'medium' %}warning{% else %}danger{% endif %} mb-4">
+                <div class="d-flex align-items-center">
+                    <i data-feather="{% if results.risk_level == 'low' %}check-circle{% elif results.risk_level == 'medium' %}alert-circle{% else %}x-circle{% endif %}" class="me-2"></i>
+                    <div>
+                        <strong>
+                            {% if results.risk_level == 'low' %}
+                                Great job! Your website has good security.
+                            {% elif results.risk_level == 'medium' %}
+                                Your website has moderate security. Some improvements needed.
+                            {% elif results.risk_level == 'high' %}
+                                Your website has several security issues that should be addressed.
+                            {% else %}
+                                Critical security issues detected. Immediate action required.
+                            {% endif %}
+                        </strong>
+                        <div class="small mt-1">
+                            Scanned on {{ results.scan_time[:19] | replace('T', ' ') }} UTC
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connectivity Check -->
+            {% if results.checks.connectivity %}
+            <div class="check-section">
+                <h4 class="check-title">
+                    <i data-feather="{% if results.checks.connectivity.reachable %}check{% else %}x{% endif %}" 
+                       class="status-icon status-{% if results.checks.connectivity.reachable %}success{% else %}danger{% endif %}"></i>
+                    Connectivity
+                </h4>
+                <div class="check-content">
+                    {% if results.checks.connectivity.reachable %}
+                        <p class="mb-1"><strong>✓ Target is reachable</strong></p>
+                        <p class="text-muted small">HTTP Status: {{ results.checks.connectivity.status_code }}</p>
+                    {% else %}
+                        <p class="mb-1"><strong>✗ Target is unreachable</strong></p>
+                        <p class="text-muted small">{{ results.checks.connectivity.message }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- HTTPS Check -->
+            {% if results.checks.https %}
+            <div class="check-section">
+                <h4 class="check-title">
+                    <i data-feather="{% if results.checks.https.https_available %}check{% else %}x{% endif %}" 
+                       class="status-icon status-{% if results.checks.https.https_available %}success{% else %}danger{% endif %}"></i>
+                    HTTPS Security
+                </h4>
+                <div class="check-content">
+                    {% if results.checks.https.https_available %}
+                        <p class="mb-1"><strong>✓ HTTPS is available</strong></p>
+                    {% else %}
+                        <p class="mb-1"><strong>✗ HTTPS is not available</strong></p>
+                    {% endif %}
+                    
+                    {% if results.checks.https.redirects_to_https %}
+                        <p class="mb-1"><strong>✓ HTTP redirects to HTTPS</strong></p>
+                    {% else %}
+                        <p class="mb-1"><strong>⚠ HTTP does not redirect to HTTPS</strong></p>
+                    {% endif %}
+                    
+                    {% if results.checks.https.issues %}
+                        <div class="issues-list mt-2">
+                            <small class="text-muted">Issues found:</small>
+                            {% for issue in results.checks.https.issues %}
+                                <div class="issue-item">{{ issue }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    <div class="why-matters mt-3">
+                        <small class="text-muted">
+                            <strong>Why this matters:</strong> HTTPS encrypts data between your website and visitors, 
+                            preventing eavesdropping and tampering. Modern browsers mark HTTP sites as "Not Secure".
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- SSL Certificate Check -->
+            {% if results.checks.ssl %}
+            <div class="check-section">
+                <h4 class="check-title">
+                    <i data-feather="{% if results.checks.ssl.valid %}check{% else %}x{% endif %}" 
+                       class="status-icon status-{% if results.checks.ssl.valid %}success{% else %}danger{% endif %}"></i>
+                    SSL Certificate
+                </h4>
+                <div class="check-content">
+                    {% if results.checks.ssl.valid %}
+                        <p class="mb-1"><strong>✓ Valid SSL certificate</strong></p>
+                        {% if results.checks.ssl.issuer %}
+                            <p class="text-muted small">Issued by: {{ results.checks.ssl.issuer }}</p>
+                        {% endif %}
+                        {% if results.checks.ssl.days_until_expiry is not none %}
+                            <p class="text-muted small">
+                                Expires in {{ results.checks.ssl.days_until_expiry }} days
+                                {% if results.checks.ssl.expires_soon %}
+                                    <span class="text-warning">⚠ Renewal needed soon</span>
+                                {% endif %}
+                            </p>
+                        {% endif %}
+                    {% else %}
+                        <p class="mb-1"><strong>✗ SSL certificate issues detected</strong></p>
+                    {% endif %}
+                    
+                    {% if results.checks.ssl.issues %}
+                        <div class="issues-list mt-2">
+                            <small class="text-muted">Issues found:</small>
+                            {% for issue in results.checks.ssl.issues %}
+                                <div class="issue-item">{{ issue }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    <div class="why-matters mt-3">
+                        <small class="text-muted">
+                            <strong>Why this matters:</strong> SSL certificates verify your website's identity and 
+                            enable encrypted connections. Expired or invalid certificates trigger browser warnings.
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Security Headers Check -->
+            {% if results.checks.headers %}
+            <div class="check-section">
+                <h4 class="check-title">
+                    <i data-feather="{% if results.checks.headers.headers_found %}check{% else %}alert-triangle{% endif %}" 
+                       class="status-icon status-{% if results.checks.headers.headers_found|length > 3 %}success{% elif results.checks.headers.headers_found|length > 1 %}warning{% else %}danger{% endif %}"></i>
+                    Security Headers
+                </h4>
+                <div class="check-content">
+                    {% if results.checks.headers.headers_found %}
+                        <div class="mb-3">
+                            <small class="text-muted">Headers found:</small>
+                            {% for header in results.checks.headers.headers_found %}
+                                <div class="header-item">
+                                    <strong>{{ header.name }}</strong>
+                                    <span class="text-muted small">{{ header.value[:50] }}{% if header.value|length > 50 %}...{% endif %}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    {% if results.checks.headers.headers_missing %}
+                        <div class="missing-headers mb-3">
+                            <small class="text-muted">Missing headers:</small>
+                            {% for header in results.checks.headers.headers_missing %}
+                                <div class="missing-item">{{ header }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    {% if results.checks.headers.issues %}
+                        <div class="issues-list mt-2">
+                            <small class="text-muted">Issues found:</small>
+                            {% for issue in results.checks.headers.issues %}
+                                <div class="issue-item">{{ issue }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    
+                    <div class="why-matters mt-3">
+                        <small class="text-muted">
+                            <strong>Why this matters:</strong> Security headers help protect against common attacks 
+                            like XSS, clickjacking, and data injection. They're an essential part of web security.
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Domain Info -->
+            {% if results.checks.domain_info %}
+            <div class="check-section">
+                <h4 class="check-title">
+                    <i data-feather="globe" class="status-icon status-info"></i>
+                    Domain Information
+                </h4>
+                <div class="check-content">
+                    {% if results.checks.domain_info.info_available %}
+                        {% if results.checks.domain_info.ip_address %}
+                            <p class="mb-1"><strong>IP Address:</strong> {{ results.checks.domain_info.ip_address }}</p>
+                        {% endif %}
+                    {% endif %}
+                    
+                    {% if results.checks.domain_info.issues %}
+                        <div class="issues-list mt-2">
+                            <small class="text-muted">Issues found:</small>
+                            {% for issue in results.checks.domain_info.issues %}
+                                <div class="issue-item">{{ issue }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Action Buttons -->
+            <div class="action-buttons mt-4">
+                <a href="{{ url_for('index') }}" class="btn btn-primary">
+                    <i data-feather="search" class="me-2"></i>Scan Another Site
+                </a>
+                
+                {% if not current_user.is_authenticated or not current_user.is_premium %}
+                <button class="btn btn-outline-secondary" onclick="showPremiumModal()">
+                    <i data-feather="download" class="me-2"></i>Download PDF Report
+                    <span class="badge bg-warning text-dark ms-2">Pro</span>
+                </button>
+                
+                <button class="btn btn-outline-secondary" onclick="showPremiumModal()">
+                    <i data-feather="bell" class="me-2"></i>Set Up Monitoring
+                    <span class="badge bg-warning text-dark ms-2">Pro</span>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Premium Modal -->
+<div class="modal fade" id="premiumModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Premium Feature</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>This feature is available with Security Buddy Premium.</p>
+                <p>Premium includes:</p>
+                <ul>
+                    <li>PDF report downloads</li>
+                    <li>Scheduled monitoring</li>
+                    <li>Email alerts</li>
+                    <li>Advanced vulnerability scanning</li>
+                    <li>API access</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('premium') }}" class="btn btn-primary">Upgrade to Premium</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="btn btn-primary">Sign Up for Premium</a>
+                {% endif %}
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showPremiumModal() {
+    const modal = new bootstrap.Modal(document.getElementById('premiumModal'));
+    modal.show();
+}
+</script>
+{% endblock %}
