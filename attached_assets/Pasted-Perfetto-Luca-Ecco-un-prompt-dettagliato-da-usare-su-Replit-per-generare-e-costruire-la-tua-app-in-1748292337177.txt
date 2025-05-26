@@ -1,0 +1,103 @@
+Perfetto, Luca. Ecco un prompt dettagliato da usare su Replit per generare e costruire la tua app in Python. L’obiettivo è creare un MVP funzionale, bello da vedere, utile da usare, e già pensato per monetizzazione futura.
+
+⸻
+
+🧠 Prompt dettagliato per Replit
+
+Titolo progetto: Security Buddy – Web Vulnerability Scanner & Assistant
+
+Descrizione da usare su Replit:
+
+⸻
+
+Costruisci una web app con Python e Flask chiamata Security Buddy, pensata per utenti non esperti o freelance che vogliono analizzare rapidamente la sicurezza del proprio sito web o indirizzo IP.
+
+L’app deve:
+	•	Offrire una scansione base di sicurezza (es. porte aperte, intestazioni HTTP, certificato SSL)
+	•	Generare un report chiaro e semplice con spiegazioni
+	•	Avere un’interfaccia minimalista e professionale (stile Apple o Notion)
+	•	Permettere accesso guest + login utente per funzionalità premium
+	•	Essere estendibile in futuro con moduli (es. PDF export, notifiche email, API)
+
+⸻
+
+⚙️ Tecnologie da usare
+
+Aspetto	Tecnologia
+Backend	Python + Flask
+Web Scanner	requests, socket, ssl, nmap (via python-nmap)
+Frontend UI	HTML + Bootstrap 5 + CSS custom stile minimal
+Autenticazione	Flask-Login o Authlib per login base
+Database	SQLite (o Replit DB in fase iniziale)
+Hosting	Replit (poi esportabile su Render o Fly.io)
+
+
+⸻
+
+🎨 UI & Design (stile Apple/minimal)
+	•	Navbar in alto, logo testuale “Security Buddy”
+	•	Campo input centrale con box: Inserisci dominio o IP
+	•	Pulsante “Scansiona”
+	•	Output: box con checklist dei problemi rilevati
+	•	Report con badge colorati:
+	•	Verde = OK
+	•	Giallo = Da migliorare
+	•	Rosso = Critico
+	•	Font: Inter o Roboto, sfondo bianco, angoli morbidi, ombre leggere
+
+⸻
+
+✅ Funzionalità MVP da implementare subito
+
+Feature	Descrizione
+🔍 Scansione HTTP	Controlla presenza HTTPS, certificato valido, redirect HTTP→HTTPS
+🔐 Intestazioni di sicurezza	Verifica se mancano Content-Security-Policy, X-Frame-Options, ecc.
+🌐 Whois/IP Info	Recupera info base su dominio/IP
+📋 Output leggibile	Report semplice, con “perché è un problema” + consigli
+👤 Modalità ospite	Nessun login richiesto per usare le funzioni base
+🔑 Login base	Con Flask-login per abilitare funzioni future pro
+
+
+⸻
+
+💡 Funzionalità pro da prevedere nel design
+
+(Puoi mostrarle nella UI con “bloccato - disponibile nel piano Pro”)
+
+Funzione Pro	Descrizione
+🧾 PDF Export	Scarica il report in PDF
+📅 Scansione pianificata	Notifica email ogni settimana/mese
+🛡️ Test vulnerabilità web	Integrazione con OWASP ZAP (futuro)
+📲 Notifiche	Integrazione con Telegram/Slack
+🔌 API	REST API per usare lo scanner da script esterni
+
+
+⸻
+
+📤 Deployment & Test
+	•	Pubblica direttamente su Replit
+	•	Abilita il web server Flask
+	•	Se vuoi, puoi esportarlo poi su Render per dominio custom gratuito
+	•	Puoi testarlo su domini demo come example.com o neverssl.com
+
+⸻
+
+📝 Possibili estensioni future
+	•	Dashboard personale con cronologia delle scansioni
+	•	Sistema di ticket o segnalazioni automatizzate
+	•	Plugin per CMS (es. WordPress Security Buddy)
+
+⸻
+
+🚀 Consiglio operativo
+	1.	Crea su Replit un nuovo progetto Flask vuoto
+	2.	Copia il prompt sopra nella descrizione del progetto (ti aiuta a mantenere visione chiara)
+	3.	Vuoi che ti aiuti con una struttura iniziale del progetto, tipo albero cartelle e codice base per partire? Posso generartelo subito.
+
+⸻
+
+Fammi sapere se vuoi che ti prepari:
+	•	la struttura di base del progetto
+	•	il codice per la homepage + form di scansione + primo test sicurezza
+
+Così puoi partire subito col tuo MVP.
