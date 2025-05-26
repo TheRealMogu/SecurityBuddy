@@ -1,17 +1,17 @@
 :root {
-    /* Color palette inspired by Apple's design - Fixed HSL values */
+    /* Simple, clean color palette */
     --primary: #007AFF;
     --primary-dark: #0056CC;
-    --success: #34C759;
-    --warning: #FF9500;
-    --danger: #FF3B30;
-    --info: #5AC8FA;
-    --background: #F5F7FA;
-    --surface: #FFFFFF;
-    --text-primary: #1D2B36;
-    --text-secondary: #48566A;
-    --text-muted: #8E95A9;
-    --border: #E2E5E9;
+    --success: #28a745;
+    --warning: #ffc107;
+    --danger: #dc3545;
+    --info: #17a2b8;
+    --background: #ffffff;
+    --surface: #f8f9fa;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #adb5bd;
+    --border: #dee2e6;
     
     /* Spacing */
     --border-radius: 12px;
@@ -68,7 +68,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Hero Section */
 .hero-section {
-    background: linear-gradient(135deg, var(--background) 0%, var(--surface) 100%);
+    background: var(--background);
     padding: 4rem 0 3rem;
     border-bottom: 1px solid var(--border);
 }

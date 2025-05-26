@@ -698,15 +698,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize user guidance
     initializeUserGuidance();
     
-    // Add tutorial button to navigation
-    addTutorialButton();
+    // Tutorial button removed
     
-    // Auto-start tutorial for first-time visitors (only on homepage)
-    if (window.location.pathname === '/' && !localStorage.getItem('tutorial_completed')) {
-        setTimeout(() => {
-            startTutorial();
-        }, 3000);
-    }
+    // Tutorial removed - was annoying
     
     // Animate counters when they come into view
     animateCounters();
