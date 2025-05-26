@@ -72,6 +72,40 @@ h1, h2, h3, h4, h5, h6 {
     border-bottom: 1px solid hsl(var(--border));
 }
 
+/* Trust Indicators */
+.trust-indicators {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+.trust-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background: hsl(var(--surface));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--border-radius-lg);
+    transition: transform 0.2s ease;
+}
+
+.trust-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+@media (max-width: 768px) {
+    .trust-indicators {
+        gap: 1rem;
+    }
+    
+    .trust-item {
+        font-size: 0.875rem;
+        padding: 0.4rem 0.8rem;
+    }
+}
+
 .scan-form .input-group {
     max-width: 600px;
     margin: 0 auto;
