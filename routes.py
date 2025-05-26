@@ -1,10 +1,15 @@
 import json
-from flask import render_template, request, redirect, url_for, flash, session
+from flask import render_template, request, redirect, url_for, flash, session, make_response, send_file
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash
 from app import app, db
-from models import User, ScanResult
+from models import User, ScanResult, APIKey, MonitoringConfig
 from scanner import SecurityScanner
+from validators import AdvancedValidator, clean_target
+from pdf_generator import SecurityReportPDF
+from premium_features import PremiumAnalytics, AdvancedScanner
+from notification_system import NotificationSystem
+from api_routes import api_bp
 
 @app.route('/')
 def index():
@@ -20,21 +25,25 @@ def scan():
         flash('Please enter a domain or IP address to scan.', 'warning')
         return redirect(url_for('index'))
     
-    # Basic input validation
-    if len(target) > 255:
-        flash('Target too long. Please enter a valid domain or IP address.', 'error')
-        return redirect(url_for('index'))
+    # Advanced validation
+    validator = AdvancedValidator()
+    target = clean_target(target)
+    is_valid, error_msg = validator.validate_target(target)
     
-    # Remove protocol if provided for consistency
-    if target.startswith(('http://', 'https://')):
-        from urllib.parse import urlparse
-        parsed = urlparse(target)
-        target = parsed.netloc or parsed.path
+    if not is_valid:
+        flash(f'Invalid target: {error_msg}', 'error')
+        return redirect(url_for('index'))
     
     try:
         # Perform security scan
         scanner = SecurityScanner()
         results = scanner.scan_target(target)
+        
+        # Advanced scanning for premium users
+        if current_user.is_authenticated and current_user.is_premium:
+            advanced_scanner = AdvancedScanner()
+            advanced_results = advanced_scanner.advanced_vulnerability_scan(f"https://{target}")
+            results['advanced_scan'] = advanced_results
         
         # Save scan result to database
         scan_result = ScanResult(
@@ -46,6 +55,21 @@ def scan():
         )
         db.session.add(scan_result)
         db.session.commit()
+        
+        # Send notification for premium users if critical issues found
+        if current_user.is_authenticated and current_user.is_premium:
+            critical_issues = []
+            if results.get('overall_score', 100) < 40:
+                checks = results.get('checks', {})
+                for check_name, check_data in checks.items():
+                    if isinstance(check_data, dict) and check_data.get('issues'):
+                        critical_issues.extend(check_data['issues'])
+                
+                if critical_issues:
+                    notification_system = NotificationSystem()
+                    notification_system.send_vulnerability_alert(
+                        current_user.email, scan_result, critical_issues
+                    )
         
         return render_template('scan_result.html', results=results, scan_id=scan_result.id)
         
