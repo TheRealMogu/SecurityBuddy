@@ -579,6 +579,33 @@ footer {
     animation: fadeIn 0.5s ease-out;
 }
 
+/* Loading indicator */
+.loading-indicator {
+    background: hsl(var(--surface));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--border-radius-lg);
+    padding: 2rem;
+    margin-top: 2rem;
+    text-align: center;
+    box-shadow: var(--shadow-lg);
+}
+
+.loading-text strong {
+    color: hsl(var(--text-primary));
+    font-size: 1.1rem;
+}
+
+.progress {
+    height: 8px;
+    border-radius: 4px;
+    background-color: hsl(var(--border));
+}
+
+.progress-bar {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-dark)));
+    border-radius: 4px;
+}
+
 /* Dark mode support (future enhancement) */
 @media (prefers-color-scheme: dark) {
     /* Dark mode styles would go here */

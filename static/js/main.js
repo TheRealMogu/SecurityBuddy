@@ -43,9 +43,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // Show loading state
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Scanning...';
+            // Show loading state with progress simulation
+            showScanProgress();
             
             // Clean up the target input
             targetInput.value = cleanTarget(target);
@@ -301,12 +300,52 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+/**
+ * Show scan progress with animated steps
+ */
+function showScanProgress() {
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const scanButton = document.getElementById('scanButton');
+    const progressBar = document.getElementById('progressBar');
+    const loadingStep = document.getElementById('loadingStep');
+    
+    if (!loadingIndicator || !scanButton || !progressBar || !loadingStep) return;
+    
+    // Show loading indicator and disable button
+    loadingIndicator.style.display = 'block';
+    scanButton.disabled = true;
+    scanButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Scanning...';
+    
+    // Simulate progress steps
+    const steps = [
+        { text: 'Checking connectivity...', progress: 20 },
+        { text: 'Verifying HTTPS and SSL...', progress: 40 },
+        { text: 'Analyzing security headers...', progress: 60 },
+        { text: 'Gathering domain information...', progress: 80 },
+        { text: 'Calculating security score...', progress: 100 }
+    ];
+    
+    let currentStep = 0;
+    
+    const progressInterval = setInterval(() => {
+        if (currentStep < steps.length) {
+            const step = steps[currentStep];
+            loadingStep.textContent = step.text;
+            progressBar.style.width = step.progress + '%';
+            currentStep++;
+        } else {
+            clearInterval(progressInterval);
+        }
+    }, 800);
+}
+
 // Export functions for testing
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         validateTarget,
         cleanTarget,
         formatSecurityScore,
-        formatRiskLevel
+        formatRiskLevel,
+        showScanProgress
     };
 }
