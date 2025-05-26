@@ -116,43 +116,48 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .scan-form .form-control {
-    border: none;
+    border: 1px solid #ddd;
     padding: 1rem 1.5rem;
     font-size: 1.1rem;
-    background-color: hsl(var(--surface));
+    background-color: #ffffff;
+    color: #333;
 }
 
 .scan-form .form-control:focus {
-    box-shadow: none;
-    background-color: hsl(var(--surface));
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    background-color: #ffffff;
+    border-color: #007AFF;
+    color: #333;
 }
 
 .scan-form .btn {
     padding: 1rem 2rem;
     font-weight: 600;
     border: none;
-    background-color: hsl(var(--primary));
+    background-color: #007AFF;
+    color: white;
     transition: background-color 0.2s ease;
 }
 
 .scan-form .btn:hover {
-    background-color: hsl(var(--primary-dark));
+    background-color: #0056CC;
 }
 
 /* Feature Cards */
 .feature-card {
-    background: hsl(var(--surface));
-    border-radius: var(--border-radius);
+    background: #ffffff;
+    border-radius: 8px;
     padding: 2rem;
     text-align: center;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid #ddd;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     height: 100%;
+    color: #333;
 }
 
 .feature-card:hover {
     transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
 }
 
 .feature-icon {
@@ -232,26 +237,30 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .check-section {
-    background: hsl(var(--surface));
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--border-radius);
+    background: #ffffff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
     margin-bottom: 1.5rem;
     overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .check-title {
-    background: hsl(var(--background));
+    background: #f8f9fa;
     padding: 1rem 1.5rem;
     margin: 0;
     font-size: 1.1rem;
     font-weight: 600;
-    border-bottom: 1px solid hsl(var(--border));
+    border-bottom: 1px solid #ddd;
     display: flex;
     align-items: center;
+    color: #333;
 }
 
 .check-content {
     padding: 1.5rem;
+    background: #ffffff;
+    color: #333;
 }
 
 .status-icon {
@@ -261,39 +270,40 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .status-success {
-    color: hsl(var(--success));
+    color: #28a745;
 }
 
 .status-warning {
-    color: hsl(var(--warning));
+    color: #ffc107;
 }
 
 .status-danger {
-    color: hsl(var(--danger));
+    color: #dc3545;
 }
 
 .status-info {
-    color: hsl(var(--primary));
+    color: #007AFF;
 }
 
 .issues-list {
-    background: hsl(var(--danger) / 0.05);
-    border-left: 3px solid hsl(var(--danger));
+    background: #fff5f5;
+    border-left: 3px solid #dc3545;
     padding: 1rem;
-    border-radius: 0 var(--border-radius) var(--border-radius) 0;
+    border-radius: 0 8px 8px 0;
     margin-top: 1rem;
 }
 
 .issue-item {
-    color: hsl(var(--danger));
+    color: #dc3545;
     font-size: 0.9rem;
     margin-bottom: 0.25rem;
 }
 
 .header-item, .missing-item {
     padding: 0.5rem 0;
-    border-bottom: 1px solid hsl(var(--border));
+    border-bottom: 1px solid #ddd;
     font-size: 0.9rem;
+    color: #333;
 }
 
 .header-item:last-child, .missing-item:last-child {
