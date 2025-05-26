@@ -538,25 +538,31 @@ function createStepPopup(step, stepIndex, totalSteps) {
  * Position step popup relative to target
  */
 function positionStepPopup(popup, target, position) {
-    const targetRect = target.getBoundingClientRect();
-    const popupRect = popup.getBoundingClientRect();
-    
-    let top, left;
-    
-    if (position === 'bottom') {
-        top = targetRect.bottom + 20;
-        left = targetRect.left + (targetRect.width / 2) - (popup.offsetWidth / 2);
-    } else if (position === 'top') {
-        top = targetRect.top - popup.offsetHeight - 20;
-        left = targetRect.left + (targetRect.width / 2) - (popup.offsetWidth / 2);
-    }
-    
-    // Keep popup within viewport
-    left = Math.max(20, Math.min(left, window.innerWidth - popup.offsetWidth - 20));
-    top = Math.max(20, Math.min(top, window.innerHeight - popup.offsetHeight - 20));
-    
-    popup.style.top = top + 'px';
-    popup.style.left = left + 'px';
+    // Wait for popup to be rendered
+    setTimeout(() => {
+        const targetRect = target.getBoundingClientRect();
+        
+        let top, left;
+        const popupWidth = 300;
+        const popupHeight = popup.offsetHeight || 200;
+        
+        if (position === 'bottom') {
+            top = targetRect.bottom + 20;
+            left = targetRect.left + (targetRect.width / 2) - (popupWidth / 2);
+        } else if (position === 'top') {
+            top = targetRect.top - popupHeight - 20;
+            left = targetRect.left + (targetRect.width / 2) - (popupWidth / 2);
+        }
+        
+        // Keep popup within viewport
+        left = Math.max(20, Math.min(left, window.innerWidth - popupWidth - 20));
+        top = Math.max(20, Math.min(top, window.innerHeight - popupHeight - 20));
+        
+        popup.style.top = top + 'px';
+        popup.style.left = left + 'px';
+        popup.style.position = 'fixed';
+        popup.style.zIndex = '10000';
+    }, 50);
 }
 
 /**
@@ -681,6 +687,36 @@ function showScanProgress() {
         }
     }, 1200); // Slower, more reassuring pace
 }
+
+// Initialize everything when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Feather icons first
+    if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+    
+    // Initialize user guidance
+    initializeUserGuidance();
+    
+    // Add tutorial button to navigation
+    addTutorialButton();
+    
+    // Auto-start tutorial for first-time visitors (only on homepage)
+    if (window.location.pathname === '/' && !localStorage.getItem('tutorial_completed')) {
+        setTimeout(() => {
+            startTutorial();
+        }, 3000);
+    }
+    
+    // Animate counters when they come into view
+    animateCounters();
+    
+    // Add security tooltips
+    addSecurityTooltips();
+    
+    // Improve accessibility
+    improveAccessibility();
+});
 
 // Export functions for testing
 if (typeof module !== 'undefined' && module.exports) {
