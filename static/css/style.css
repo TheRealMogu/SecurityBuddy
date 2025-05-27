@@ -514,36 +514,38 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .btn-outline-primary:hover {
-    background-color: hsl(var(--primary));
-    border-color: hsl(var(--primary));
+    background-color: #007AFF;
+    border-color: #007AFF;
     color: white;
 }
 
 .btn-outline-secondary {
-    color: hsl(var(--text-secondary));
-    border: 1px solid hsl(var(--border));
+    color: #666;
+    border: 1px solid #ddd;
     background: transparent;
 }
 
 .btn-outline-secondary:hover {
-    background-color: hsl(var(--text-secondary));
-    border-color: hsl(var(--text-secondary));
+    background-color: #666;
+    border-color: #666;
     color: white;
 }
 
 .btn-warning {
-    background-color: hsl(var(--warning));
-    color: white;
+    background-color: #ffc107;
+    color: #333;
 }
 
 .btn-warning:hover {
-    background-color: hsl(35 91% 52%);
-    color: white;
+    background-color: #e0a800;
+    color: #333;
 }
 
 /* Form Controls */
 .form-control {
-    border: 1px solid hsl(var(--border));
+    border: 1px solid #ddd;
+    background: #ffffff;
+    color: #333;
     border-radius: var(--border-radius);
     padding: 0.75rem 1rem;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
