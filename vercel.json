@@ -17,7 +17,7 @@
   },
   "functions": {
     "main.py": {
-      "maxDuration": 10
+      "maxDuration": 30
     }
   }
 }

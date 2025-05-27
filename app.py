@@ -19,11 +19,18 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-# Configure the database
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///security_buddy.db")
+# Configure the database - Vercel compatible
+database_url = os.environ.get("DATABASE_URL")
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url or "sqlite:///security_buddy.db"
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "pool_pre_ping": True,
+    "pool_timeout": 20,
+    "pool_size": 10,
+    "max_overflow": 20
 }
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -43,7 +50,10 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 with app.app_context():
-    # Import models to ensure tables are created
-    import models  # noqa: F401
-    db.create_all()
-    logging.info("Database tables created")
+    try:
+        # Import models to ensure tables are created
+        import models  # noqa: F401
+        db.create_all()
+        logging.info("Database tables created successfully")
+    except Exception as e:
+        logging.warning(f"Database initialization error: {e}")
