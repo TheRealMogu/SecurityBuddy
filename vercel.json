@@ -15,7 +15,6 @@
   },
   "functions": {
     "main.py": {
-      "runtime": "vercel-python@4",
       "maxDuration": 30
     }
   }
