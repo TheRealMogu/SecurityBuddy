@@ -24,14 +24,21 @@ database_url = os.environ.get("DATABASE_URL")
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url or "sqlite:///security_buddy.db"
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 300,
-    "pool_pre_ping": True,
-    "pool_timeout": 20,
-    "pool_size": 10,
-    "max_overflow": 20
-}
+if database_url:
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+        "pool_timeout": 20,
+        "pool_size": 10,
+        "max_overflow": 20
+    }
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///security_buddy.db"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+    }
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Initialize the app with the extension
@@ -51,7 +58,6 @@ def load_user(user_id):
 
 with app.app_context():
     try:
-        # Import models to ensure tables are created
         import models  # noqa: F401
         db.create_all()
         logging.info("Database tables created successfully")
