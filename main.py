@@ -1,5 +1,6 @@
 from app import app
 import routes  # noqa: F401
+import api_routes  # noqa: F401
 
 # For Vercel deployment
 application = app
