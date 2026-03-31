@@ -1,15 +1,5 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "main.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
-    }
-  ],
   "routes": [
     {
       "src": "/static/(.*)",
@@ -25,6 +15,7 @@
   },
   "functions": {
     "main.py": {
+      "runtime": "vercel-python@4",
       "maxDuration": 30
     }
   }
