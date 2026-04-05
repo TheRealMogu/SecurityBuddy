@@ -2,14 +2,22 @@
 Premium features for Security Buddy including advanced scanning and analytics
 """
 import json
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datetime import datetime, timedelta
-from collections import defaultdict
-from models import ScanResult, User
-from app import db
 import io
 import base64
+from datetime import datetime, timedelta
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+try:
+    import numpy as np
+    _numpy_available = True
+except ImportError:
+    _numpy_available = False
+
+from models import ScanResult, User
+from app import db
 
 class PremiumAnalytics:
     def __init__(self):
@@ -47,8 +55,8 @@ class PremiumAnalytics:
         ax.grid(True, alpha=0.3)
         ax.set_ylim(0, 100)
         
-        # Add trend line
-        if len(dates) > 1:
+        # Add trend line (requires numpy)
+        if len(dates) > 1 and _numpy_available:
             z = np.polyfit(range(len(dates)), avg_scores, 1)
             p = np.poly1d(z)
             ax.plot(dates, p(range(len(dates))), "--", alpha=0.8, color='red')

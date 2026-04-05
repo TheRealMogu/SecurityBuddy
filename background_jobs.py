@@ -1,10 +1,10 @@
 """
 Background job system for Security Buddy - Handle long-running scans asynchronously
 """
-import asyncio
 import threading
 import queue
 import time
+import uuid
 from datetime import datetime
 from models import ScanResult, User
 from app import db
@@ -53,7 +53,7 @@ class BackgroundJobManager:
     def submit_scan_job(self, target, user_id=None, advanced=False, notification_email=None):
         """Submit a new scan job to the queue"""
         job = BackgroundScanJob(target, user_id, advanced, notification_email)
-        job_id = f"scan_{target}_{int(time.time())}"
+        job_id = f"scan_{uuid.uuid4().hex}"
         
         self.active_jobs[job_id] = job
         self.job_queue.put((job_id, job))

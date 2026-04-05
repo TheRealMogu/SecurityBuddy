@@ -6,8 +6,9 @@ from flask_login import LoginManager
 from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure logging: DEBUG only in development, INFO in production
+_log_level = logging.DEBUG if os.environ.get("FLASK_DEBUG") else logging.INFO
+logging.basicConfig(level=_log_level)
 
 class Base(DeclarativeBase):
     pass

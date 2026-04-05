@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlparse
 from flask import render_template, request, redirect, url_for, flash, session, make_response, send_file
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash
@@ -96,8 +97,11 @@ def login():
         if user and user.check_password(password):
             login_user(user)
             next_page = request.args.get('next')
+            # Validate next_page to prevent open redirect
+            if next_page and urlparse(next_page).netloc != '':
+                next_page = None
             flash(f'Welcome back, {user.username}!', 'success')
-            return redirect(next_page) if next_page else redirect(url_for('dashboard'))
+            return redirect(next_page or url_for('dashboard'))
         else:
             flash('Invalid username or password.', 'error')
     
@@ -237,22 +241,26 @@ def analytics():
 def api_keys():
     """Manage API keys"""
     user_api_keys = APIKey.query.filter_by(user_id=current_user.id, active=True).all()
-    return render_template('api_keys.html', api_keys=user_api_keys)
+    # Pop the newly-created key from the session for one-time display in the template
+    new_key = session.pop('new_api_key', None)
+    return render_template('api_keys.html', api_keys=user_api_keys, new_api_key=new_key)
 
 @app.route('/create-api-key', methods=['POST'])
 @login_required
 def create_api_key():
     """Create new API key"""
     name = request.form.get('name', 'Default API Key')
-    
+
     try:
         api_key = current_user.generate_api_key(name)
-        flash(f'API Key created successfully! Key: {api_key}', 'success')
-        flash('⚠️ Save this key now - you won\'t be able to see it again!', 'warning')
-        
+        # Store the plaintext key in the server-side session (one-time display).
+        # It is NOT put in a flash message to avoid it appearing in server logs.
+        session['new_api_key'] = api_key
+        flash('API key created. Copy it now — it will not be shown again.', 'warning')
+
     except Exception as e:
         flash(f'Failed to create API key: {str(e)}', 'error')
-    
+
     return redirect(url_for('api_keys'))
 
 @app.errorhandler(404)

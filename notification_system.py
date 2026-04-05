@@ -2,6 +2,7 @@
 Notification system for Security Buddy including email alerts and monitoring
 """
 import smtplib
+import html as html_lib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -82,7 +83,7 @@ class NotificationSystem:
             """
             
             for issue in critical_issues[:5]:  # Show top 5 critical issues
-                html_content += f"<li style='margin-bottom: 8px;'>{issue}</li>"
+                html_content += f"<li style='margin-bottom: 8px;'>{html_lib.escape(str(issue))}</li>"
             
             html_content += f"""
                         </ul>
@@ -255,7 +256,8 @@ class NotificationSystem:
         """
         
         for scan in recent_scans:
-            html_content += f"<li>{scan.target}: {scan.security_score}/100 ({scan.created_at.strftime('%m/%d')})</li>"
+            safe_target = html_lib.escape(scan.target)
+            html_content += f"<li>{safe_target}: {scan.security_score}/100 ({scan.created_at.strftime('%m/%d')})</li>"
         
         html_content += f"""
                     </ul>
