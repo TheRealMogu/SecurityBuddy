@@ -62,33 +62,36 @@ class APIKey(db.Model):
     name = db.Column(db.String(100), nullable=False)
     key_hash = db.Column(db.String(64), unique=True, nullable=False)
     active = db.Column(db.Boolean, default=True)
-    usage_count = db.Column(db.Integer, default=0)
-    rate_limit = db.Column(db.Integer, default=100)  # requests per hour
-    rate_limit_reset = db.Column(db.DateTime, nullable=True)
+    usage_count = db.Column(db.Integer, default=0)       # lifetime total
+    hourly_usage = db.Column(db.Integer, default=0)      # requests in current hour window
+    rate_limit = db.Column(db.Integer, default=100)      # requests per hour
+    rate_limit_reset = db.Column(db.DateTime, nullable=True)  # when the current window expires
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_used = db.Column(db.DateTime, nullable=True)
-    
+
     def increment_usage(self):
-        """Increment usage counter and update last used"""
+        """Increment usage counters and update last used"""
+        now = datetime.utcnow()
+        # Initialise window on first use
+        if not self.rate_limit_reset:
+            self.rate_limit_reset = now + timedelta(hours=1)
+            self.hourly_usage = 0
         self.usage_count += 1
-        self.last_used = datetime.utcnow()
+        self.hourly_usage += 1
+        self.last_used = now
         db.session.commit()
-    
+
     def is_rate_limited(self):
-        """Check if API key has exceeded rate limit"""
-        if not self.rate_limit_reset or self.rate_limit_reset < datetime.utcnow():
-            # Reset rate limit window
-            self.rate_limit_reset = datetime.utcnow() + timedelta(hours=1)
-            self._current_hour_usage = 0
+        """Check if this API key has exceeded its hourly rate limit."""
+        now = datetime.utcnow()
+        # If the window has expired (or never been set), open a fresh one
+        if not self.rate_limit_reset or self.rate_limit_reset <= now:
+            self.rate_limit_reset = now + timedelta(hours=1)
+            self.hourly_usage = 0
             db.session.commit()
             return False
-        
-        # Count usage in current hour
-        hour_ago = datetime.utcnow() - timedelta(hours=1)
-        # In a real implementation, you'd track this more precisely
-        # For now, we'll use a simple approximation
-        return self.usage_count > self.rate_limit
-    
+        return self.hourly_usage >= self.rate_limit
+
     def __repr__(self):
         return f'<APIKey {self.name}>'
 

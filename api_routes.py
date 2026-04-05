@@ -3,7 +3,10 @@ REST API endpoints for Security Buddy
 Provides programmatic access to security scanning functionality
 """
 import json
+import ipaddress
+import socket
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import current_user, login_required
 from functools import wraps
@@ -15,18 +18,45 @@ from scanner import SecurityScanner
 from validators import AdvancedValidator, clean_target
 from premium_features import AdvancedScanner
 
+
+def _is_safe_webhook_url(url):
+    """Validate webhook URL to prevent SSRF: must be http/https and not target private IPs."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        # Block localhost and loopback
+        if hostname in ('localhost', '127.0.0.1', '::1'):
+            return False
+        # Resolve and check for private/reserved ranges
+        try:
+            addr = ipaddress.ip_address(hostname)
+        except ValueError:
+            try:
+                addr = ipaddress.ip_address(socket.gethostbyname(hostname))
+            except Exception:
+                return False
+        if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            return False
+        return True
+    except Exception:
+        return False
+
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
 
 def require_api_key(f):
     """Decorator to require valid API key for endpoints"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
-        
+        api_key = request.headers.get('X-API-Key')
+
         if not api_key:
             return jsonify({
                 'error': 'API key required',
-                'message': 'Please provide API key in X-API-Key header or api_key parameter'
+                'message': 'Please provide API key in X-API-Key header'
             }), 401
         
         # Validate API key
@@ -350,11 +380,16 @@ def api_webhook():
         
         # Send to webhook URL if provided
         if webhook_url:
+            if not _is_safe_webhook_url(webhook_url):
+                return jsonify({
+                    'error': 'Invalid webhook_url',
+                    'message': 'webhook_url must be a public HTTP/HTTPS URL'
+                }), 400
             try:
-                import requests
-                requests.post(webhook_url, json=response_data, timeout=10)
-            except:
-                pass  # Don't fail the API call if webhook fails
+                import requests as req_lib
+                req_lib.post(webhook_url, json=response_data, timeout=10)
+            except Exception as webhook_err:
+                current_app.logger.warning(f"Webhook delivery failed to {webhook_url}: {webhook_err}")
         
         return jsonify(response_data), 200
         

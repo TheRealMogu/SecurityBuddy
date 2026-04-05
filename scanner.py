@@ -10,6 +10,7 @@ import logging
 class SecurityScanner:
     def __init__(self):
         self.session = requests.Session()
+        self.session.verify = True  # Enforce SSL certificate verification (explicit)
         self.session.headers.update({
             'User-Agent': 'SecurityBuddy/1.0 (Security Scanner)'
         })
@@ -238,11 +239,16 @@ class SecurityScanner:
         }
         
         try:
-            # Basic DNS resolution
-            ip_address = socket.gethostbyname(domain)
-            results['ip_address'] = ip_address
-            results['info_available'] = True
-            
+            # Basic DNS resolution with explicit timeout
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(self.timeout)
+            try:
+                ip_address = socket.gethostbyname(domain)
+                results['ip_address'] = ip_address
+                results['info_available'] = True
+            finally:
+                socket.setdefaulttimeout(old_timeout)
+
         except socket.gaierror as e:
             results['issues'].append(f'DNS resolution failed: {str(e)}')
         except Exception as e:

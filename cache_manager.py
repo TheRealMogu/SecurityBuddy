@@ -26,21 +26,23 @@ class ScanCache:
         cache_age = datetime.utcnow() - scan_result.created_at
         return cache_age < self.cache_duration
     
-    def get_cached_result(self, target, scan_type='standard'):
-        """Get cached scan result if available and valid"""
+    def get_cached_result(self, target, scan_type='standard', user_id=None):
+        """Get cached scan result if available and valid.
+
+        Cache is scoped per user: authenticated users only see their own results;
+        guest scans (user_id=None) are shared among unauthenticated callers.
+        """
         try:
-            # Find most recent scan for this target
-            latest_scan = ScanResult.query.filter_by(
-                target=target
-            ).order_by(ScanResult.created_at.desc()).first()
-            
+            query = ScanResult.query.filter_by(target=target, user_id=user_id)
+            latest_scan = query.order_by(ScanResult.created_at.desc()).first()
+
             if self.is_cache_valid(latest_scan):
-                self.logger.info(f"Cache hit for {target}")
+                self.logger.info(f"Cache hit for {target} (user_id={user_id})")
                 return latest_scan
-            
-            self.logger.info(f"Cache miss for {target}")
+
+            self.logger.info(f"Cache miss for {target} (user_id={user_id})")
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Cache lookup error: {str(e)}")
             return None
@@ -119,11 +121,11 @@ class PerformanceOptimizer:
         """Mark scan as finished"""
         self.active_scans.discard(target)
     
-    def get_optimized_scan_result(self, target, force_refresh=False):
+    def get_optimized_scan_result(self, target, force_refresh=False, user_id=None):
         """Get scan result with caching optimization"""
         # Check cache first unless force refresh
         if not force_refresh:
-            cached_result = self.cache.get_cached_result(target)
+            cached_result = self.cache.get_cached_result(target, user_id=user_id)
             if cached_result:
                 return {
                     'cached': True,
