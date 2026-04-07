@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Security Buddy - Web Security Scanner{% endblock %}</title>
-    
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Inter Font -->
@@ -13,7 +13,7 @@
     <script src="https://unpkg.com/feather-icons"></script>
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    
+
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -23,39 +23,53 @@
             <a class="navbar-brand fw-bold" href="{{ url_for('index') }}">
                 <i data-feather="shield" class="me-2"></i>Security Buddy
             </a>
-            
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
-            
+
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">Scanner</a>
+                        <a class="nav-link{% if request.endpoint == 'index' %} nav-link-active{% endif %}"
+                           href="{{ url_for('index') }}">Scanner</a>
                     </li>
                     {% if current_user.is_authenticated %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+                        <a class="nav-link{% if request.endpoint == 'dashboard' %} nav-link-active{% endif %}"
+                           href="{{ url_for('dashboard') }}">Dashboard</a>
                     </li>
                     {% endif %}
                 </ul>
-                
+
                 <ul class="navbar-nav">
                     {% if current_user.is_authenticated %}
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                {{ current_user.username }}
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
+                               aria-expanded="false">
+                                <i data-feather="user" style="width:15px;height:15px;" class="me-1"></i>{{ current_user.username }}
                             </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('premium') }}">Premium</a></li>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">
+                                    <i data-feather="bar-chart-2" class="me-2" style="width:15px;height:15px;"></i>Dashboard
+                                </a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('api_keys') }}">
+                                    <i data-feather="key" class="me-2" style="width:15px;height:15px;"></i>API Keys
+                                </a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('premium') }}">
+                                    <i data-feather="star" class="me-2" style="width:15px;height:15px;"></i>Premium
+                                </a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a></li>
+                                <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}">
+                                    <i data-feather="log-out" class="me-2" style="width:15px;height:15px;"></i>Logout
+                                </a></li>
                             </ul>
                         </li>
                     {% else %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+                            <a class="nav-link{% if request.endpoint == 'login' %} nav-link-active{% endif %}"
+                               href="{{ url_for('login') }}">Login</a>
                         </li>
                     {% endif %}
                 </ul>
@@ -63,19 +77,15 @@
         </div>
     </nav>
 
-    <!-- Flash Messages -->
+    <!-- Flash messages serialised for the toast JS system -->
     {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="container mt-3">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
+    {% if messages %}
+    <script id="flash-data" type="application/json">{{ messages | tojson }}</script>
+    {% endif %}
     {% endwith %}
+
+    <!-- Toast container (bottom-right) -->
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
     <!-- Main Content -->
     <main>
@@ -103,10 +113,9 @@
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-        // Initialize Feather icons
         feather.replace();
     </script>
-    
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

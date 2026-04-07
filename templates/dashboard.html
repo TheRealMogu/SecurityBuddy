@@ -72,46 +72,46 @@
                 <div class="card-body">
                     {% if recent_scans %}
                         <div class="table-responsive">
-                            <table class="table table-hover">
+                            <table class="table table-hover" id="scansTable">
                                 <thead>
                                     <tr>
-                                        <th>Target</th>
+                                        <th class="sortable-th" data-col="0" data-type="text">
+                                            Target <span class="sort-icon">⇅</span>
+                                        </th>
                                         <th>Type</th>
-                                        <th>Score</th>
+                                        <th class="sortable-th" data-col="2" data-type="num">
+                                            Score <span class="sort-icon">⇅</span>
+                                        </th>
                                         <th>Risk Level</th>
-                                        <th>Date</th>
+                                        <th class="sortable-th" data-col="4" data-type="text">
+                                            Date <span class="sort-icon">⇅</span>
+                                        </th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for scan in recent_scans %}
+                                    {% set risk = 'low' if scan.security_score >= 80 else 'medium' if scan.security_score >= 60 else 'high' if scan.security_score >= 40 else 'critical' %}
                                     <tr>
+                                        <td><strong>{{ scan.target }}</strong></td>
                                         <td>
-                                            <strong>{{ scan.target }}</strong>
+                                            <span class="badge bg-light text-dark">{{ scan.scan_type.title() }}</span>
                                         </td>
-                                        <td>
-                                            <span class="badge bg-light text-dark">
-                                                {{ scan.scan_type.title() }}
-                                            </span>
-                                        </td>
-                                        <td>
+                                        <td data-sort-value="{{ scan.security_score }}">
                                             <span class="score-badge score-{{ 'success' if scan.security_score >= 80 else 'warning' if scan.security_score >= 60 else 'danger' }}">
                                                 {{ scan.security_score }}/100
                                             </span>
                                         </td>
                                         <td>
-                                            {% set risk = 'low' if scan.security_score >= 80 else 'medium' if scan.security_score >= 60 else 'high' if scan.security_score >= 40 else 'critical' %}
                                             <span class="badge bg-{{ 'success' if risk == 'low' else 'warning' if risk == 'medium' else 'danger' }}">
                                                 {{ risk.title() }}
                                             </span>
                                         </td>
                                         <td>
-                                            <small class="text-muted">
-                                                {{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}
-                                            </small>
+                                            <small class="text-muted">{{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
                                         </td>
                                         <td>
-                                            <a href="{{ url_for('view_scan', scan_id=scan.id) }}" 
+                                            <a href="{{ url_for('view_scan', scan_id=scan.id) }}"
                                                class="btn btn-sm btn-outline-primary">
                                                 View Report
                                             </a>
@@ -122,12 +122,12 @@
                             </table>
                         </div>
                     {% else %}
-                        <div class="text-center py-5">
-                            <i data-feather="search" class="text-muted mb-3" style="width: 48px; height: 48px;"></i>
-                            <h5 class="text-muted">No scans yet</h5>
-                            <p class="text-muted">Start by scanning your first website or domain.</p>
+                        <div class="dashboard-empty-state">
+                            <div class="empty-state-icon">🛡️</div>
+                            <h5>Nessuna scan ancora</h5>
+                            <p class="text-muted">Inizia analizzando il tuo primo sito web o dominio. Ci vogliono meno di 30 secondi!</p>
                             <a href="{{ url_for('index') }}" class="btn btn-primary">
-                                <i data-feather="plus" class="me-2"></i>Start Your First Scan
+                                <i data-feather="search" class="me-2"></i>Esegui il tuo primo scan
                             </a>
                         </div>
                     {% endif %}
