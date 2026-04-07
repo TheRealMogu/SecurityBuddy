@@ -13,10 +13,21 @@
                     <p class="text-muted mb-0">{{ results.target }}</p>
                 </div>
                 <div class="text-end">
-                    <div class="security-score mb-2">
-                        <span class="score-value">{{ results.overall_score }}/100</span>
+                    <!-- Animated SVG score ring -->
+                    <div class="score-ring-wrapper risk-color-{{ results.risk_level }}"
+                         data-score="{{ results.overall_score }}"
+                         aria-label="Security score: {{ results.overall_score }} out of 100">
+                        <svg class="score-ring" viewBox="0 0 120 120" width="110" height="110">
+                            <circle class="score-ring-bg" cx="60" cy="60" r="45"/>
+                            <circle class="score-ring-fill" cx="60" cy="60" r="45" id="scoreRingFill"/>
+                            <text class="score-ring-number" x="60" y="56"
+                                  dominant-baseline="central" text-anchor="middle"
+                                  id="scoreRingNumber">0</text>
+                            <text class="score-ring-label" x="60" y="76"
+                                  dominant-baseline="central" text-anchor="middle">/100</text>
+                        </svg>
                     </div>
-                    <div class="risk-badge risk-{{ results.risk_level }}">
+                    <div class="risk-badge risk-{{ results.risk_level }} mt-1">
                         {{ results.risk_level.title() }} Risk
                     </div>
                 </div>
@@ -329,6 +340,18 @@
         </div>
     </div>
 </div>
+
+<!-- FAB: Rescan same target -->
+<a href="{{ url_for('index') }}?target={{ results.target | urlencode }}"
+   class="fab-rescan" id="fabRescan" aria-label="Nuova scan per {{ results.target }}">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+         stroke-linejoin="round" class="me-1">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+    </svg>
+    <span>Nuova scan</span>
+</a>
 
 <!-- Premium Modal -->
 <div class="modal fade" id="premiumModal" tabindex="-1">

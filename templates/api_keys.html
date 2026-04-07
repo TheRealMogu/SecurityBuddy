@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}API Keys - Security Buddy{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row">
+        <div class="col-lg-9">
+
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 fw-bold text-dark mb-1">API Keys</h1>
+                    <p class="text-muted mb-0">Gestisci le chiavi per accedere all'API di Security Buddy.</p>
+                </div>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm">
+                    <i data-feather="arrow-left" class="me-1"></i>Dashboard
+                </a>
+            </div>
+
+            <!-- One-time key display -->
+            {% if new_api_key %}
+            <div class="new-key-alert mb-4" id="newKeyAlert" role="alert">
+                <div class="d-flex align-items-start gap-3">
+                    <span class="new-key-icon">🔑</span>
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold mb-1" style="color:var(--color-warning);">
+                            Copia ora la tua chiave API — non verrà mostrata di nuovo!
+                        </div>
+                        <div class="new-key-code-wrapper">
+                            <code class="new-key-code" id="newKeyValue">{{ new_api_key }}</code>
+                            <button class="btn-copy-key" id="copyKeyBtn"
+                                    aria-label="Copia chiave API"
+                                    onclick="copyApiKey()">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15"
+                                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                                <span id="copyKeyLabel">Copia</span>
+                            </button>
+                        </div>
+                        <small class="text-muted mt-1 d-block">
+                            Usa questa chiave nell'header HTTP: <code>X-API-Key: &lt;chiave&gt;</code>
+                        </small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white ms-2" onclick="dismissNewKey()" aria-label="Chiudi"></button>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Existing keys table -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i data-feather="key" class="me-2"></i>Chiavi attive
+                    </h5>
+                    <span class="badge bg-light text-muted">{{ api_keys | length }}/5</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if api_keys %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-4">Nome</th>
+                                    <th>Rate limit</th>
+                                    <th>Utilizzi</th>
+                                    <th>Creata il</th>
+                                    <th>Ultimo uso</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for key in api_keys %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <span class="fw-medium">{{ key.name }}</span>
+                                        <span class="badge bg-success ms-2" style="font-size:0.7rem;">Attiva</span>
+                                    </td>
+                                    <td>
+                                        <span class="text-muted">{{ key.rate_limit }} req/h</span>
+                                    </td>
+                                    <td>
+                                        <span class="text-muted">{{ key.usage_count }}</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ key.created_at.strftime('%d/%m/%Y') }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if key.last_used %}
+                                                {{ key.last_used.strftime('%d/%m/%Y %H:%M') }}
+                                            {% else %}
+                                                Mai utilizzata
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td class="pe-4 text-end">
+                                        <span class="text-muted small">••••{{ key.key_hash[-6:] }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="dashboard-empty-state" style="border-radius:0;">
+                        <div class="empty-state-icon">🔑</div>
+                        <h5>Nessuna chiave API</h5>
+                        <p class="text-muted">Crea la tua prima chiave API per iniziare ad usare l'API di Security Buddy.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Create new key form -->
+            {% if api_keys | length < 5 %}
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i data-feather="plus-circle" class="me-2"></i>Crea nuova chiave
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('create_api_key') }}" id="createKeyForm">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-sm-8">
+                                <label for="keyName" class="form-label">Nome chiave</label>
+                                <input type="text" class="form-control" id="keyName" name="name"
+                                       placeholder="es. CI/CD Pipeline, Monitoring Script…"
+                                       maxlength="100" required>
+                                <div class="form-text">Un nome descrittivo ti aiuterà a ricordarne lo scopo.</div>
+                            </div>
+                            <div class="col-sm-4">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i data-feather="plus" class="me-2"></i>Crea chiave
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-warning">
+                <i data-feather="alert-triangle" class="me-2"></i>
+                Hai raggiunto il limite massimo di 5 chiavi API attive.
+                Contatta il supporto se hai bisogno di più chiavi.
+            </div>
+            {% endif %}
+
+            <!-- API Usage docs snippet -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i data-feather="code" class="me-2"></i>Come usare l'API
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Esempio di chiamata con <code>curl</code>:</p>
+                    <div class="api-code-block">
+                        <code>curl -X POST {{ request.host_url }}api/v1/scan \<br>
+&nbsp;&nbsp;-H "X-API-Key: &lt;la-tua-chiave&gt;" \<br>
+&nbsp;&nbsp;-H "Content-Type: application/json" \<br>
+&nbsp;&nbsp;-d '{"target": "example.com"}'</code>
+                    </div>
+                    <p class="text-muted small mt-3 mb-0">
+                        <i data-feather="info" style="width:14px;height:14px;" class="me-1"></i>
+                        La chiave va sempre inviata nell'header <code>X-API-Key</code>, mai come query parameter.
+                    </p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyApiKey() {
+    const key = document.getElementById('newKeyValue').textContent.trim();
+    navigator.clipboard.writeText(key).then(() => {
+        const label = document.getElementById('copyKeyLabel');
+        label.textContent = 'Copiata!';
+        setTimeout(() => { label.textContent = 'Copia'; }, 2500);
+    });
+}
+function dismissNewKey() {
+    const el = document.getElementById('newKeyAlert');
+    if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }
+}
+</script>
+{% endblock %}

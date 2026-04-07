@@ -694,23 +694,355 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof feather !== 'undefined') {
         feather.replace();
     }
-    
+
     // Initialize user guidance
     initializeUserGuidance();
-    
-    // Tutorial button removed
-    
-    // Tutorial removed - was annoying
-    
+
     // Animate counters when they come into view
     animateCounters();
-    
+
     // Add security tooltips
     addSecurityTooltips();
-    
+
     // Improve accessibility
     improveAccessibility();
+
+    /* ---- NEW UX FEATURES ---- */
+    initToasts();
+    initScoreRing();
+    initTableSort();
+    initInlineValidation();
+    initPasswordStrength();
+    initPasswordToggle();
+    initFab();
 });
+
+/* =======================================================================
+   TOAST NOTIFICATIONS
+   Reads flash messages serialised in #flash-data and shows them as toasts.
+   ======================================================================= */
+const TOAST_ICONS = {
+    success: '✓',
+    warning: '⚠',
+    error:   '✕',
+    danger:  '✕',
+    info:    'ℹ',
+};
+const TOAST_DURATION = 4000; // ms
+
+function showToast(category, message) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    // Cap at 4 visible toasts
+    const existing = container.querySelectorAll('.app-toast');
+    if (existing.length >= 4) existing[0].remove();
+
+    const cat = category === 'error' ? 'error' : category;
+    const icon = TOAST_ICONS[cat] || 'ℹ';
+
+    const toast = document.createElement('div');
+    toast.className = `app-toast app-toast-${cat}`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+      <div class="app-toast-body">
+        <span class="app-toast-icon">${icon}</span>
+        <span class="app-toast-text">${message}</span>
+        <button class="app-toast-close" aria-label="Chiudi">×</button>
+      </div>
+      <div class="app-toast-progress" style="animation-duration:${TOAST_DURATION}ms;"></div>`;
+
+    container.appendChild(toast);
+
+    const closeBtn = toast.querySelector('.app-toast-close');
+    closeBtn.addEventListener('click', () => dismissToast(toast));
+
+    const timer = setTimeout(() => dismissToast(toast), TOAST_DURATION);
+    toast._toastTimer = timer;
+}
+
+function dismissToast(toast) {
+    clearTimeout(toast._toastTimer);
+    toast.classList.add('toast-hiding');
+    toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+}
+
+function initToasts() {
+    const dataEl = document.getElementById('flash-data');
+    if (!dataEl) return;
+    try {
+        const messages = JSON.parse(dataEl.textContent);
+        // Small delay so the page renders first
+        setTimeout(() => {
+            messages.forEach(([cat, msg]) => showToast(cat, msg));
+        }, 150);
+    } catch (e) { /* malformed JSON — skip */ }
+}
+
+/* =======================================================================
+   ANIMATED SVG SCORE RING
+   ======================================================================= */
+function initScoreRing() {
+    const wrapper = document.querySelector('.score-ring-wrapper');
+    if (!wrapper) return;
+
+    const score    = parseInt(wrapper.dataset.score, 10) || 0;
+    const fill     = document.getElementById('scoreRingFill');
+    const numEl    = document.getElementById('scoreRingNumber');
+    if (!fill || !numEl) return;
+
+    const CIRCUMFERENCE = 2 * Math.PI * 45; // r=45 → 282.74
+
+    // Start hidden, animate after a short delay
+    fill.style.strokeDashoffset = CIRCUMFERENCE;
+
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            const offset = CIRCUMFERENCE * (1 - score / 100);
+            fill.style.strokeDashoffset = offset;
+        }, 100);
+    });
+
+    // Counter animation for the number
+    const duration = 900;
+    const start = performance.now();
+    function tick(now) {
+        const elapsed = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - elapsed, 3); // ease-out cubic
+        numEl.textContent = Math.round(eased * score);
+        if (elapsed < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+}
+
+/* =======================================================================
+   SORTABLE TABLE
+   ======================================================================= */
+function initTableSort() {
+    const table = document.getElementById('scansTable');
+    if (!table) return;
+
+    const headers = table.querySelectorAll('th.sortable-th');
+    let currentCol = null, currentDir = 'asc';
+
+    headers.forEach(th => {
+        th.addEventListener('click', () => {
+            const col     = parseInt(th.dataset.col, 10);
+            const type    = th.dataset.type; // 'text' | 'num'
+
+            if (currentCol === col) {
+                currentDir = currentDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentCol = col;
+                currentDir = 'asc';
+            }
+
+            // Update sort icon labels
+            headers.forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+                const ico = h.querySelector('.sort-icon');
+                if (ico) ico.textContent = '⇅';
+            });
+            th.classList.add(currentDir === 'asc' ? 'sort-asc' : 'sort-desc');
+            const ico = th.querySelector('.sort-icon');
+            if (ico) ico.textContent = currentDir === 'asc' ? '↑' : '↓';
+
+            // Sort rows
+            const tbody = table.querySelector('tbody');
+            const rows  = Array.from(tbody.querySelectorAll('tr'));
+
+            rows.sort((a, b) => {
+                const aCell = a.cells[col];
+                const bCell = b.cells[col];
+                // Prefer data-sort-value if present
+                const aRaw = aCell.dataset.sortValue !== undefined
+                    ? aCell.dataset.sortValue
+                    : aCell.textContent.trim();
+                const bRaw = bCell.dataset.sortValue !== undefined
+                    ? bCell.dataset.sortValue
+                    : bCell.textContent.trim();
+
+                let cmp;
+                if (type === 'num') {
+                    cmp = parseFloat(aRaw) - parseFloat(bRaw);
+                } else {
+                    cmp = aRaw.localeCompare(bRaw, undefined, { sensitivity: 'base' });
+                }
+                return currentDir === 'asc' ? cmp : -cmp;
+            });
+
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+}
+
+/* =======================================================================
+   INLINE FORM VALIDATION
+   ======================================================================= */
+function setFieldError(inputId, errorId, message) {
+    const input = document.getElementById(inputId);
+    const error = document.getElementById(errorId);
+    if (!input || !error) return;
+    error.textContent = message;
+    if (message) {
+        input.classList.add('is-invalid');
+    } else {
+        input.classList.remove('is-invalid');
+    }
+}
+
+function clearFieldError(inputId, errorId) {
+    setFieldError(inputId, errorId, '');
+}
+
+function initInlineValidation() {
+    /* Login form */
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', function(e) {
+            let valid = true;
+            const username = document.getElementById('loginUsername');
+            const password = document.getElementById('loginPassword');
+
+            if (!username || !username.value.trim()) {
+                setFieldError('loginUsername', 'loginUsernameError', 'Inserisci il tuo username.');
+                valid = false;
+            } else {
+                clearFieldError('loginUsername', 'loginUsernameError');
+            }
+
+            if (!password || !password.value) {
+                setFieldError('loginPassword', 'loginPasswordError', 'Inserisci la tua password.');
+                valid = false;
+            } else {
+                clearFieldError('loginPassword', 'loginPasswordError');
+            }
+
+            if (!valid) e.preventDefault();
+        });
+
+        // Clear errors on input
+        ['loginUsername', 'loginPassword'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', () => clearFieldError(id, id + 'Error'));
+        });
+    }
+
+    /* Register form */
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', function(e) {
+            let valid = true;
+
+            const username = document.getElementById('registerUsername');
+            if (!username || username.value.trim().length < 3) {
+                setFieldError('registerUsername', 'registerUsernameError', 'L\'username deve avere almeno 3 caratteri.');
+                valid = false;
+            } else {
+                clearFieldError('registerUsername', 'registerUsernameError');
+            }
+
+            const email = document.getElementById('registerEmail');
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
+                setFieldError('registerEmail', 'registerEmailError', 'Inserisci un indirizzo email valido.');
+                valid = false;
+            } else {
+                clearFieldError('registerEmail', 'registerEmailError');
+            }
+
+            const password = document.getElementById('registerPassword');
+            if (!password || password.value.length < 6) {
+                setFieldError('registerPassword', 'registerPasswordError', 'La password deve avere almeno 6 caratteri.');
+                valid = false;
+            } else {
+                clearFieldError('registerPassword', 'registerPasswordError');
+            }
+
+            const terms = document.getElementById('agreeTerms');
+            if (!terms || !terms.checked) {
+                setFieldError('agreeTerms', 'agreeTermsError', 'Devi accettare i Termini di Servizio.');
+                valid = false;
+            } else {
+                clearFieldError('agreeTerms', 'agreeTermsError');
+            }
+
+            if (!valid) e.preventDefault();
+        });
+
+        ['registerUsername', 'registerEmail', 'registerPassword'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', () => clearFieldError(id, id + 'Error'));
+        });
+    }
+}
+
+/* =======================================================================
+   PASSWORD STRENGTH METER
+   ======================================================================= */
+function calcPasswordStrength(password) {
+    let score = 0;
+    if (password.length >= 8)  score++;
+    if (password.length >= 12) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+
+    if (score <= 1) return { level: 'weak',   label: 'Debole' };
+    if (score <= 3) return { level: 'medium',  label: 'Media' };
+    return              { level: 'strong',  label: 'Forte' };
+}
+
+function initPasswordStrength() {
+    const input   = document.getElementById('registerPassword');
+    const wrapper = document.getElementById('passwordStrengthWrapper');
+    const label   = document.getElementById('passwordStrengthLabel');
+    if (!input || !wrapper || !label) return;
+
+    input.addEventListener('input', () => {
+        const val = input.value;
+        if (!val) {
+            wrapper.style.display = 'none';
+            return;
+        }
+        wrapper.style.display = 'block';
+        const { level, label: text } = calcPasswordStrength(val);
+        wrapper.className = `password-strength mt-2 strength-${level}`;
+        label.textContent = `Sicurezza: ${text}`;
+    });
+}
+
+/* =======================================================================
+   PASSWORD SHOW/HIDE TOGGLE
+   ======================================================================= */
+function initPasswordToggle() {
+    document.querySelectorAll('.btn-toggle-password').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.dataset.target;
+            const input    = document.getElementById(targetId);
+            if (!input) return;
+            input.type = input.type === 'password' ? 'text' : 'password';
+            btn.setAttribute('aria-pressed', input.type === 'text');
+        });
+    });
+}
+
+/* =======================================================================
+   FAB RESCAN — reveal on scroll
+   ======================================================================= */
+function initFab() {
+    const fab = document.getElementById('fabRescan');
+    if (!fab) return;
+
+    function checkScroll() {
+        if (window.scrollY > 200) {
+            fab.classList.add('fab-visible');
+        } else {
+            fab.classList.remove('fab-visible');
+        }
+    }
+    window.addEventListener('scroll', checkScroll, { passive: true });
+    checkScroll();
+}
 
 // Export functions for testing
 if (typeof module !== 'undefined' && module.exports) {

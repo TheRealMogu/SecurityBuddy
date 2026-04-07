@@ -15,14 +15,16 @@
                 <!-- Login/Register Tabs -->
                 <ul class="nav nav-pills nav-fill mb-4" id="authTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="login-tab" data-bs-toggle="pill" 
-                                data-bs-target="#login" type="button" role="tab">
+                        <button class="nav-link active" id="login-tab" data-bs-toggle="pill"
+                                data-bs-target="#login" type="button" role="tab"
+                                aria-controls="login" aria-selected="true">
                             Sign In
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="register-tab" data-bs-toggle="pill" 
-                                data-bs-target="#register" type="button" role="tab">
+                        <button class="nav-link" id="register-tab" data-bs-toggle="pill"
+                                data-bs-target="#register" type="button" role="tab"
+                                aria-controls="register" aria-selected="false">
                             Sign Up
                         </button>
                     </li>
@@ -30,23 +32,29 @@
 
                 <div class="tab-content" id="authTabsContent">
                     <!-- Login Form -->
-                    <div class="tab-pane fade show active" id="login" role="tabpanel">
-                        <form method="POST" action="{{ url_for('login') }}">
+                    <div class="tab-pane fade show active" id="login" role="tabpanel" aria-labelledby="login-tab">
+                        <form method="POST" action="{{ url_for('login') }}" id="loginForm" novalidate>
                             <div class="mb-3">
                                 <label for="loginUsername" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="loginUsername" 
-                                       name="username" required>
+                                <input type="text" class="form-control" id="loginUsername"
+                                       name="username" autocomplete="username" required>
+                                <div class="field-error" id="loginUsernameError"></div>
                             </div>
                             <div class="mb-3">
                                 <label for="loginPassword" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="loginPassword" 
-                                       name="password" required>
-                            </div>
-                            <div class="mb-3 form-check">
-                                <input type="checkbox" class="form-check-input" id="rememberMe">
-                                <label class="form-check-label" for="rememberMe">
-                                    Remember me
-                                </label>
+                                <div class="input-password-wrapper">
+                                    <input type="password" class="form-control" id="loginPassword"
+                                           name="password" autocomplete="current-password" required>
+                                    <button type="button" class="btn-toggle-password" aria-label="Mostra/nascondi password"
+                                            data-target="loginPassword">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                             fill="none" stroke="currentColor" stroke-width="2" class="eye-icon">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                            <circle cx="12" cy="12" r="3"></circle>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="field-error" id="loginPasswordError"></div>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">
                                 <i data-feather="log-in" class="me-2"></i>Sign In
@@ -55,29 +63,51 @@
                     </div>
 
                     <!-- Register Form -->
-                    <div class="tab-pane fade" id="register" role="tabpanel">
-                        <form method="POST" action="{{ url_for('register') }}">
+                    <div class="tab-pane fade" id="register" role="tabpanel" aria-labelledby="register-tab">
+                        <form method="POST" action="{{ url_for('register') }}" id="registerForm" novalidate>
                             <div class="mb-3">
                                 <label for="registerUsername" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="registerUsername" 
-                                       name="username" required>
+                                <input type="text" class="form-control" id="registerUsername"
+                                       name="username" autocomplete="username" required
+                                       minlength="3" maxlength="64">
+                                <div class="field-error" id="registerUsernameError"></div>
                             </div>
                             <div class="mb-3">
                                 <label for="registerEmail" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="registerEmail" 
-                                       name="email" required>
+                                <input type="email" class="form-control" id="registerEmail"
+                                       name="email" autocomplete="email" required>
+                                <div class="field-error" id="registerEmailError"></div>
                             </div>
                             <div class="mb-3">
                                 <label for="registerPassword" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="registerPassword" 
-                                       name="password" required minlength="6">
-                                <div class="form-text">Minimum 6 characters</div>
+                                <div class="input-password-wrapper">
+                                    <input type="password" class="form-control" id="registerPassword"
+                                           name="password" autocomplete="new-password"
+                                           required minlength="6">
+                                    <button type="button" class="btn-toggle-password" aria-label="Mostra/nascondi password"
+                                            data-target="registerPassword">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                             fill="none" stroke="currentColor" stroke-width="2" class="eye-icon">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                            <circle cx="12" cy="12" r="3"></circle>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <!-- Password strength meter -->
+                                <div class="password-strength mt-2" id="passwordStrengthWrapper" style="display:none;">
+                                    <div class="password-strength-bar">
+                                        <div class="password-strength-fill" id="passwordStrengthFill"></div>
+                                    </div>
+                                    <small class="password-strength-label" id="passwordStrengthLabel"></small>
+                                </div>
+                                <div class="field-error" id="registerPasswordError"></div>
                             </div>
                             <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="agreeTerms" required>
                                 <label class="form-check-label" for="agreeTerms">
                                     I agree to the Terms of Service
                                 </label>
+                                <div class="field-error" id="agreeTermsError"></div>
                             </div>
                             <button type="submit" class="btn btn-primary w-100">
                                 <i data-feather="user-plus" class="me-2"></i>Create Account
