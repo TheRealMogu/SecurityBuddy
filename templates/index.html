@@ -7,27 +7,31 @@
     <div class="container">
         <div class="row justify-content-center">
             <div class="col-lg-8 text-center">
-                <h1 class="display-4 fw-bold text-dark mb-4">
-                    Il tuo sito è sicuro? Scopriamolo insieme! 🛡️
+                <h1 class="display-4 fw-bold mb-4">
+                    Is your website secure?
                 </h1>
                 <p class="lead text-muted mb-5">
-                    Controlli automatici di sicurezza spiegati in modo semplice. 
-                    Non serve essere esperti - ti guidiamo passo dopo passo! 
+                    Instant security analysis — HTTPS, SSL, headers, cookies, ports and more.
+                    Get actionable results in seconds, no account required.
                 </p>
-                
+
                 <!-- Trust indicators -->
                 <div class="trust-indicators mb-4">
                     <span class="trust-item">
-                        <i data-feather="check-circle" class="text-success me-1"></i>
-                        <small>Gratis e veloce</small>
+                        <i data-feather="zap" class="me-1"></i>
+                        <small>Free &amp; instant</small>
                     </span>
                     <span class="trust-item">
-                        <i data-feather="shield" class="text-primary me-1"></i>
-                        <small>Spiegazioni semplici</small>
+                        <i data-feather="shield" class="me-1"></i>
+                        <small>12+ security checks</small>
                     </span>
                     <span class="trust-item">
-                        <i data-feather="users" class="text-info me-1"></i>
-                        <small>Già usato da 1000+ siti</small>
+                        <i data-feather="file-text" class="me-1"></i>
+                        <small>PDF report</small>
+                    </span>
+                    <span class="trust-item">
+                        <i data-feather="code" class="me-1"></i>
+                        <small>API &amp; CLI access</small>
                     </span>
                 </div>
                 
@@ -52,12 +56,12 @@
                                 <span class="visually-hidden">Loading...</span>
                             </div>
                             <div class="loading-text">
-                                <strong>Scanning your website...</strong>
+                                <strong>Scanning target...</strong>
                                 <div class="small text-muted mt-1" id="loadingStep">Checking connectivity...</div>
                             </div>
                         </div>
                         <div class="progress mb-3">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
                                  role="progressbar" style="width: 0%" id="progressBar"></div>
                         </div>
                     </div>
@@ -65,7 +69,7 @@
                 
                 <p class="text-muted small">
                     <i data-feather="check-circle" class="me-1"></i>
-                    Free basic scanning • No registration required
+                    Free • No registration required • Results in &lt;30 seconds
                 </p>
             </div>
         </div>
@@ -76,39 +80,52 @@
 <div class="container my-5">
     <div class="row">
         <div class="col-lg-12 text-center mb-5">
-            <h2 class="fw-bold text-dark mb-3">What We Check</h2>
-            <p class="text-muted">Comprehensive security analysis in seconds</p>
+            <h2 class="fw-bold mb-3">What We Check</h2>
+            <p class="text-muted">12+ automated security checks — results any developer or CISO can act on</p>
         </div>
     </div>
-    
+
     <div class="row g-4">
         <div class="col-md-4">
             <div class="feature-card">
-                <div class="feature-icon">
-                    <i data-feather="lock"></i>
-                </div>
-                <h5 class="fw-semibold">HTTPS & SSL</h5>
-                <p class="text-muted">Check if your site uses secure connections and valid SSL certificates.</p>
+                <div class="feature-icon"><i data-feather="lock"></i></div>
+                <h5 class="fw-semibold">HTTPS &amp; SSL</h5>
+                <p class="text-muted">Validates certificate chain, expiry, issuer and HTTP→HTTPS redirect.</p>
             </div>
         </div>
-        
         <div class="col-md-4">
             <div class="feature-card">
-                <div class="feature-icon">
-                    <i data-feather="shield"></i>
-                </div>
+                <div class="feature-icon"><i data-feather="shield"></i></div>
                 <h5 class="fw-semibold">Security Headers</h5>
-                <p class="text-muted">Verify important security headers like CSP, HSTS, and X-Frame-Options.</p>
+                <p class="text-muted">Checks CSP quality, HSTS, X-Frame-Options, Referrer-Policy and more.</p>
             </div>
         </div>
-        
         <div class="col-md-4">
             <div class="feature-card">
-                <div class="feature-icon">
-                    <i data-feather="globe"></i>
-                </div>
-                <h5 class="fw-semibold">Domain Info</h5>
-                <p class="text-muted">Get basic information about domain registration and DNS configuration.</p>
+                <div class="feature-icon"><i data-feather="cookie"></i></div>
+                <h5 class="fw-semibold">Cookie Security</h5>
+                <p class="text-muted">Detects missing HttpOnly, Secure and SameSite flags on session cookies.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon"><i data-feather="share-2"></i></div>
+                <h5 class="fw-semibold">CORS Policy</h5>
+                <p class="text-muted">Flags wildcard origins and credentials misconfigurations.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon"><i data-feather="cpu"></i></div>
+                <h5 class="fw-semibold">Tech Fingerprint</h5>
+                <p class="text-muted">Detects server software, frameworks and version disclosure in headers.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon"><i data-feather="radio"></i></div>
+                <h5 class="fw-semibold">Open Ports</h5>
+                <p class="text-muted">Scans common risky ports (21, 22, 23, 3306, 5432, 6379, 27017).</p>
             </div>
         </div>
     </div>
@@ -120,28 +137,46 @@
     <div class="container">
         <div class="row justify-content-center">
             <div class="col-lg-8 text-center">
-                <h3 class="fw-bold text-dark mb-3">Unlock Premium Features</h3>
+                <h3 class="fw-bold mb-3">Unlock Pro Features</h3>
                 <p class="text-muted mb-4">
-                    Get advanced security scanning, detailed reports, and monitoring tools.
+                    Everything teams and security-conscious companies need: deeper scanning, branded reports and continuous monitoring.
                 </p>
-                
+
                 <div class="row g-3 mb-4">
                     <div class="col-md-4">
                         <div class="premium-feature">
                             <i data-feather="file-text" class="premium-icon"></i>
-                            <span>PDF Reports</span>
+                            <span>White-label PDF Reports</span>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="premium-feature">
                             <i data-feather="calendar" class="premium-icon"></i>
-                            <span>Scheduled Scans</span>
+                            <span>Scheduled Monitoring</span>
                         </div>
                     </div>
                     <div class="col-md-4">
                         <div class="premium-feature">
                             <i data-feather="bell" class="premium-icon"></i>
-                            <span>Email Alerts</span>
+                            <span>Slack &amp; Email Alerts</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="premium-feature">
+                            <i data-feather="key" class="premium-icon"></i>
+                            <span>REST API Access</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="premium-feature">
+                            <i data-feather="terminal" class="premium-icon"></i>
+                            <span>CLI Tool</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="premium-feature">
+                            <i data-feather="git-pull-request" class="premium-icon"></i>
+                            <span>GitHub Action</span>
                         </div>
                     </div>
                 </div>
