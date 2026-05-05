@@ -1,0 +1,48 @@
+# Example: run Security Buddy on every push to main and on a weekly schedule.
+# Copy this file into your own repository's .github/workflows/ directory.
+#
+# Required secrets:
+#   SECURITY_BUDDY_API_KEY — your Pro API key from https://securitybuddy.app/api-keys
+
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'   # every Monday at 06:00 UTC
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  security-buddy:
+    name: Security Buddy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan production site
+        id: scan
+        uses: therealmogu/securitybuddy/.github/actions/security-buddy@main
+        with:
+          target: example.com            # ← replace with your domain
+          api_key: ${{ secrets.SECURITY_BUDDY_API_KEY }}
+          min_score: 70                  # fail if score drops below 70
+          fail_on_critical: 'true'
+
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: security-report.json
+          retention-days: 90
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo "Score     : ${{ steps.scan.outputs.score }}"
+          echo "Risk level: ${{ steps.scan.outputs.risk_level }}"

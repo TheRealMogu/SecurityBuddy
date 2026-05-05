@@ -1,269 +1,476 @@
 """
-PDF Report Generator for Security Buddy
+Security Buddy — PDF Report Generator
+Produces a professional, white-label-ready PDF for every scan result.
 """
 import json
-from datetime import datetime
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib.colors import HexColor
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.graphics.shapes import Drawing, Circle, Rect
-from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics import renderPDF
 import io
+from datetime import datetime
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch, mm
+from reportlab.lib.colors import HexColor, white, black
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    HRFlowable, KeepTogether,
+)
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.graphics.shapes import Drawing, String, Circle
+from reportlab.graphics import renderPDF
+
+
+# ── Colour palette ──────────────────────────────────────────────────────────
+C_BG        = HexColor('#0d0f10')
+C_SURFACE   = HexColor('#131618')
+C_PRIMARY   = HexColor('#2dd4bf')
+C_SUCCESS   = HexColor('#4ade80')
+C_WARNING   = HexColor('#fbbf24')
+C_DANGER    = HexColor('#f87171')
+C_TEXT      = HexColor('#e8eaec')
+C_MUTED     = HexColor('#8b9299')
+C_BORDER    = HexColor('#2a2f34')
+
+
+def _risk_colour(score: int) -> HexColor:
+    if score >= 80:
+        return C_SUCCESS
+    if score >= 60:
+        return C_WARNING
+    return C_DANGER
+
+
+def _risk_label(score: int) -> str:
+    if score >= 80:
+        return 'LOW'
+    if score >= 60:
+        return 'MEDIUM'
+    if score >= 40:
+        return 'HIGH'
+    return 'CRITICAL'
+
+
+def _cvss_like(score: int) -> str:
+    if score >= 80:
+        return 'None / Informational'
+    if score >= 60:
+        return 'Medium'
+    if score >= 40:
+        return 'High'
+    return 'Critical'
+
+
+def _score_gauge(score: int, size: int = 90) -> Drawing:
+    colour = _risk_colour(score)
+    d = Drawing(size, size)
+    cx, cy, r = size / 2, size / 2, size / 2 - 4
+    d.add(Circle(cx, cy, r, strokeColor=C_BORDER, strokeWidth=6, fillColor=None))
+    d.add(Circle(cx, cy, r, strokeColor=colour, strokeWidth=6, fillColor=None))
+    d.add(String(cx, cy + 4, str(score),
+                 fontName='Helvetica-Bold', fontSize=20,
+                 fillColor=colour, textAnchor='middle'))
+    d.add(String(cx, cy - 12, '/100',
+                 fontName='Helvetica', fontSize=8,
+                 fillColor=C_MUTED, textAnchor='middle'))
+    return d
+
 
 class SecurityReportPDF:
-    def __init__(self):
-        self.primary_color = HexColor('#007AFF')
-        self.success_color = HexColor('#34C759')
-        self.warning_color = HexColor('#FF9500')
-        self.danger_color = HexColor('#FF3B30')
-        
-    def generate_report(self, scan_result, user_info=None):
-        """Generate a professional PDF report from scan results"""
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, 
-                              rightMargin=72, leftMargin=72,
-                              topMargin=72, bottomMargin=18)
-        
-        # Parse results if it's a string
-        if isinstance(scan_result.results, str):
-            results = json.loads(scan_result.results)
-        else:
-            results = scan_result.results
-        
-        story = []
-        styles = getSampleStyleSheet()
-        
-        # Custom styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            spaceAfter=30,
-            textColor=self.primary_color,
-            alignment=TA_CENTER
-        )
-        
-        subtitle_style = ParagraphStyle(
-            'CustomSubtitle',
-            parent=styles['Heading2'],
-            fontSize=16,
-            spaceAfter=12,
-            textColor=self.primary_color
-        )
-        
-        # Title
-        story.append(Paragraph("Security Analysis Report", title_style))
-        story.append(Spacer(1, 20))
-        
-        # Executive Summary
-        score = results.get('overall_score', 0)
-        risk_level = results.get('risk_level', 'unknown')
-        
-        summary_data = [
-            ['Target:', scan_result.target],
-            ['Scan Date:', scan_result.created_at.strftime('%Y-%m-%d %H:%M UTC')],
-            ['Security Score:', f"{score}/100"],
-            ['Risk Level:', risk_level.title()],
-        ]
-        
-        if user_info:
-            summary_data.insert(0, ['Organization:', user_info.get('organization', 'N/A')])
-        
-        summary_table = Table(summary_data, colWidths=[2*inch, 3*inch])
-        summary_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), HexColor('#F5F7FA')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), HexColor('#1D2B36')),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 12),
-            ('GRID', (0, 0), (-1, -1), 1, HexColor('#E2E5E9')),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ROWBACKGROUNDS', (0, 0), (-1, -1), [HexColor('#FFFFFF'), HexColor('#F5F7FA')])
-        ]))
-        
-        story.append(summary_table)
-        story.append(Spacer(1, 30))
-        
-        # Risk Assessment
-        story.append(Paragraph("Risk Assessment", subtitle_style))
-        
-        risk_color = self._get_risk_color(score)
-        risk_text = self._get_risk_description(score, risk_level)
-        
-        story.append(Paragraph(risk_text, styles['Normal']))
-        story.append(Spacer(1, 20))
-        
-        # Detailed Findings
-        story.append(Paragraph("Detailed Security Analysis", subtitle_style))
-        
-        checks = results.get('checks', {})
-        
-        # HTTPS Analysis
-        if 'https' in checks:
-            story.extend(self._create_check_section("HTTPS Security", checks['https']))
-        
-        # SSL Certificate
-        if 'ssl' in checks:
-            story.extend(self._create_check_section("SSL Certificate", checks['ssl']))
-        
-        # Security Headers
-        if 'headers' in checks:
-            story.extend(self._create_check_section("Security Headers", checks['headers']))
-        
-        # Domain Information
-        if 'domain_info' in checks:
-            story.extend(self._create_check_section("Domain Information", checks['domain_info']))
-        
-        # Recommendations
-        story.append(Paragraph("Security Recommendations", subtitle_style))
-        recommendations = self._generate_recommendations(checks, score)
-        
-        for i, rec in enumerate(recommendations, 1):
-            story.append(Paragraph(f"{i}. {rec}", styles['Normal']))
-            story.append(Spacer(1, 6))
-        
-        story.append(Spacer(1, 30))
-        
-        # Footer
-        footer_style = ParagraphStyle(
-            'Footer',
-            parent=styles['Normal'],
-            fontSize=10,
-            textColor=HexColor('#8E95A9'),
-            alignment=TA_CENTER
-        )
-        
-        story.append(Paragraph(
-            "Generated by Security Buddy - Professional Web Security Scanner<br/>For more information, visit securitybuddy.app",
-            footer_style
-        ))
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
-    
-    def _get_risk_color(self, score):
-        """Get color based on security score"""
-        if score >= 80:
-            return self.success_color
-        elif score >= 60:
-            return self.warning_color
-        else:
-            return self.danger_color
-    
-    def _get_risk_description(self, score, risk_level):
-        """Get risk description based on score"""
-        descriptions = {
-            'low': "Your website demonstrates good security practices with minimal vulnerabilities detected.",
-            'medium': "Your website has moderate security with some areas that need attention.",
-            'high': "Several security issues were identified that should be addressed promptly.",
-            'critical': "Critical security vulnerabilities detected requiring immediate attention."
+
+    def __init__(self, brand_name: str = 'Security Buddy', brand_color: HexColor = None):
+        self.brand_name  = brand_name
+        self.brand_color = brand_color or C_PRIMARY
+        self._init_styles()
+
+    def _init_styles(self):
+        base = getSampleStyleSheet()
+
+        def P(name, **kw):
+            return ParagraphStyle(name, parent=base['Normal'], **kw)
+
+        self.s = {
+            'title':       P('rTitle', fontSize=22, fontName='Helvetica-Bold',
+                              textColor=C_TEXT, spaceAfter=4),
+            'subtitle':    P('rSubtitle', fontSize=11, textColor=C_MUTED, spaceAfter=20),
+            'section':     P('rSection', fontSize=13, fontName='Helvetica-Bold',
+                              textColor=self.brand_color, spaceBefore=16, spaceAfter=6),
+            'body':        P('rBody', fontSize=10, textColor=C_TEXT, leading=15, spaceAfter=6),
+            'small':       P('rSmall', fontSize=8.5, textColor=C_MUTED, leading=13),
+            'code':        P('rCode', fontSize=8.5, fontName='Courier',
+                              textColor=C_PRIMARY, leading=14),
+            'finding_ok':  P('rOk',   fontSize=10, textColor=C_SUCCESS),
+            'finding_warn':P('rWarn', fontSize=10, textColor=C_WARNING),
+            'finding_err': P('rErr',  fontSize=10, textColor=C_DANGER),
+            'center':      P('rCenter', fontSize=10, textColor=C_TEXT, alignment=TA_CENTER),
         }
-        return descriptions.get(risk_level, "Security assessment completed.")
-    
-    def _create_check_section(self, title, check_data):
-        """Create a section for each security check"""
-        story = []
-        styles = getSampleStyleSheet()
-        
-        section_style = ParagraphStyle(
-            'SectionTitle',
-            parent=styles['Heading3'],
-            fontSize=14,
-            spaceAfter=8,
-            spaceBefore=16,
-            textColor=self.primary_color
+
+    # ── Public entry point ───────────────────────────────────────────────────
+    def generate_report(self, scan_result, user_info: dict = None) -> io.BytesIO:
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=A4,
+            rightMargin=18 * mm, leftMargin=18 * mm,
+            topMargin=20 * mm, bottomMargin=20 * mm,
+            title=f'Security Report — {scan_result.target}',
+            author=self.brand_name,
         )
-        
-        story.append(Paragraph(title, section_style))
-        
-        # Create findings table
-        findings = []
-        
-        if isinstance(check_data, dict):
-            score = check_data.get('score', 0)
-            issues = check_data.get('issues', [])
-            
-            if title == "HTTPS Security":
-                findings.append(['HTTPS Available:', '✓' if check_data.get('https_available') else '✗'])
-                findings.append(['HTTP Redirects to HTTPS:', '✓' if check_data.get('redirects_to_https') else '✗'])
-            
-            elif title == "SSL Certificate":
-                findings.append(['Certificate Valid:', '✓' if check_data.get('valid') else '✗'])
-                if check_data.get('days_until_expiry'):
-                    findings.append(['Days Until Expiry:', str(check_data.get('days_until_expiry'))])
-                if check_data.get('issuer'):
-                    findings.append(['Certificate Issuer:', check_data.get('issuer')])
-            
-            elif title == "Security Headers":
-                headers_found = check_data.get('headers_found', [])
-                headers_missing = check_data.get('headers_missing', [])
-                findings.append(['Headers Found:', str(len(headers_found))])
-                findings.append(['Headers Missing:', str(len(headers_missing))])
-                
-                if headers_missing:
-                    for header in headers_missing[:3]:  # Show first 3 missing headers
-                        findings.append(['Missing:', header])
-            
-            # Add issues if any
-            if issues:
-                for issue in issues[:3]:  # Show first 3 issues
-                    findings.append(['Issue:', issue])
-        
-        if findings:
-            findings_table = Table(findings, colWidths=[2*inch, 3*inch])
-            findings_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#E2E5E9')),
-            ]))
-            story.append(findings_table)
-        
-        story.append(Spacer(1, 12))
+
+        results = (
+            json.loads(scan_result.results)
+            if isinstance(scan_result.results, str)
+            else scan_result.results
+        )
+        score     = results.get('overall_score', 0)
+        risk      = results.get('risk_level', 'unknown')
+        checks    = results.get('checks', {})
+        scan_date = scan_result.created_at.strftime('%Y-%m-%d %H:%M UTC')
+        org       = (user_info or {}).get('organization', '')
+
+        story = []
+        story += self._cover(scan_result.target, score, risk, scan_date, org)
+        story += self._executive_summary(score, risk, checks)
+        story += self._findings_table(checks)
+        story += self._detailed_findings(checks)
+        story += self._remediation_plan(checks, score)
+        story += self._footer_note()
+
+        doc.build(story, onFirstPage=self._page_template, onLaterPages=self._page_template)
+        buf.seek(0)
+        return buf
+
+    # ── Cover ────────────────────────────────────────────────────────────────
+    def _cover(self, target, score, risk, scan_date, org):
+        colour = _risk_colour(score)
+        story  = []
+
+        bar_data = [[
+            Paragraph(
+                f'<b>{self.brand_name}</b><br/>'
+                f'<font size="9" color="#8b9299">Security Analysis Report</font>',
+                self.s['body'],
+            ),
+            Paragraph(
+                f'<font size="9" color="#8b9299">{scan_date}</font>',
+                ParagraphStyle('rR', parent=self.s['body'], alignment=TA_RIGHT),
+            ),
+        ]]
+        bar_tbl = Table(bar_data, colWidths=['*', '*'])
+        bar_tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), C_SURFACE),
+            ('TOPPADDING',    (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
+            ('LINEBELOW',     (0, 0), (-1, -1), 1, C_BORDER),
+        ]))
+        story.append(bar_tbl)
+        story.append(Spacer(1, 20))
+
+        gauge = _score_gauge(score, 90)
+        left_rows = []
+        if org:
+            left_rows.append([Paragraph(f'Organization: {org}', self.s['small'])])
+        left_rows += [
+            [Paragraph('Target', self.s['small'])],
+            [Paragraph(f'<b>{target}</b>', self.s['title'])],
+            [Spacer(1, 6)],
+            [Paragraph(
+                f'Risk Level: <b><font color="#{colour.hexval()}">{_risk_label(score)}</font></b>',
+                self.s['body'],
+            )],
+            [Paragraph(f'Severity: {_cvss_like(score)}', self.s['small'])],
+        ]
+        left_tbl = Table(left_rows, colWidths=['*'])
+        left_tbl.setStyle(TableStyle([
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+
+        cover_tbl = Table([[left_tbl, gauge]], colWidths=['*', 100])
+        cover_tbl.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+            ('BACKGROUND',    (0, 0), (-1, -1), C_SURFACE),
+            ('BOX',           (0, 0), (-1, -1), 1, C_BORDER),
+            ('TOPPADDING',    (0, 0), (-1, -1), 14),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 14),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 14),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 14),
+        ]))
+        story.append(cover_tbl)
+        story.append(Spacer(1, 24))
         return story
-    
-    def _generate_recommendations(self, checks, score):
-        """Generate security recommendations based on findings"""
-        recommendations = []
-        
-        # HTTPS recommendations
-        https_data = checks.get('https', {})
-        if not https_data.get('https_available'):
-            recommendations.append("Enable HTTPS encryption to protect data in transit")
-        if not https_data.get('redirects_to_https'):
-            recommendations.append("Configure automatic HTTP to HTTPS redirects")
-        
-        # SSL recommendations
-        ssl_data = checks.get('ssl', {})
-        if ssl_data.get('expires_soon'):
-            recommendations.append("Renew SSL certificate before expiration")
-        if not ssl_data.get('valid'):
-            recommendations.append("Fix SSL certificate configuration issues")
-        
-        # Headers recommendations
-        headers_data = checks.get('headers', {})
-        missing_headers = headers_data.get('headers_missing', [])
+
+    # ── Executive Summary ────────────────────────────────────────────────────
+    def _executive_summary(self, score, risk, checks):
+        story = [Paragraph('Executive Summary', self.s['section'])]
+        descriptions = {
+            'low':      'The target demonstrates strong security posture. All critical controls are in place. '
+                        'Continue routine monitoring and address informational findings as capacity allows.',
+            'medium':   'The target has adequate baseline security but several controls are missing or misconfigured. '
+                        'Address the medium-severity findings within 30 days to reduce exposure.',
+            'high':     'Multiple high-severity security controls are absent. Exploitation is plausible without '
+                        'specialized access. Remediation within 7–14 days is recommended.',
+            'critical': 'Critical vulnerabilities were detected that significantly increase the risk of compromise. '
+                        'Immediate remediation is required — begin within 48 hours.',
+        }
+        story.append(Paragraph(descriptions.get(risk, 'Security assessment completed.'), self.s['body']))
+        story.append(Spacer(1, 6))
+        total_issues = sum(len(c.get('issues', [])) for c in checks.values() if isinstance(c, dict))
+        story.append(Paragraph(
+            f'Total findings: <b>{total_issues}</b> &nbsp;|&nbsp; Score: <b>{score}/100</b>',
+            self.s['small'],
+        ))
+        story.append(Spacer(1, 6))
+        return story
+
+    # ── Findings Table ───────────────────────────────────────────────────────
+    def _findings_table(self, checks):
+        story = [Paragraph('Findings Overview', self.s['section'])]
+
+        CHECK_META = {
+            'connectivity': ('Connectivity',       'Reachability of target'),
+            'https':        ('HTTPS & Redirect',   'Encryption in transit'),
+            'ssl':          ('SSL Certificate',    'Certificate validity & expiry'),
+            'headers':      ('Security Headers',   'Browser security policy headers'),
+            'cookies':      ('Cookie Security',    'HttpOnly / Secure / SameSite flags'),
+            'cors':         ('CORS Policy',        'Cross-origin access control'),
+            'http_methods': ('HTTP Methods',       'Exposed dangerous HTTP verbs'),
+            'tech':         ('Tech Fingerprint',   'Version disclosure in headers'),
+            'ports':        ('Open Ports',         'Publicly reachable risky ports'),
+            'domain_info':  ('Domain Info',        'DNS resolution & IP mapping'),
+        }
+
+        rows = [[
+            Paragraph('<b>Check</b>',       self.s['small']),
+            Paragraph('<b>Description</b>', self.s['small']),
+            Paragraph('<b>Issues</b>',      self.s['small']),
+            Paragraph('<b>Status</b>',      self.s['small']),
+        ]]
+
+        for key, (name, desc) in CHECK_META.items():
+            check = checks.get(key)
+            if check is None:
+                continue
+            issues = check.get('issues', []) if isinstance(check, dict) else []
+            n = len(issues)
+            if n == 0:
+                status_p = Paragraph('✓ Pass', self.s['finding_ok'])
+            elif n <= 2:
+                status_p = Paragraph('⚠ Warn', self.s['finding_warn'])
+            else:
+                status_p = Paragraph('✗ Fail', self.s['finding_err'])
+
+            rows.append([
+                Paragraph(name,   self.s['body']),
+                Paragraph(desc,   self.s['small']),
+                Paragraph(str(n), self.s['center']),
+                status_p,
+            ])
+
+        tbl = Table(rows, colWidths=[110, '*', 35, 55])
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, 0),  C_SURFACE),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [HexColor('#0f1214'), C_SURFACE]),
+            ('GRID',          (0, 0), (-1, -1), 0.5, C_BORDER),
+            ('TOPPADDING',    (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+            ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 16))
+        return story
+
+    # ── Detailed Findings ────────────────────────────────────────────────────
+    def _detailed_findings(self, checks):
+        story = [Paragraph('Detailed Findings', self.s['section'])]
+
+        sections = [
+            ('https',        'HTTPS & Redirect'),
+            ('ssl',          'SSL Certificate'),
+            ('headers',      'Security Headers'),
+            ('cookies',      'Cookie Security'),
+            ('cors',         'CORS Policy'),
+            ('http_methods', 'HTTP Methods'),
+            ('tech',         'Technology Fingerprint'),
+            ('ports',        'Open Ports'),
+        ]
+
+        label_style = ParagraphStyle(
+            'fLabel', parent=self.s['body'],
+            fontName='Helvetica-Bold', textColor=C_TEXT,
+            spaceBefore=10, spaceAfter=4,
+        )
+
+        for key, label in sections:
+            check = checks.get(key)
+            if not check or not isinstance(check, dict):
+                continue
+            issues = check.get('issues', [])
+
+            block = [
+                Paragraph(label, label_style),
+                HRFlowable(width='100%', thickness=0.5, color=C_BORDER, spaceAfter=4),
+            ]
+
+            if not issues:
+                block.append(Paragraph('✓ No issues found.', self.s['finding_ok']))
+            else:
+                for issue in issues:
+                    block.append(Paragraph(f'• {issue}', self.s['finding_err']))
+
+            # Extra per-check details
+            if key == 'headers':
+                found   = check.get('headers_found', [])
+                missing = check.get('headers_missing', [])
+                if found:
+                    block.append(Paragraph(
+                        'Present: ' + ', '.join(h['name'] for h in found),
+                        self.s['small'],
+                    ))
+                if missing:
+                    block.append(Paragraph(
+                        'Missing: ' + ', '.join(missing),
+                        ParagraphStyle('ms', parent=self.s['small'], textColor=C_WARNING),
+                    ))
+                csp_q = check.get('csp_quality')
+                if csp_q:
+                    block.append(Paragraph(
+                        f'CSP quality: {csp_q["rating"].upper()}' +
+                        (f' — {"; ".join(csp_q["issues"])}' if csp_q['issues'] else ''),
+                        self.s['small'],
+                    ))
+
+            elif key == 'cookies':
+                for c in check.get('insecure_cookies', []):
+                    block.append(Paragraph(
+                        f'  Cookie "{c["name"]}" — missing: {", ".join(c["missing_flags"])}',
+                        self.s['small'],
+                    ))
+
+            elif key == 'ports':
+                for p in check.get('open_ports', []):
+                    block.append(Paragraph(
+                        f'  Port {p["port"]}: {p["description"]}',
+                        self.s['small'],
+                    ))
+
+            story.append(KeepTogether(block))
+
+        story.append(Spacer(1, 10))
+        return story
+
+    # ── Remediation Plan ─────────────────────────────────────────────────────
+    def _remediation_plan(self, checks, score):
+        story = [Paragraph('Remediation Plan', self.s['section'])]
+        items = []
+
+        https = checks.get('https', {})
+        if not https.get('https_available'):
+            items.append(('[CRITICAL]', 'Enable HTTPS',
+                          "Obtain a TLS certificate (free via Let's Encrypt) and configure port 443. "
+                          'Most hosting panels offer one-click HTTPS activation.'))
+        if not https.get('redirects_to_https'):
+            items.append(('[HIGH]', 'Enforce HTTPS redirect',
+                          'Apache .htaccess: <font name="Courier">Redirect 301 / https://yourdomain.com/</font> — '
+                          'Nginx: <font name="Courier">return 301 https://$host$request_uri;</font>'))
+
+        ssl = checks.get('ssl', {})
+        if ssl.get('expires_soon'):
+            items.append(('[HIGH]', 'Renew SSL certificate',
+                          f'Certificate expires in {ssl.get("days_until_expiry", "?")} days. '
+                          'Run: <font name="Courier">certbot renew</font>'))
+        if not ssl.get('valid'):
+            items.append(('[CRITICAL]', 'Fix SSL certificate',
+                          'Replace self-signed or expired certificate with a CA-signed one.'))
+
+        cors = checks.get('cors', {})
+        if cors.get('credentials_with_wildcard'):
+            items.append(('[CRITICAL]', 'Fix CORS misconfiguration',
+                          'Remove wildcard origin or disable credentials: replace '
+                          '<font name="Courier">Access-Control-Allow-Origin: *</font> with an explicit origin.'))
+        elif cors.get('wildcard_origin'):
+            items.append(('[MEDIUM]', 'Restrict CORS origin',
+                          'Replace <font name="Courier">Access-Control-Allow-Origin: *</font> '
+                          'with <font name="Courier">Access-Control-Allow-Origin: https://your-app.com</font>'))
+
+        missing_headers = checks.get('headers', {}).get('headers_missing', [])
         if 'Strict-Transport-Security' in missing_headers:
-            recommendations.append("Implement HSTS (HTTP Strict Transport Security) header")
+            items.append(('[HIGH]', 'Add HSTS header',
+                          '<font name="Courier">Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</font>'))
         if 'Content-Security-Policy' in missing_headers:
-            recommendations.append("Add Content Security Policy to prevent XSS attacks")
+            items.append(('[HIGH]', 'Add Content-Security-Policy',
+                          'Start strict: <font name="Courier">Content-Security-Policy: default-src \'self\'</font> '
+                          'then progressively allow required sources.'))
         if 'X-Frame-Options' in missing_headers:
-            recommendations.append("Configure X-Frame-Options to prevent clickjacking")
-        
-        # General recommendations based on score
-        if score < 60:
-            recommendations.append("Consider a comprehensive security audit")
-            recommendations.append("Implement a Web Application Firewall (WAF)")
-        
-        if not recommendations:
-            recommendations.append("Your website demonstrates good security practices. Continue monitoring regularly.")
-        
-        return recommendations[:5]  # Return top 5 recommendations
+            items.append(('[MEDIUM]', 'Add X-Frame-Options',
+                          '<font name="Courier">X-Frame-Options: SAMEORIGIN</font>'))
+        if 'X-Content-Type-Options' in missing_headers:
+            items.append(('[MEDIUM]', 'Add X-Content-Type-Options',
+                          '<font name="Courier">X-Content-Type-Options: nosniff</font>'))
+
+        if checks.get('cookies', {}).get('insecure_cookies'):
+            items.append(('[MEDIUM]', 'Fix cookie flags',
+                          'Set all auth cookies: '
+                          '<font name="Courier">Set-Cookie: name=value; Secure; HttpOnly; SameSite=Lax</font>'))
+
+        if checks.get('tech', {}).get('version_disclosed'):
+            items.append(('[LOW]', 'Remove version disclosure',
+                          'Nginx: <font name="Courier">server_tokens off;</font> — '
+                          'Apache: <font name="Courier">ServerTokens Prod</font>'))
+
+        open_ports = checks.get('ports', {}).get('open_ports', [])
+        if open_ports:
+            ports_str = ', '.join(str(p['port']) for p in open_ports)
+            items.append(('[MEDIUM]', f'Close unnecessary ports ({ports_str})',
+                          f'Example: <font name="Courier">ufw deny {open_ports[0]["port"]}</font>'))
+
+        if not items:
+            story.append(Paragraph('✓ No remediation required. Continue monitoring.', self.s['finding_ok']))
+        else:
+            for i, (priority, title, detail) in enumerate(items, 1):
+                col = (C_DANGER if 'CRITICAL' in priority
+                       else C_WARNING if 'HIGH' in priority
+                       else C_MUTED)
+                row_tbl = Table([[
+                    Paragraph(f'<b>{i}</b>', self.s['center']),
+                    Paragraph(f'<font color="#{col.hexval()}"><b>{priority}</b></font>', self.s['small']),
+                    [Paragraph(f'<b>{title}</b>', self.s['body']),
+                     Paragraph(detail, self.s['small'])],
+                ]], colWidths=[20, 65, '*'])
+                row_tbl.setStyle(TableStyle([
+                    ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+                    ('TOPPADDING',    (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+                    ('BACKGROUND',    (0, 0), (-1, -1),
+                     C_SURFACE if i % 2 else HexColor('#0f1214')),
+                    ('LINEBELOW',     (0, 0), (-1, -1), 0.5, C_BORDER),
+                ]))
+                story.append(row_tbl)
+
+        story.append(Spacer(1, 16))
+        return story
+
+    # ── Footer note ──────────────────────────────────────────────────────────
+    def _footer_note(self):
+        return [
+            HRFlowable(width='100%', thickness=0.5, color=C_BORDER, spaceBefore=10, spaceAfter=8),
+            Paragraph(
+                f'Generated by {self.brand_name} — automated security analysis. '
+                'This report is a point-in-time snapshot and does not replace a manual penetration test.',
+                self.s['small'],
+            ),
+        ]
+
+    # ── Page background & numbering ──────────────────────────────────────────
+    def _page_template(self, canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(C_BG)
+        canvas.rect(0, 0, A4[0], A4[1], fill=1, stroke=0)
+        canvas.setFillColor(self.brand_color)
+        canvas.rect(0, A4[1] - 3, A4[0], 3, fill=1, stroke=0)
+        canvas.setFillColor(C_MUTED)
+        canvas.setFont('Helvetica', 8)
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f'Page {doc.page}')
+        canvas.restoreState()

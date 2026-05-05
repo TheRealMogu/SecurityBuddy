@@ -1,8 +1,15 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
-description = "Add your description here"
+name = "securitybuddy"
+version = "2.0.0"
+description = "Automated web security scanner — CLI, API and web interface"
 requires-python = ">=3.11"
+
+[project.scripts]
+securitybuddy = "cli:main"
+
+[project.urls]
+Homepage = "https://securitybuddy.app"
+Repository = "https://github.com/therealmogu/securitybuddy"
 dependencies = [
     "email-validator>=2.2.0",
     "flask-dance>=7.1.0",

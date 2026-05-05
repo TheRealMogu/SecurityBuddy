@@ -360,8 +360,8 @@ function initializeUserGuidance() {
                 helpText.innerHTML = `
                     <small class="text-muted">
                         <i data-feather="help-circle" style="width: 14px; height: 14px;"></i>
-                        <strong>Esempi:</strong> miosito.com, negozio.it, blog.wordpress.com
-                        <br>💡 <strong>Suggerimento:</strong> Non serve scrivere "www" o "https://"
+                        <strong>Examples:</strong> example.com, shop.acme.io, 192.168.1.1
+                        &nbsp;—&nbsp; no need to type <code>www</code> or <code>https://</code>
                     </small>
                 `;
                 targetInput.parentNode.appendChild(helpText);
@@ -378,24 +378,7 @@ function initializeUserGuidance() {
  * Add encouraging messages throughout the interface
  */
 function addEncouragingMessages() {
-    const scoreElements = document.querySelectorAll('.score-value');
-    scoreElements.forEach(scoreEl => {
-        const score = parseInt(scoreEl.textContent);
-        const encouragement = document.createElement('div');
-        encouragement.className = 'encouragement-message mt-1';
-        
-        if (score >= 90) {
-            encouragement.innerHTML = '<small class="text-success">🌟 Fantastico!</small>';
-        } else if (score >= 70) {
-            encouragement.innerHTML = '<small class="text-info">👍 Ottimo lavoro!</small>';
-        } else if (score >= 50) {
-            encouragement.innerHTML = '<small class="text-warning">💪 Quasi perfetto!</small>';
-        } else {
-            encouragement.innerHTML = '<small class="text-primary">🚀 Ti aiutiamo noi!</small>';
-        }
-        
-        scoreEl.parentNode.appendChild(encouragement);
-    });
+    // no-op: score ring handles visual feedback
 }
 
 /**
@@ -421,26 +404,26 @@ function startTutorial() {
     const tutorialSteps = [
         {
             target: '#scanForm',
-            title: 'Benvenuto in Security Buddy! 👋',
-            content: 'Ti aiuteremo a controllare quanto è sicuro il tuo sito web, spiegandoti tutto in modo semplice!',
+            title: 'Welcome to Security Buddy',
+            content: 'Run instant security checks on any domain or IP — no account required.',
             position: 'bottom'
         },
         {
             target: '#targetInput',
-            title: 'Inserisci il tuo sito 🌐',
-            content: 'Scrivi l\'indirizzo del tuo sito qui. Ad esempio: "miosito.com" (senza www o https)',
+            title: 'Enter a target',
+            content: 'Type a domain (e.g. example.com) or IP address. No need for https:// or www.',
             position: 'bottom'
         },
         {
             target: '#scanButton',
-            title: 'Avvia la scansione 🔍',
-            content: 'Clicca qui e noi controlleremo tutto per te! Ti spiegheremo ogni risultato in parole semplici.',
+            title: 'Run the scan',
+            content: 'Click to start 12+ automated security checks. Results are ready in under 30 seconds.',
             position: 'bottom'
         },
         {
             target: '.feature-card',
-            title: 'Cosa controlliamo 📋',
-            content: 'Verifichiamo che il tuo sito sia sicuro per te e per i tuoi visitatori. Non serve essere esperti!',
+            title: 'What we check',
+            content: 'HTTPS, SSL, headers, cookies, CORS, open ports, tech fingerprinting and more.',
             position: 'top'
         }
     ];
@@ -491,9 +474,7 @@ function startTutorial() {
             el.classList.remove('tutorial-highlight');
         });
         localStorage.setItem('security_buddy_tutorial_completed', 'true');
-        
-        // Show completion message
-        showAlert('Perfetto! Ora sei pronto per controllare la sicurezza del tuo sito! 🎉', 'success');
+        showAlert('You\'re all set — enter a domain and start scanning!', 'success');
     }
 
     showStep(0);
@@ -575,7 +556,7 @@ function addTutorialButton() {
         tutorialBtn.className = 'nav-item tutorial-trigger';
         tutorialBtn.innerHTML = `
             <a class="nav-link" href="#" onclick="startTutorial(); return false;">
-                <i data-feather="help-circle" class="me-1"></i>Tutorial
+                <i data-feather="help-circle" class="me-1"></i>Help
             </a>
         `;
         nav.appendChild(tutorialBtn);
@@ -588,12 +569,11 @@ function addTutorialButton() {
  */
 function addSecurityTooltips() {
     const securityTerms = {
-        'HTTPS': 'Connessione sicura che protegge i dati',
-        'SSL': 'Certificato che verifica l\'identità del sito',
-        'Headers': 'Regole di sicurezza per il browser',
-        'Certificate': 'Documento digitale di identità',
-        'Vulnerability': 'Punto debole che va sistemato',
-        'Encryption': 'Codifica dei dati per proteggerli'
+        'HSTS': 'HTTP Strict Transport Security — forces browsers to use HTTPS',
+        'CSP': 'Content Security Policy — prevents XSS and injection attacks',
+        'CORS': 'Cross-Origin Resource Sharing — controls which origins can call your API',
+        'HttpOnly': 'Prevents JavaScript from reading the cookie — blocks XSS cookie theft',
+        'SameSite': 'Protects against CSRF attacks by restricting cross-site cookie sending'
     };
 
     // Find and enhance security terms
@@ -619,7 +599,7 @@ function improveAccessibility() {
     // Add ARIA labels for screen readers
     document.querySelectorAll('.security-score').forEach(scoreEl => {
         const score = scoreEl.textContent;
-        scoreEl.setAttribute('aria-label', `Punteggio di sicurezza: ${score} su 100`);
+        scoreEl.setAttribute('aria-label', `Security score: ${score} out of 100`);
     });
 
     // Add keyboard navigation for tooltips
@@ -642,7 +622,7 @@ function improveAccessibility() {
         const helpDesc = document.createElement('div');
         helpDesc.id = 'target-help';
         helpDesc.className = 'sr-only';
-        helpDesc.textContent = 'Inserisci l\'indirizzo del tuo sito web da controllare, ad esempio miosito.com';
+        helpDesc.textContent = 'Enter the domain or IP address to scan, e.g. example.com';
         targetInput.parentNode.appendChild(helpDesc);
     }
 }
@@ -661,16 +641,16 @@ function showScanProgress() {
     // Show loading indicator and disable button
     loadingIndicator.style.display = 'block';
     scanButton.disabled = true;
-    scanButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Analizzando...';
-    
-    // User-friendly progress steps
+    scanButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Scanning...';
+
     const steps = [
-        { text: '🌐 Mi sto collegando al tuo sito...', progress: 15 },
-        { text: '🔒 Controllo se i dati sono protetti...', progress: 35 },
-        { text: '🆔 Verifico l\'identità del sito...', progress: 55 },
-        { text: '🛡️ Analizzo le protezioni di sicurezza...', progress: 75 },
-        { text: '📊 Calcolo il punteggio finale...', progress: 90 },
-        { text: '✅ Quasi pronto!', progress: 100 }
+        { text: 'Checking connectivity...', progress: 12 },
+        { text: 'Verifying HTTPS & SSL certificate...', progress: 28 },
+        { text: 'Checking security headers...', progress: 44 },
+        { text: 'Auditing cookie flags...', progress: 58 },
+        { text: 'Analysing CORS & HTTP methods...', progress: 72 },
+        { text: 'Scanning open ports...', progress: 86 },
+        { text: 'Calculating security score...', progress: 100 }
     ];
     
     let currentStep = 0;
@@ -748,7 +728,7 @@ function showToast(category, message) {
       <div class="app-toast-body">
         <span class="app-toast-icon">${icon}</span>
         <span class="app-toast-text">${message}</span>
-        <button class="app-toast-close" aria-label="Chiudi">×</button>
+        <button class="app-toast-close" aria-label="Close">×</button>
       </div>
       <div class="app-toast-progress" style="animation-duration:${TOAST_DURATION}ms;"></div>`;
 
@@ -905,14 +885,14 @@ function initInlineValidation() {
             const password = document.getElementById('loginPassword');
 
             if (!username || !username.value.trim()) {
-                setFieldError('loginUsername', 'loginUsernameError', 'Inserisci il tuo username.');
+                setFieldError('loginUsername', 'loginUsernameError', 'Please enter your username.');
                 valid = false;
             } else {
                 clearFieldError('loginUsername', 'loginUsernameError');
             }
 
             if (!password || !password.value) {
-                setFieldError('loginPassword', 'loginPasswordError', 'Inserisci la tua password.');
+                setFieldError('loginPassword', 'loginPasswordError', 'Please enter your password.');
                 valid = false;
             } else {
                 clearFieldError('loginPassword', 'loginPasswordError');
@@ -936,7 +916,7 @@ function initInlineValidation() {
 
             const username = document.getElementById('registerUsername');
             if (!username || username.value.trim().length < 3) {
-                setFieldError('registerUsername', 'registerUsernameError', 'L\'username deve avere almeno 3 caratteri.');
+                setFieldError('registerUsername', 'registerUsernameError', 'Username must be at least 3 characters.');
                 valid = false;
             } else {
                 clearFieldError('registerUsername', 'registerUsernameError');
@@ -944,7 +924,7 @@ function initInlineValidation() {
 
             const email = document.getElementById('registerEmail');
             if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
-                setFieldError('registerEmail', 'registerEmailError', 'Inserisci un indirizzo email valido.');
+                setFieldError('registerEmail', 'registerEmailError', 'Please enter a valid email address.');
                 valid = false;
             } else {
                 clearFieldError('registerEmail', 'registerEmailError');
@@ -952,7 +932,7 @@ function initInlineValidation() {
 
             const password = document.getElementById('registerPassword');
             if (!password || password.value.length < 6) {
-                setFieldError('registerPassword', 'registerPasswordError', 'La password deve avere almeno 6 caratteri.');
+                setFieldError('registerPassword', 'registerPasswordError', 'Password must be at least 6 characters.');
                 valid = false;
             } else {
                 clearFieldError('registerPassword', 'registerPasswordError');
@@ -960,7 +940,7 @@ function initInlineValidation() {
 
             const terms = document.getElementById('agreeTerms');
             if (!terms || !terms.checked) {
-                setFieldError('agreeTerms', 'agreeTermsError', 'Devi accettare i Termini di Servizio.');
+                setFieldError('agreeTerms', 'agreeTermsError', 'You must accept the Terms of Service.');
                 valid = false;
             } else {
                 clearFieldError('agreeTerms', 'agreeTermsError');
@@ -987,9 +967,9 @@ function calcPasswordStrength(password) {
     if (/[0-9]/.test(password)) score++;
     if (/[^A-Za-z0-9]/.test(password)) score++;
 
-    if (score <= 1) return { level: 'weak',   label: 'Debole' };
-    if (score <= 3) return { level: 'medium',  label: 'Media' };
-    return              { level: 'strong',  label: 'Forte' };
+    if (score <= 1) return { level: 'weak',   label: 'Weak' };
+    if (score <= 3) return { level: 'medium',  label: 'Medium' };
+    return              { level: 'strong',  label: 'Strong' };
 }
 
 function initPasswordStrength() {
@@ -1007,7 +987,7 @@ function initPasswordStrength() {
         wrapper.style.display = 'block';
         const { level, label: text } = calcPasswordStrength(val);
         wrapper.className = `password-strength mt-2 strength-${level}`;
-        label.textContent = `Sicurezza: ${text}`;
+        label.textContent = `Strength: ${text}`;
     });
 }
 
