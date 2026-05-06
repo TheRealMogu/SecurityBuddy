@@ -24,31 +24,31 @@ def index():
 def scan():
     """Process scan request"""
     target = request.form.get('target', '').strip()
-    
+
     if not target:
         flash('Please enter a domain or IP address to scan.', 'warning')
         return redirect(url_for('index'))
-    
+
     # Advanced validation
     validator = AdvancedValidator()
     target = clean_target(target)
     is_valid, error_msg = validator.validate_target(target)
-    
+
     if not is_valid:
         flash(f'Invalid target: {error_msg}', 'error')
         return redirect(url_for('index'))
-    
+
     try:
         # Perform security scan
         scanner = SecurityScanner()
         results = scanner.scan_target(target)
-        
+
         # Advanced scanning for premium users
         if current_user.is_authenticated and current_user.is_premium:
             advanced_scanner = AdvancedScanner()
             advanced_results = advanced_scanner.advanced_vulnerability_scan(f"https://{target}")
             results['advanced_scan'] = advanced_results
-        
+
         # Save scan result to database
         scan_result = ScanResult(
             target=target,
@@ -59,7 +59,7 @@ def scan():
         )
         db.session.add(scan_result)
         db.session.commit()
-        
+
         # Send notification for premium users if critical issues found
         if current_user.is_authenticated and current_user.is_premium:
             critical_issues = []
@@ -68,17 +68,73 @@ def scan():
                 for check_name, check_data in checks.items():
                     if isinstance(check_data, dict) and check_data.get('issues'):
                         critical_issues.extend(check_data['issues'])
-                
+
                 if critical_issues:
                     notification_system = NotificationSystem()
                     notification_system.send_vulnerability_alert(
                         current_user.email, scan_result, critical_issues
                     )
-        
+
         return render_template('scan_result.html', results=results, scan_id=scan_result.id)
-        
+
     except Exception as e:
         flash(f'Scan failed: {str(e)}', 'error')
+        return redirect(url_for('index'))
+
+
+@app.route('/pentest', methods=['POST'])
+def pentest():
+    """Run active penetration test probes + standard scan."""
+    authorized = request.form.get('authorized', '').strip()
+    target = request.form.get('target', '').strip()
+
+    if not authorized:
+        flash('You must confirm authorization before running a penetration test.', 'error')
+        return redirect(url_for('index'))
+
+    if not target:
+        flash('Please enter a domain or IP address.', 'warning')
+        return redirect(url_for('index'))
+
+    validator = AdvancedValidator()
+    target = clean_target(target)
+    is_valid, error_msg = validator.validate_target(target)
+
+    if not is_valid:
+        flash(f'Invalid target: {error_msg}', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        from pentest_scanner import run_pentest
+
+        scanner = SecurityScanner()
+        scan_results = scanner.scan_target(target)
+
+        base_url = f"https://{target}" if not target.startswith('http') else target
+        pentest_results = run_pentest(base_url)
+
+        combined_score = min(
+            scan_results.get('overall_score', 50),
+            pentest_results.get('pentest_score', 50),
+        )
+
+        scan_record = ScanResult(
+            target=target,
+            scan_type='pentest',
+            results=json.dumps({'scan': scan_results, 'pentest': pentest_results}),
+            security_score=combined_score,
+            user_id=current_user.id if current_user.is_authenticated else None,
+        )
+        db.session.add(scan_record)
+        db.session.commit()
+
+        return render_template('pentest_result.html',
+                               results=scan_results,
+                               pentest=pentest_results,
+                               scan_id=scan_record.id)
+
+    except Exception as e:
+        flash(f'Penetration test failed: {str(e)}', 'error')
         return redirect(url_for('index'))
 
 @app.route('/login', methods=['GET', 'POST'])

@@ -72,6 +72,91 @@
                         </div>
                     </div>
                 </form>
+
+                <div class="pentest-divider"><span>or</span></div>
+
+                <button class="btn-pentest-trigger" id="openPentestModal" type="button">
+                    <i data-lucide="crosshair" style="width:16px;height:16px;"></i>
+                    Run Penetration Test
+                    <span class="pentest-badge">10 active probes</span>
+                </button>
+            </div>
+
+            <!-- Pentest modal -->
+            <div class="pentest-modal" id="pentestModal" aria-modal="true" role="dialog" aria-labelledby="pentestModalTitle">
+                <div class="pentest-modal-backdrop" id="pentestBackdrop"></div>
+                <div class="pentest-modal-dialog">
+                    <div class="pentest-modal-header">
+                        <div class="pentest-modal-title-wrap">
+                            <i data-lucide="crosshair" style="width:18px;height:18px;color:var(--color-danger);"></i>
+                            <h2 class="pentest-modal-title" id="pentestModalTitle">Penetration Test</h2>
+                        </div>
+                        <button class="pentest-modal-close" id="closePentestModal" aria-label="Close">
+                            <i data-lucide="x" style="width:18px;height:18px;"></i>
+                        </button>
+                    </div>
+                    <div class="pentest-modal-body">
+
+                        <div class="pentest-auth-warning">
+                            <i data-lucide="alert-triangle" style="width:20px;height:20px;flex-shrink:0;"></i>
+                            <div>
+                                <strong>Authorized targets only</strong>
+                                <p>Running these probes without explicit written permission is illegal under computer fraud laws (CFAA, Computer Misuse Act, etc.). Only test systems you own or have a signed authorization for.</p>
+                            </div>
+                        </div>
+
+                        <p class="pentest-intro">These 10 active probes go beyond passive header checks:</p>
+
+                        <div class="pentest-checks-grid">
+                            <div class="pentest-check-pill"><i data-lucide="file-x" style="width:13px;height:13px;"></i> Sensitive file exposure</div>
+                            <div class="pentest-check-pill"><i data-lucide="layout-dashboard" style="width:13px;height:13px;"></i> Admin panel discovery</div>
+                            <div class="pentest-check-pill"><i data-lucide="terminal" style="width:13px;height:13px;"></i> Dangerous HTTP methods</div>
+                            <div class="pentest-check-pill"><i data-lucide="folder-open" style="width:13px;height:13px;"></i> Directory listing</div>
+                            <div class="pentest-check-pill"><i data-lucide="database" style="width:13px;height:13px;"></i> SQL injection (error-based)</div>
+                            <div class="pentest-check-pill"><i data-lucide="code" style="width:13px;height:13px;"></i> Reflected XSS</div>
+                            <div class="pentest-check-pill"><i data-lucide="external-link" style="width:13px;height:13px;"></i> Open redirect</div>
+                            <div class="pentest-check-pill"><i data-lucide="shield-off" style="width:13px;height:13px;"></i> CSRF protection</div>
+                            <div class="pentest-check-pill"><i data-lucide="file-text" style="width:13px;height:13px;"></i> Security.txt</div>
+                            <div class="pentest-check-pill"><i data-lucide="eye" style="width:13px;height:13px;"></i> Info disclosure</div>
+                        </div>
+
+                        <form method="POST" action="{{ url_for('pentest') }}" id="pentestForm">
+                            <input
+                                type="text"
+                                class="scan-input"
+                                name="target"
+                                id="pentestTarget"
+                                placeholder="Enter domain or IP (e.g. example.com)"
+                                autocomplete="off"
+                                spellcheck="false"
+                                required
+                                style="margin-bottom:1rem;">
+
+                            <label class="pentest-auth-label">
+                                <input type="checkbox" name="authorized" value="1" id="pentestAuthCheck" required>
+                                <span>I confirm I am authorized to perform active security testing on this target and accept full legal responsibility.</span>
+                            </label>
+
+                            <div id="pentestLoadingIndicator" class="loading-indicator" style="display:none;margin-top:1rem;">
+                                <div class="d-flex align-items-center justify-content-center gap-3 mb-3">
+                                    <div class="spinner-border" role="status"><span class="visually-hidden">Running…</span></div>
+                                    <div>
+                                        <strong id="pentestLoadingTitle">Running penetration test…</strong>
+                                        <div class="small text-muted mt-1" id="pentestLoadingStep">Launching probes…</div>
+                                    </div>
+                                </div>
+                                <div class="progress">
+                                    <div class="progress-bar progress-bar-danger" role="progressbar" style="width:0%" id="pentestProgressBar"></div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn-pentest-submit" id="pentestSubmitBtn">
+                                <i data-lucide="crosshair" style="width:16px;height:16px;"></i>
+                                Start Penetration Test
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -137,6 +222,7 @@
 {% block scripts %}
 <script>
 (function() {
+    /* ── Standard scan form ── */
     const form   = document.getElementById('scanForm');
     const input  = document.getElementById('targetInput');
     const btn    = document.getElementById('scanButton');
@@ -144,39 +230,96 @@
     const bar    = document.getElementById('progressBar');
     const step   = document.getElementById('loadingStep');
 
-    if (!form) return;
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const val = input.value.trim();
+            if (!val) { e.preventDefault(); return; }
+            input.value = val.replace(/^https?:\/\//,'').replace(/\/.*/,'').toLowerCase();
+            loader.style.display = 'block';
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-sm me-1"></span>Scanning…';
+            const steps = [
+                { text: 'Checking connectivity…',        pct: 12  },
+                { text: 'Verifying HTTPS & SSL…',        pct: 28  },
+                { text: 'Checking security headers…',    pct: 44  },
+                { text: 'Auditing cookies…',              pct: 58  },
+                { text: 'Analysing CORS & HTTP methods…', pct: 72  },
+                { text: 'Scanning open ports…',           pct: 86  },
+                { text: 'Calculating security score…',    pct: 100 },
+            ];
+            let i = 0;
+            const iv = setInterval(() => {
+                if (i < steps.length) { step.textContent = steps[i].text; bar.style.width = steps[i].pct + '%'; i++; }
+                else clearInterval(iv);
+            }, 1200);
+        });
+    }
 
-    form.addEventListener('submit', function(e) {
-        const val = input.value.trim();
-        if (!val) { e.preventDefault(); return; }
+    /* ── Pentest modal ── */
+    const modal        = document.getElementById('pentestModal');
+    const backdrop     = document.getElementById('pentestBackdrop');
+    const openBtn      = document.getElementById('openPentestModal');
+    const closeBtn     = document.getElementById('closePentestModal');
+    const ptForm       = document.getElementById('pentestForm');
+    const ptInput      = document.getElementById('pentestTarget');
+    const ptSubmitBtn  = document.getElementById('pentestSubmitBtn');
+    const ptLoader     = document.getElementById('pentestLoadingIndicator');
+    const ptBar        = document.getElementById('pentestProgressBar');
+    const ptStep       = document.getElementById('pentestLoadingStep');
 
-        // Strip protocol/path
-        input.value = val.replace(/^https?:\/\//,'').replace(/\/.*/,'').toLowerCase();
+    function openModal() {
+        modal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => ptInput && ptInput.focus(), 100);
+        lucide.createIcons();
+    }
+    function closeModal() {
+        modal.classList.remove('open');
+        document.body.style.overflow = '';
+    }
 
-        loader.style.display = 'block';
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-sm me-1"></span>Scanning…';
+    if (openBtn)   openBtn.addEventListener('click', openModal);
+    if (closeBtn)  closeBtn.addEventListener('click', closeModal);
+    if (backdrop)  backdrop.addEventListener('click', closeModal);
 
-        const steps = [
-            { text: 'Checking connectivity…', pct: 12 },
-            { text: 'Verifying HTTPS & SSL…', pct: 28 },
-            { text: 'Checking security headers…', pct: 44 },
-            { text: 'Auditing cookies…', pct: 58 },
-            { text: 'Analysing CORS & HTTP methods…', pct: 72 },
-            { text: 'Scanning open ports…', pct: 86 },
-            { text: 'Calculating security score…', pct: 100 },
-        ];
-        let i = 0;
-        const iv = setInterval(() => {
-            if (i < steps.length) {
-                step.textContent = steps[i].text;
-                bar.style.width  = steps[i].pct + '%';
-                i++;
-            } else {
-                clearInterval(iv);
-            }
-        }, 1200);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal && modal.classList.contains('open')) closeModal();
     });
+
+    /* Pre-fill pentest target from main input */
+    if (openBtn && ptInput && input) {
+        openBtn.addEventListener('click', function() {
+            if (input.value.trim()) ptInput.value = input.value.trim();
+        });
+    }
+
+    if (ptForm) {
+        ptForm.addEventListener('submit', function(e) {
+            const val = ptInput.value.trim();
+            if (!val) { e.preventDefault(); return; }
+            ptInput.value = val.replace(/^https?:\/\//,'').replace(/\/.*/,'').toLowerCase();
+            ptSubmitBtn.disabled = true;
+            ptSubmitBtn.innerHTML = '<span class="spinner-sm me-1"></span>Running probes…';
+            ptLoader.style.display = 'block';
+            const steps = [
+                { text: 'Running standard security scan…',   pct: 10 },
+                { text: 'Checking for sensitive files…',     pct: 22 },
+                { text: 'Discovering admin panels…',         pct: 34 },
+                { text: 'Testing HTTP methods…',             pct: 44 },
+                { text: 'Probing for SQL injection…',        pct: 55 },
+                { text: 'Testing XSS reflection…',           pct: 66 },
+                { text: 'Checking open redirects…',          pct: 76 },
+                { text: 'Auditing CSRF protection…',         pct: 85 },
+                { text: 'Scanning directory listings…',      pct: 93 },
+                { text: 'Calculating pentest score…',        pct: 100 },
+            ];
+            let i = 0;
+            const iv = setInterval(() => {
+                if (i < steps.length) { ptStep.textContent = steps[i].text; ptBar.style.width = steps[i].pct + '%'; i++; }
+                else clearInterval(iv);
+            }, 2200);
+        });
+    }
 })();
 </script>
 {% endblock %}
