@@ -107,7 +107,8 @@ body {
   transition: background var(--transition), color var(--transition);
 }
 
-img, svg { display: block; max-width: 100%; }
+img { display: block; max-width: 100%; }
+svg { max-width: 100%; }
 
 a {
   color: var(--color-primary);
