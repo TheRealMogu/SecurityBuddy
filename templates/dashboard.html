@@ -1,158 +1,155 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Security Buddy{% endblock %}
+{% block title %}Dashboard — Security Buddy{% endblock %}
 
 {% block content %}
-<div class="container my-5">
-    <div class="row">
-        <div class="col-12">
-            <!-- Header -->
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <h1 class="h2 fw-bold text-dark mb-1">Dashboard</h1>
-                    <p class="text-muted mb-0">Welcome back, {{ current_user.username }}!</p>
-                </div>
-                <div>
-                    <a href="{{ url_for('index') }}" class="btn btn-primary">
-                        <i data-feather="plus" class="me-2"></i>New Scan
-                    </a>
-                </div>
-            </div>
+<div class="container dashboard-page">
 
-            <!-- Stats Cards -->
-            <div class="row g-4 mb-5">
-                <div class="col-md-4">
-                    <div class="stat-card">
-                        <div class="stat-icon">
-                            <i data-feather="search"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3 class="stat-number">{{ recent_scans|length }}</h3>
-                            <p class="stat-label">Recent Scans</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="stat-card">
-                        <div class="stat-icon">
-                            <i data-feather="shield"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3 class="stat-number">
-                                {% if recent_scans %}
-                                    {{ (recent_scans | sum(attribute='security_score') / recent_scans|length) | round | int }}
-                                {% else %}
-                                    0
-                                {% endif %}
-                            </h3>
-                            <p class="stat-label">Avg. Security Score</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="stat-card">
-                        <div class="stat-icon">
-                            <i data-feather="{% if current_user.is_premium %}star{% else %}lock{% endif %}"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3 class="stat-number">{% if current_user.is_premium %}Pro{% else %}Free{% endif %}</h3>
-                            <p class="stat-label">Account Type</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- Page header -->
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Dashboard</h1>
+            <p class="text-muted mb-0">Welcome back, {{ current_user.username }}!</p>
+        </div>
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            <i data-lucide="plus" style="width:15px;height:15px;"></i>New Scan
+        </a>
+    </div>
 
-            <!-- Recent Scans -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i data-feather="clock" class="me-2"></i>Recent Scans
-                    </h5>
-                </div>
-                <div class="card-body">
+    <!-- Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i data-lucide="search" style="width:20px;height:20px;"></i>
+            </div>
+            <div>
+                <div class="stat-number">{{ recent_scans | length }}</div>
+                <div class="stat-label">Recent Scans</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i data-lucide="shield" style="width:20px;height:20px;"></i>
+            </div>
+            <div>
+                <div class="stat-number">
                     {% if recent_scans %}
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="scansTable">
-                                <thead>
-                                    <tr>
-                                        <th class="sortable-th" data-col="0" data-type="text">
-                                            Target <span class="sort-icon">⇅</span>
-                                        </th>
-                                        <th>Type</th>
-                                        <th class="sortable-th" data-col="2" data-type="num">
-                                            Score <span class="sort-icon">⇅</span>
-                                        </th>
-                                        <th>Risk Level</th>
-                                        <th class="sortable-th" data-col="4" data-type="text">
-                                            Date <span class="sort-icon">⇅</span>
-                                        </th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for scan in recent_scans %}
-                                    {% set risk = 'low' if scan.security_score >= 80 else 'medium' if scan.security_score >= 60 else 'high' if scan.security_score >= 40 else 'critical' %}
-                                    <tr>
-                                        <td><strong>{{ scan.target }}</strong></td>
-                                        <td>
-                                            <span class="badge bg-light text-dark">{{ scan.scan_type.title() }}</span>
-                                        </td>
-                                        <td data-sort-value="{{ scan.security_score }}">
-                                            <span class="score-badge score-{{ 'success' if scan.security_score >= 80 else 'warning' if scan.security_score >= 60 else 'danger' }}">
-                                                {{ scan.security_score }}/100
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-{{ 'success' if risk == 'low' else 'warning' if risk == 'medium' else 'danger' }}">
-                                                {{ risk.title() }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <small class="text-muted">{{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
-                                        </td>
-                                        <td>
-                                            <a href="{{ url_for('view_scan', scan_id=scan.id) }}"
-                                               class="btn btn-sm btn-outline-primary">
-                                                View Report
-                                            </a>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                        <div class="dashboard-empty-state">
-                            <div class="empty-state-icon">🛡️</div>
-                            <h5>Nessuna scan ancora</h5>
-                            <p class="text-muted">Inizia analizzando il tuo primo sito web o dominio. Ci vogliono meno di 30 secondi!</p>
-                            <a href="{{ url_for('index') }}" class="btn btn-primary">
-                                <i data-feather="search" class="me-2"></i>Esegui il tuo primo scan
-                            </a>
-                        </div>
-                    {% endif %}
+                        {{ (recent_scans | sum(attribute='security_score') / recent_scans | length) | round | int }}
+                    {% else %}—{% endif %}
                 </div>
+                <div class="stat-label">Avg. Score</div>
             </div>
-
-            <!-- Premium Upgrade CTA -->
-            {% if not current_user.is_premium %}
-            <div class="premium-cta mt-5">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <h4 class="fw-bold text-dark mb-2">Unlock Premium Features</h4>
-                        <p class="text-muted mb-0">
-                            Get PDF reports, scheduled monitoring, email alerts, and advanced vulnerability scanning.
-                        </p>
-                    </div>
-                    <div class="col-md-4 text-md-end">
-                        <a href="{{ url_for('premium') }}" class="btn btn-warning">
-                            <i data-feather="star" class="me-2"></i>Upgrade to Premium
-                        </a>
-                    </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i data-lucide="{% if current_user.is_premium %}star{% else %}lock{% endif %}"
+                   style="width:20px;height:20px;"></i>
+            </div>
+            <div>
+                <div class="stat-number">{% if current_user.is_premium %}Pro{% else %}Free{% endif %}</div>
+                <div class="stat-label">Account</div>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i data-lucide="alert-triangle" style="width:20px;height:20px;"></i>
+            </div>
+            <div>
+                <div class="stat-number">
+                    {{ recent_scans | selectattr('security_score', 'lt', 60) | list | length }}
                 </div>
+                <div class="stat-label">At-risk Targets</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent scans table -->
+    <div class="card">
+        <div class="card-header">
+            <i data-lucide="clock" style="width:16px;height:16px;color:var(--color-primary);"></i>
+            Recent Scans
+        </div>
+        <div class="card-body" style="padding:0;">
+            {% if recent_scans %}
+            <div class="table-wrapper" style="border:none;border-radius:0;">
+                <table class="table table-hover" id="scansTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable-th" data-col="0" data-type="text">
+                                Target <span class="sort-icon">⇅</span>
+                            </th>
+                            <th class="sortable-th" data-col="1" data-type="num">
+                                Score <span class="sort-icon">⇅</span>
+                            </th>
+                            <th>Risk</th>
+                            <th class="sortable-th" data-col="3" data-type="text">
+                                Date <span class="sort-icon">⇅</span>
+                            </th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for scan in recent_scans %}
+                        {% set risk = 'low' if scan.security_score >= 80 else 'medium' if scan.security_score >= 60 else 'high' if scan.security_score >= 40 else 'critical' %}
+                        <tr style="cursor:pointer;" onclick="window.location='{{ url_for('view_scan', scan_id=scan.id) }}'">
+                            <td><strong>{{ scan.target }}</strong></td>
+                            <td data-sort-value="{{ scan.security_score }}">
+                                <span class="score-pill score-{{ 'success' if scan.security_score >= 80 else 'warning' if scan.security_score >= 60 else 'danger' }}">
+                                    {{ scan.security_score }}/100
+                                </span>
+                            </td>
+                            <td>
+                                <span class="risk-badge risk-{{ risk }}">{{ risk | title }}</span>
+                            </td>
+                            <td>
+                                <small class="text-muted">{{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </td>
+                            <td onclick="event.stopPropagation()">
+                                <a href="{{ url_for('view_scan', scan_id=scan.id) }}"
+                                   class="btn btn-sm btn-outline-secondary">
+                                    View
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="dashboard-empty-state">
+                <div class="empty-state-icon">
+                    <i data-lucide="shield" style="width:48px;height:48px;color:var(--color-text-faint);"></i>
+                </div>
+                <h5>No scans yet</h5>
+                <p class="text-muted small mb-3">Analyse your first website or domain. Takes less than 30 seconds.</p>
+                <a href="{{ url_for('index') }}" class="btn btn-primary">
+                    <i data-lucide="search" style="width:15px;height:15px;"></i>Run your first scan
+                </a>
             </div>
             {% endif %}
         </div>
     </div>
+
+    <!-- Premium CTA -->
+    {% if not current_user.is_premium %}
+    <div class="card mt-4" style="border-color:var(--color-primary-glow);background:linear-gradient(135deg,var(--color-primary-dim),transparent);">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+                <div>
+                    <h4 style="font-family:var(--font-display);font-weight:800;margin-bottom:0.25rem;">Unlock Premium Features</h4>
+                    <p class="text-muted mb-0 small">PDF reports, scheduled monitoring, email alerts and advanced scanning.</p>
+                </div>
+                <a href="{{ url_for('premium') }}" class="btn btn-primary">
+                    <i data-lucide="star" style="width:15px;height:15px;"></i>Upgrade to Premium
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>lucide.createIcons();</script>
 {% endblock %}

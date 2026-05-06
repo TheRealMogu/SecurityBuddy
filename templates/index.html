@@ -1,198 +1,182 @@
 {% extends "base.html" %}
 
-{% block title %}Security Buddy - Web Security Scanner{% endblock %}
+{% block title %}Security Buddy — Is Your Website Secure?{% endblock %}
 
 {% block content %}
-<div class="hero-section">
+<!-- Hero -->
+<section class="hero-section">
     <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-lg-8 text-center">
-                <h1 class="display-4 fw-bold mb-4">
-                    Is your website secure?
-                </h1>
-                <p class="lead text-muted mb-5">
-                    Instant security analysis — HTTPS, SSL, headers, cookies, ports and more.
-                    Get actionable results in seconds, no account required.
-                </p>
+        <div class="text-center">
+            <h1 class="hero-headline">Is your website secure?</h1>
+            <p class="hero-subtext">
+                Instant security analysis — HTTPS, SSL, headers, cookies, ports and more.
+                Get actionable results in seconds, no account required.
+            </p>
 
-                <!-- Trust indicators -->
-                <div class="trust-indicators mb-4">
-                    <span class="trust-item">
-                        <i data-feather="zap" class="me-1"></i>
-                        <small>Free &amp; instant</small>
-                    </span>
-                    <span class="trust-item">
-                        <i data-feather="shield" class="me-1"></i>
-                        <small>12+ security checks</small>
-                    </span>
-                    <span class="trust-item">
-                        <i data-feather="file-text" class="me-1"></i>
-                        <small>PDF report</small>
-                    </span>
-                    <span class="trust-item">
-                        <i data-feather="code" class="me-1"></i>
-                        <small>API &amp; CLI access</small>
-                    </span>
-                </div>
-                
-                <!-- Scan Form -->
-                <form method="POST" action="{{ url_for('scan') }}" class="scan-form" id="scanForm">
-                    <div class="input-group input-group-lg mb-4">
-                        <input type="text" 
-                               class="form-control" 
-                               name="target" 
-                               id="targetInput"
-                               placeholder="Enter domain or IP address (e.g., example.com)" 
-                               required>
-                        <button class="btn btn-primary btn-lg" type="submit" id="scanButton">
-                            <i data-feather="search" class="me-2"></i>Scan Now
+            <!-- Trust badges -->
+            <div class="trust-badges">
+                <span class="trust-badge">
+                    <i data-lucide="zap" style="width:13px;height:13px;color:var(--color-primary);"></i>
+                    Free &amp; instant
+                </span>
+                <span class="trust-badge">
+                    <i data-lucide="shield-check" style="width:13px;height:13px;color:var(--color-primary);"></i>
+                    12+ security checks
+                </span>
+                <span class="trust-badge">
+                    <i data-lucide="file-text" style="width:13px;height:13px;color:var(--color-primary);"></i>
+                    PDF report
+                </span>
+                <span class="trust-badge">
+                    <i data-lucide="terminal" style="width:13px;height:13px;color:var(--color-primary);"></i>
+                    API &amp; CLI
+                </span>
+                <span class="trust-badge">
+                    <i data-lucide="clock" style="width:13px;height:13px;color:var(--color-primary);"></i>
+                    Results in &lt;30s
+                </span>
+            </div>
+
+            <!-- Scan form -->
+            <div class="scan-form-wrap">
+                <form method="POST" action="{{ url_for('scan') }}" id="scanForm">
+                    <div class="scan-input-group">
+                        <input
+                            type="text"
+                            class="scan-input"
+                            name="target"
+                            id="targetInput"
+                            placeholder="Enter domain or IP (e.g. example.com)"
+                            autocomplete="off"
+                            spellcheck="false"
+                            required>
+                        <button class="scan-btn" type="submit" id="scanButton">
+                            <i data-lucide="search" style="width:16px;height:16px;"></i>
+                            Scan Now
                         </button>
                     </div>
-                    
+
                     <!-- Loading indicator -->
-                    <div id="loadingIndicator" class="loading-indicator" style="display: none;">
-                        <div class="d-flex align-items-center justify-content-center mb-3">
-                            <div class="spinner-border text-primary me-3" role="status">
-                                <span class="visually-hidden">Loading...</span>
+                    <div id="loadingIndicator" class="loading-indicator" style="display:none;">
+                        <div class="d-flex align-items-center justify-content-center gap-3 mb-3">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading…</span>
                             </div>
-                            <div class="loading-text">
-                                <strong>Scanning target...</strong>
-                                <div class="small text-muted mt-1" id="loadingStep">Checking connectivity...</div>
+                            <div>
+                                <strong id="loadingTitle">Scanning target…</strong>
+                                <div class="small text-muted mt-1" id="loadingStep">Checking connectivity…</div>
                             </div>
                         </div>
-                        <div class="progress mb-3">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated"
-                                 role="progressbar" style="width: 0%" id="progressBar"></div>
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" style="width:0%" id="progressBar"></div>
                         </div>
                     </div>
                 </form>
-                
-                <p class="text-muted small">
-                    <i data-feather="check-circle" class="me-1"></i>
-                    Free • No registration required • Results in &lt;30 seconds
-                </p>
             </div>
         </div>
     </div>
-</div>
+</section>
 
-<!-- Features Section -->
-<div class="container my-5">
-    <div class="row">
-        <div class="col-lg-12 text-center mb-5">
-            <h2 class="fw-bold mb-3">What We Check</h2>
-            <p class="text-muted">12+ automated security checks — results any developer or CISO can act on</p>
-        </div>
-    </div>
-
-    <div class="row g-4">
-        <div class="col-md-4">
-            <div class="feature-card">
-                <div class="feature-icon"><i data-feather="lock"></i></div>
-                <h5 class="fw-semibold">HTTPS &amp; SSL</h5>
-                <p class="text-muted">Validates certificate chain, expiry, issuer and HTTP→HTTPS redirect.</p>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="feature-card">
-                <div class="feature-icon"><i data-feather="shield"></i></div>
-                <h5 class="fw-semibold">Security Headers</h5>
-                <p class="text-muted">Checks CSP quality, HSTS, X-Frame-Options, Referrer-Policy and more.</p>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="feature-card">
-                <div class="feature-icon"><i data-feather="cookie"></i></div>
-                <h5 class="fw-semibold">Cookie Security</h5>
-                <p class="text-muted">Detects missing HttpOnly, Secure and SameSite flags on session cookies.</p>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="feature-card">
-                <div class="feature-icon"><i data-feather="share-2"></i></div>
-                <h5 class="fw-semibold">CORS Policy</h5>
-                <p class="text-muted">Flags wildcard origins and credentials misconfigurations.</p>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="feature-card">
-                <div class="feature-icon"><i data-feather="cpu"></i></div>
-                <h5 class="fw-semibold">Tech Fingerprint</h5>
-                <p class="text-muted">Detects server software, frameworks and version disclosure in headers.</p>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="feature-card">
-                <div class="feature-icon"><i data-feather="radio"></i></div>
-                <h5 class="fw-semibold">Open Ports</h5>
-                <p class="text-muted">Scans common risky ports (21, 22, 23, 3306, 5432, 6379, 27017).</p>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Premium Preview -->
-{% if not current_user.is_authenticated or not current_user.is_premium %}
-<div class="premium-preview">
+<!-- Features -->
+<section class="features-section">
     <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-lg-8 text-center">
-                <h3 class="fw-bold mb-3">Unlock Pro Features</h3>
-                <p class="text-muted mb-4">
-                    Everything teams and security-conscious companies need: deeper scanning, branded reports and continuous monitoring.
-                </p>
+        <div class="text-center">
+            <span class="section-label">What we check</span>
+            <h2 class="section-title">12+ automated security checks</h2>
+            <p class="section-sub">Results any developer or security team can act on immediately.</p>
+        </div>
 
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="premium-feature">
-                            <i data-feather="file-text" class="premium-icon"></i>
-                            <span>White-label PDF Reports</span>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="premium-feature">
-                            <i data-feather="calendar" class="premium-icon"></i>
-                            <span>Scheduled Monitoring</span>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="premium-feature">
-                            <i data-feather="bell" class="premium-icon"></i>
-                            <span>Slack &amp; Email Alerts</span>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="premium-feature">
-                            <i data-feather="key" class="premium-icon"></i>
-                            <span>REST API Access</span>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="premium-feature">
-                            <i data-feather="terminal" class="premium-icon"></i>
-                            <span>CLI Tool</span>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="premium-feature">
-                            <i data-feather="git-pull-request" class="premium-icon"></i>
-                            <span>GitHub Action</span>
-                        </div>
-                    </div>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-lucide="lock" style="width:20px;height:20px;"></i>
                 </div>
-                
-                {% if not current_user.is_authenticated %}
-                <a href="{{ url_for('login') }}" class="btn btn-outline-primary">
-                    Sign Up for Premium
-                </a>
-                {% else %}
-                <a href="{{ url_for('premium') }}" class="btn btn-outline-primary">
-                    Upgrade to Premium
-                </a>
-                {% endif %}
+                <h5>HTTPS &amp; SSL</h5>
+                <p>Validates certificate chain, expiry, issuer, TLS version and HTTP→HTTPS redirect.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-lucide="shield" style="width:20px;height:20px;"></i>
+                </div>
+                <h5>Security Headers</h5>
+                <p>Checks CSP quality, HSTS, X-Frame-Options, Referrer-Policy and more with A–F grading.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-lucide="cookie" style="width:20px;height:20px;"></i>
+                </div>
+                <h5>Cookie Security</h5>
+                <p>Per-cookie table showing HttpOnly, Secure and SameSite flags for every session cookie.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-lucide="share-2" style="width:20px;height:20px;"></i>
+                </div>
+                <h5>CORS Policy</h5>
+                <p>Flags wildcard origins and dangerous credentials misconfigurations.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-lucide="cpu" style="width:20px;height:20px;"></i>
+                </div>
+                <h5>Tech Fingerprint</h5>
+                <p>Detects server software, frameworks and version disclosure in response headers.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i data-lucide="radio" style="width:20px;height:20px;"></i>
+                </div>
+                <h5>Open Ports</h5>
+                <p>Scans 11 risky ports — databases, admin panels, caches — with per-port risk descriptions.</p>
             </div>
         </div>
     </div>
-</div>
-{% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const form   = document.getElementById('scanForm');
+    const input  = document.getElementById('targetInput');
+    const btn    = document.getElementById('scanButton');
+    const loader = document.getElementById('loadingIndicator');
+    const bar    = document.getElementById('progressBar');
+    const step   = document.getElementById('loadingStep');
+
+    if (!form) return;
+
+    form.addEventListener('submit', function(e) {
+        const val = input.value.trim();
+        if (!val) { e.preventDefault(); return; }
+
+        // Strip protocol/path
+        input.value = val.replace(/^https?:\/\//,'').replace(/\/.*/,'').toLowerCase();
+
+        loader.style.display = 'block';
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-sm me-1"></span>Scanning…';
+
+        const steps = [
+            { text: 'Checking connectivity…', pct: 12 },
+            { text: 'Verifying HTTPS & SSL…', pct: 28 },
+            { text: 'Checking security headers…', pct: 44 },
+            { text: 'Auditing cookies…', pct: 58 },
+            { text: 'Analysing CORS & HTTP methods…', pct: 72 },
+            { text: 'Scanning open ports…', pct: 86 },
+            { text: 'Calculating security score…', pct: 100 },
+        ];
+        let i = 0;
+        const iv = setInterval(() => {
+            if (i < steps.length) {
+                step.textContent = steps[i].text;
+                bar.style.width  = steps[i].pct + '%';
+                i++;
+            } else {
+                clearInterval(iv);
+            }
+        }, 1200);
+    });
+})();
+</script>
 {% endblock %}
