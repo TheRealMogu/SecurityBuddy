@@ -3,9 +3,28 @@ import socket
 import ssl
 import json
 import re
+import uuid
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 import logging
+
+SENSITIVE_PATHS = {
+    '.env':              ['DB_PASSWORD', 'API_KEY', 'SECRET_KEY', 'APP_KEY', 'DATABASE_URL', 'AWS_SECRET'],
+    '.env.local':        ['DB_PASSWORD', 'API_KEY', 'SECRET_KEY', 'APP_KEY'],
+    '.env.production':   ['DB_PASSWORD', 'API_KEY', 'SECRET_KEY', 'APP_KEY'],
+    'wp-config.php':     ['DB_NAME', 'DB_USER', 'DB_PASSWORD', "define("],
+    '.git/config':       ['[core]', '[remote', 'repositoryformatversion'],
+    '.git/HEAD':         ['ref:', 'refs/heads'],
+    'config.php':        ['password', 'db_pass', 'mysql_pass'],
+    'database.yml':      ['password:', 'username:', 'database:'],
+    'credentials':       ['aws_access_key_id', 'aws_secret_access_key'],
+    '.htpasswd':         [':'],
+}
+
+ADMIN_PATHS = [
+    '/admin', '/admin/', '/administrator', '/wp-admin', '/phpmyadmin',
+    '/manager', '/cpanel', '/dashboard', '/backend',
+]
 
 RISKY_PORTS = {
     21:    'FTP — plaintext file transfer',
@@ -49,6 +68,9 @@ class SecurityScanner:
             target_url = target
 
         try:
+            baseline = self._get_404_baseline(target_url)
+            results['spa_detected'] = baseline['is_spa']
+
             results['checks']['connectivity'] = self._check_connectivity(target_url)
             results['checks']['https']        = self._check_https(target_url)
             results['checks']['ssl']          = self._check_ssl_certificate(target)
@@ -58,6 +80,8 @@ class SecurityScanner:
             results['checks']['http_methods'] = self._check_http_methods(target_url)
             results['checks']['tech']         = self._check_technology_disclosure(target_url)
             results['checks']['ports']        = self._check_open_ports(target)
+            results['checks']['sensitive_files'] = self._check_sensitive_files(target_url, baseline)
+            results['checks']['admin_panels']    = self._check_admin_panels(target_url, baseline)
             if not is_ip:
                 results['checks']['domain_info'] = self._get_domain_info(target)
 
@@ -390,6 +414,102 @@ class SecurityScanner:
         results['score'] = max(0, results['score'])
         return results
 
+    def _get_404_baseline(self, target_url):
+        fake_path = f'/{uuid.uuid4().hex}'
+        try:
+            response = self.session.get(
+                f'{target_url.rstrip("/")}{fake_path}',
+                timeout=self.timeout,
+                allow_redirects=True,
+            )
+            return {
+                'status': response.status_code,
+                'size': len(response.content),
+                'is_spa': response.status_code == 200,
+            }
+        except Exception:
+            return {'status': None, 'size': 0, 'is_spa': False}
+
+    def _is_false_positive(self, response, baseline):
+        size_diff = abs(len(response.content) - baseline['size'])
+        return size_diff < 50
+
+    def _is_real_exposure(self, path, response_text):
+        patterns = SENSITIVE_PATHS.get(path, [])
+        if not patterns:
+            return True
+        return any(p in response_text for p in patterns)
+
+    def _check_sensitive_files(self, target_url, baseline):
+        results = {
+            'exposed_files': [],
+            'skipped_spa': baseline['is_spa'],
+            'score': 10,
+            'issues': [],
+        }
+
+        if baseline['is_spa']:
+            results['issues'].append(
+                'SPA detected — sensitive file exposure checks skipped to avoid false positives'
+            )
+            return results
+
+        base = target_url.rstrip('/')
+        for path, _ in SENSITIVE_PATHS.items():
+            url = f'{base}/{path}'
+            try:
+                response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                if response.status_code != 200:
+                    continue
+                if self._is_false_positive(response, baseline):
+                    continue
+                if not self._is_real_exposure(path, response.text):
+                    continue
+                results['exposed_files'].append({'path': path, 'url': url})
+                results['score'] -= 5
+                results['issues'].append(
+                    f'Sensitive file exposed: /{path} — remove from public web root immediately'
+                )
+            except Exception:
+                pass
+
+        results['score'] = max(0, results['score'])
+        return results
+
+    def _check_admin_panels(self, target_url, baseline):
+        results = {
+            'exposed_panels': [],
+            'skipped_spa': baseline['is_spa'],
+            'score': 10,
+            'issues': [],
+        }
+
+        if baseline['is_spa']:
+            results['issues'].append(
+                'SPA detected — admin panel discovery skipped to avoid false positives'
+            )
+            return results
+
+        base = target_url.rstrip('/')
+        for path in ADMIN_PATHS:
+            url = f'{base}{path}'
+            try:
+                response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                if response.status_code not in (200, 401, 403):
+                    continue
+                if response.status_code == 200 and self._is_false_positive(response, baseline):
+                    continue
+                results['exposed_panels'].append({'path': path, 'status': response.status_code})
+                results['score'] -= 3
+                results['issues'].append(
+                    f'Admin panel reachable at {path} (HTTP {response.status_code})'
+                )
+            except Exception:
+                pass
+
+        results['score'] = max(0, results['score'])
+        return results
+
     def _check_open_ports(self, target):
         results = {
             'open_ports': [],
@@ -477,6 +597,17 @@ class SecurityScanner:
         total += min(checks.get('http_methods', {}).get('score', 0), 5)
         total += min(checks.get('tech', {}).get('score', 0), 5)
         total += min(checks.get('ports', {}).get('score', 0), 5)
+
+        # Sensitive file and admin panel checks are only counted when not SPA-skipped,
+        # ensuring that bypassed checks don't penalise the score unfairly.
+        sensitive = checks.get('sensitive_files', {})
+        if not sensitive.get('skipped_spa'):
+            total += min(sensitive.get('score', 10), 10)
+
+        admin = checks.get('admin_panels', {})
+        if not admin.get('skipped_spa'):
+            total += min(admin.get('score', 10), 10)
+
         # CSP quality bonus / penalty
         csp_quality = checks.get('headers', {}).get('csp_quality')
         if csp_quality:
