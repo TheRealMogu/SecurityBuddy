@@ -1,0 +1,152 @@
+name: Security Buddy Scan
+description: >
+  Run a Security Buddy security scan against a domain or IP.
+  Fails the job when the score drops below a configurable threshold.
+
+branding:
+  icon: shield
+  color: green
+
+inputs:
+  target:
+    description: Domain or IP address to scan (e.g. example.com)
+    required: true
+  api_url:
+    description: Base URL of your Security Buddy instance
+    required: false
+    default: https://securitybuddy.app
+  api_key:
+    description: Security Buddy API key (store in GitHub Secrets)
+    required: false
+    default: ''
+  min_score:
+    description: Minimum acceptable security score (0-100). Job fails if score is lower.
+    required: false
+    default: '70'
+  fail_on_critical:
+    description: Fail the job if risk level is "critical", regardless of min_score
+    required: false
+    default: 'true'
+  output_file:
+    description: Path to write the JSON report (relative to workspace)
+    required: false
+    default: security-report.json
+
+outputs:
+  score:
+    description: Overall security score (0-100)
+  risk_level:
+    description: Risk level — low, medium, high or critical
+  report_path:
+    description: Path to the JSON report file
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Security Buddy CLI
+      shell: bash
+      run: |
+        pip install requests --quiet
+
+    - name: Run security scan
+      shell: python
+      env:
+        SB_TARGET:    ${{ inputs.target }}
+        SB_API_URL:   ${{ inputs.api_url }}
+        SB_API_KEY:   ${{ inputs.api_key }}
+        SB_MIN_SCORE: ${{ inputs.min_score }}
+        SB_FAIL_CRIT: ${{ inputs.fail_on_critical }}
+        SB_OUTPUT:    ${{ inputs.output_file }}
+      run: |
+        import json, os, sys, time
+        import requests
+
+        target    = os.environ['SB_TARGET']
+        api_url   = os.environ['SB_API_URL'].rstrip('/')
+        api_key   = os.environ.get('SB_API_KEY', '')
+        min_score = int(os.environ.get('SB_MIN_SCORE', '70'))
+        fail_crit = os.environ.get('SB_FAIL_CRIT', 'true').lower() == 'true'
+        output    = os.environ.get('SB_OUTPUT', 'security-report.json')
+
+        headers = {'Content-Type': 'application/json'}
+        if api_key:
+            headers['X-API-Key'] = api_key
+
+        print(f'::group::Security Buddy — scanning {target}')
+        print(f'API URL : {api_url}')
+        print(f'Min score threshold: {min_score}')
+
+        try:
+            resp = requests.post(
+                f'{api_url}/api/v1/scan',
+                json={'target': target},
+                headers=headers,
+                timeout=120,
+            )
+            resp.raise_for_status()
+            report = resp.json()
+        except Exception as e:
+            print(f'::error::Scan request failed: {e}')
+            sys.exit(1)
+
+        score      = report.get('overall_score', 0)
+        risk_level = report.get('risk_level', 'unknown')
+
+        # Write report
+        with open(output, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        # GitHub Actions output
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+            fh.write(f'score={score}\n')
+            fh.write(f'risk_level={risk_level}\n')
+            fh.write(f'report_path={output}\n')
+
+        # Summary
+        icon = '✅' if score >= 80 else ('⚠️' if score >= 60 else '🚨')
+        print(f'\n{icon}  Score: {score}/100   Risk: {risk_level.upper()}')
+        print(f'Report saved to: {output}')
+
+        issues = []
+        for check_name, check in report.get('checks', {}).items():
+            if isinstance(check, dict):
+                for issue in check.get('issues', []):
+                    issues.append(f'  [{check_name}] {issue}')
+
+        if issues:
+            print(f'\nFindings ({len(issues)}):')
+            for i in issues[:20]:
+                print(i)
+            if len(issues) > 20:
+                print(f'  … and {len(issues) - 20} more (see {output})')
+        print('::endgroup::')
+
+        # Step summary
+        summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+        if summary_path:
+            with open(summary_path, 'a') as f:
+                f.write(f'## Security Buddy — {target}\n\n')
+                f.write(f'| Score | Risk Level |\n|---|---|\n')
+                f.write(f'| **{score}/100** | **{risk_level.upper()}** |\n\n')
+                if issues:
+                    f.write(f'### Findings\n\n')
+                    for i in issues[:10]:
+                        f.write(f'- {i.strip()}\n')
+                    if len(issues) > 10:
+                        f.write(f'\n_… and {len(issues) - 10} more. Download the artifact for the full report._\n')
+
+        # Fail checks
+        failed = False
+        if fail_crit and risk_level == 'critical':
+            print(f'::error::Security Buddy: risk level is CRITICAL for {target}')
+            failed = True
+        if score < min_score:
+            print(f'::error::Security Buddy: score {score} is below threshold {min_score} for {target}')
+            failed = True
+
+        sys.exit(1 if failed else 0)

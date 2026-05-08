@@ -1,128 +1,136 @@
 {% extends "base.html" %}
 
-{% block title %}Login - Security Buddy{% endblock %}
+{% block title %}Login — Security Buddy{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-5">
-            <div class="auth-card">
-                <div class="text-center mb-4">
-                    <h2 class="fw-bold text-dark">Welcome Back</h2>
-                    <p class="text-muted">Sign in to access premium features</p>
-                </div>
+<div class="auth-page">
+    <div class="container">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <i data-lucide="shield" style="width:22px;height:22px;color:var(--color-primary);"></i>
+            </div>
+            <h1 class="auth-title">Welcome back</h1>
+            <p class="auth-sub">Sign in to access premium features</p>
 
-                <!-- Login/Register Tabs -->
-                <ul class="nav nav-pills nav-fill mb-4" id="authTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="login-tab" data-bs-toggle="pill"
-                                data-bs-target="#login" type="button" role="tab"
-                                aria-controls="login" aria-selected="true">
-                            Sign In
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="register-tab" data-bs-toggle="pill"
-                                data-bs-target="#register" type="button" role="tab"
-                                aria-controls="register" aria-selected="false">
-                            Sign Up
-                        </button>
-                    </li>
-                </ul>
+            <!-- Tab switcher -->
+            <div class="auth-tabs" role="tablist">
+                <button class="auth-tab-btn active" id="tabLoginBtn"
+                        role="tab" aria-selected="true" aria-controls="panelLogin">
+                    Sign In
+                </button>
+                <button class="auth-tab-btn" id="tabRegisterBtn"
+                        role="tab" aria-selected="false" aria-controls="panelRegister">
+                    Sign Up
+                </button>
+            </div>
 
-                <div class="tab-content" id="authTabsContent">
-                    <!-- Login Form -->
-                    <div class="tab-pane fade show active" id="login" role="tabpanel" aria-labelledby="login-tab">
-                        <form method="POST" action="{{ url_for('login') }}" id="loginForm" novalidate>
-                            <div class="mb-3">
-                                <label for="loginUsername" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="loginUsername"
-                                       name="username" autocomplete="username" required>
-                                <div class="field-error" id="loginUsernameError"></div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="loginPassword" class="form-label">Password</label>
-                                <div class="input-password-wrapper">
-                                    <input type="password" class="form-control" id="loginPassword"
-                                           name="password" autocomplete="current-password" required>
-                                    <button type="button" class="btn-toggle-password" aria-label="Mostra/nascondi password"
-                                            data-target="loginPassword">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                                             fill="none" stroke="currentColor" stroke-width="2" class="eye-icon">
-                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                            <circle cx="12" cy="12" r="3"></circle>
-                                        </svg>
-                                    </button>
-                                </div>
-                                <div class="field-error" id="loginPasswordError"></div>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">
-                                <i data-feather="log-in" class="me-2"></i>Sign In
-                            </button>
-                        </form>
+            <!-- Login panel -->
+            <div class="auth-panel active" id="panelLogin" role="tabpanel" aria-labelledby="tabLoginBtn">
+                <form method="POST" action="{{ url_for('login') }}" id="loginForm" novalidate>
+                    <div class="form-group">
+                        <label class="form-label" for="loginUsername">Username</label>
+                        <input type="text" class="form-control" id="loginUsername"
+                               name="username" autocomplete="username" required>
+                        <div class="field-error" id="loginUsernameError"></div>
                     </div>
-
-                    <!-- Register Form -->
-                    <div class="tab-pane fade" id="register" role="tabpanel" aria-labelledby="register-tab">
-                        <form method="POST" action="{{ url_for('register') }}" id="registerForm" novalidate>
-                            <div class="mb-3">
-                                <label for="registerUsername" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="registerUsername"
-                                       name="username" autocomplete="username" required
-                                       minlength="3" maxlength="64">
-                                <div class="field-error" id="registerUsernameError"></div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="registerEmail" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="registerEmail"
-                                       name="email" autocomplete="email" required>
-                                <div class="field-error" id="registerEmailError"></div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="registerPassword" class="form-label">Password</label>
-                                <div class="input-password-wrapper">
-                                    <input type="password" class="form-control" id="registerPassword"
-                                           name="password" autocomplete="new-password"
-                                           required minlength="6">
-                                    <button type="button" class="btn-toggle-password" aria-label="Mostra/nascondi password"
-                                            data-target="registerPassword">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                                             fill="none" stroke="currentColor" stroke-width="2" class="eye-icon">
-                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                            <circle cx="12" cy="12" r="3"></circle>
-                                        </svg>
-                                    </button>
-                                </div>
-                                <!-- Password strength meter -->
-                                <div class="password-strength mt-2" id="passwordStrengthWrapper" style="display:none;">
-                                    <div class="password-strength-bar">
-                                        <div class="password-strength-fill" id="passwordStrengthFill"></div>
-                                    </div>
-                                    <small class="password-strength-label" id="passwordStrengthLabel"></small>
-                                </div>
-                                <div class="field-error" id="registerPasswordError"></div>
-                            </div>
-                            <div class="mb-3 form-check">
-                                <input type="checkbox" class="form-check-input" id="agreeTerms" required>
-                                <label class="form-check-label" for="agreeTerms">
-                                    I agree to the Terms of Service
-                                </label>
-                                <div class="field-error" id="agreeTermsError"></div>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">
-                                <i data-feather="user-plus" class="me-2"></i>Create Account
+                    <div class="form-group">
+                        <label class="form-label" for="loginPassword">Password</label>
+                        <div class="input-password-wrapper">
+                            <input type="password" class="form-control" id="loginPassword"
+                                   name="password" autocomplete="current-password" required>
+                            <button type="button" class="btn-toggle-password"
+                                    aria-label="Show/hide password" data-target="loginPassword">
+                                <i data-lucide="eye" style="width:16px;height:16px;"></i>
                             </button>
-                        </form>
+                        </div>
+                        <div class="field-error" id="loginPasswordError"></div>
                     </div>
-                </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i data-lucide="log-in" style="width:15px;height:15px;"></i>Sign In
+                    </button>
+                </form>
+            </div>
 
-                <div class="text-center mt-4">
-                    <a href="{{ url_for('index') }}" class="text-muted text-decoration-none">
-                        <i data-feather="arrow-left" class="me-1"></i>Back to Scanner
-                    </a>
-                </div>
+            <!-- Register panel -->
+            <div class="auth-panel" id="panelRegister" role="tabpanel" aria-labelledby="tabRegisterBtn">
+                <form method="POST" action="{{ url_for('register') }}" id="registerForm" novalidate>
+                    <div class="form-group">
+                        <label class="form-label" for="registerUsername">Username</label>
+                        <input type="text" class="form-control" id="registerUsername"
+                               name="username" autocomplete="username"
+                               required minlength="3" maxlength="64">
+                        <div class="field-error" id="registerUsernameError"></div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="registerEmail">Email</label>
+                        <input type="email" class="form-control" id="registerEmail"
+                               name="email" autocomplete="email" required>
+                        <div class="field-error" id="registerEmailError"></div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="registerPassword">Password</label>
+                        <div class="input-password-wrapper">
+                            <input type="password" class="form-control" id="registerPassword"
+                                   name="password" autocomplete="new-password"
+                                   required minlength="6">
+                            <button type="button" class="btn-toggle-password"
+                                    aria-label="Show/hide password" data-target="registerPassword">
+                                <i data-lucide="eye" style="width:16px;height:16px;"></i>
+                            </button>
+                        </div>
+                        <div class="password-strength mt-2" id="passwordStrengthWrapper" style="display:none;">
+                            <div class="password-strength-bar">
+                                <div class="password-strength-fill" id="passwordStrengthFill"></div>
+                            </div>
+                            <small class="password-strength-label" id="passwordStrengthLabel"></small>
+                        </div>
+                        <div class="field-error" id="registerPasswordError"></div>
+                    </div>
+                    <div class="form-group" style="display:flex;align-items:flex-start;gap:0.5rem;">
+                        <input type="checkbox" id="agreeTerms" name="agree_terms"
+                               style="width:16px;height:16px;margin-top:3px;flex-shrink:0;" required>
+                        <label for="agreeTerms" style="font-size:0.85rem;color:var(--color-text-muted);cursor:pointer;">
+                            I agree to the Terms of Service
+                        </label>
+                    </div>
+                    <div class="field-error mb-2" id="agreeTermsError"></div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i data-lucide="user-plus" style="width:15px;height:15px;"></i>Create Account
+                    </button>
+                </form>
+            </div>
+
+            <div class="text-center mt-3">
+                <a href="{{ url_for('index') }}" class="small text-muted">
+                    ← Back to Scanner
+                </a>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Tab switching
+document.getElementById('tabLoginBtn').addEventListener('click', function() {
+    this.classList.add('active');
+    document.getElementById('tabRegisterBtn').classList.remove('active');
+    document.getElementById('panelLogin').classList.add('active');
+    document.getElementById('panelRegister').classList.remove('active');
+});
+document.getElementById('tabRegisterBtn').addEventListener('click', function() {
+    this.classList.add('active');
+    document.getElementById('tabLoginBtn').classList.remove('active');
+    document.getElementById('panelRegister').classList.add('active');
+    document.getElementById('panelLogin').classList.remove('active');
+});
+
+// Open register tab if URL hash matches
+if (window.location.hash === '#register') {
+    document.getElementById('tabRegisterBtn').click();
+}
+
+lucide.createIcons();
+</script>
 {% endblock %}

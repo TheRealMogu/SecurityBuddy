@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Premium — Security Buddy{% endblock %}
+
+{% block content %}
+<section class="premium-hero">
+    <div class="container text-center">
+        <span class="section-label">Security Buddy Pro</span>
+        <h1 class="hero-headline" style="font-size:clamp(1.75rem,4vw,2.75rem);">Everything your security team needs</h1>
+        <p class="hero-subtext">Deeper scanning, branded reports and continuous monitoring for teams and companies.</p>
+        {% if not current_user.is_authenticated %}
+        <a href="{{ url_for('login') }}#register" class="btn btn-primary btn-lg">
+            <i data-lucide="zap" style="width:17px;height:17px;"></i>Get Started Free
+        </a>
+        {% elif not current_user.is_premium %}
+        <a href="mailto:hello@securitybuddy.app?subject=Premium+Upgrade" class="btn btn-primary btn-lg">
+            <i data-lucide="star" style="width:17px;height:17px;"></i>Upgrade to Pro
+        </a>
+        {% else %}
+        <span class="badge badge-success" style="font-size:1rem;padding:0.5rem 1.25rem;">✓ You have Pro access</span>
+        {% endif %}
+    </div>
+</section>
+
+<div class="container" style="padding:4rem 1.5rem;">
+    <div class="premium-feature-grid">
+        <div class="premium-feature-card">
+            <div class="feature-icon" style="margin-bottom:1rem;">
+                <i data-lucide="file-text" style="width:20px;height:20px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-family:var(--font-display);font-weight:700;margin-bottom:0.5rem;">White-label PDF Reports</h5>
+            <p class="text-muted small">Executive-ready PDF reports with your branding, CVSS-equivalent scores and copy-paste remediation commands.</p>
+        </div>
+        <div class="premium-feature-card">
+            <div class="feature-icon" style="margin-bottom:1rem;">
+                <i data-lucide="calendar" style="width:20px;height:20px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-family:var(--font-display);font-weight:700;margin-bottom:0.5rem;">Scheduled Monitoring</h5>
+            <p class="text-muted small">Run automatic scans daily, weekly or monthly. Get alerted the moment your security score drops.</p>
+        </div>
+        <div class="premium-feature-card">
+            <div class="feature-icon" style="margin-bottom:1rem;">
+                <i data-lucide="bell" style="width:20px;height:20px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-family:var(--font-display);font-weight:700;margin-bottom:0.5rem;">Slack &amp; Email Alerts</h5>
+            <p class="text-muted small">Instant notifications when critical vulnerabilities are detected or your SSL certificate is about to expire.</p>
+        </div>
+        <div class="premium-feature-card">
+            <div class="feature-icon" style="margin-bottom:1rem;">
+                <i data-lucide="key" style="width:20px;height:20px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-family:var(--font-display);font-weight:700;margin-bottom:0.5rem;">REST API Access</h5>
+            <p class="text-muted small">Integrate security scanning into any workflow. Full JSON API with up to 500 scans/month.</p>
+        </div>
+        <div class="premium-feature-card">
+            <div class="feature-icon" style="margin-bottom:1rem;">
+                <i data-lucide="terminal" style="width:20px;height:20px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-family:var(--font-display);font-weight:700;margin-bottom:0.5rem;">CLI Tool</h5>
+            <p class="text-muted small">Run <code>securitybuddy scan example.com</code> from the terminal. Exit codes for CI/CD pipelines.</p>
+        </div>
+        <div class="premium-feature-card">
+            <div class="feature-icon" style="margin-bottom:1rem;">
+                <i data-lucide="git-pull-request" style="width:20px;height:20px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-family:var(--font-display);font-weight:700;margin-bottom:0.5rem;">GitHub Action</h5>
+            <p class="text-muted small">Block deployments if the security score drops below your threshold. Posts a full report to the job summary.</p>
+        </div>
+    </div>
+
+    <div class="text-center" style="margin-top:1rem;">
+        {% if not current_user.is_authenticated %}
+        <a href="{{ url_for('login') }}#register" class="btn btn-primary btn-lg">
+            <i data-lucide="user-plus" style="width:17px;height:17px;"></i>Create a Free Account
+        </a>
+        {% elif not current_user.is_premium %}
+        <a href="mailto:hello@securitybuddy.app?subject=Premium+Upgrade" class="btn btn-primary btn-lg">
+            <i data-lucide="star" style="width:17px;height:17px;"></i>Contact us to Upgrade
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>lucide.createIcons();</script>{% endblock %}

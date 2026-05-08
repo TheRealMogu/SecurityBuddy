@@ -263,6 +263,59 @@ def create_api_key():
 
     return redirect(url_for('api_keys'))
 
+@app.route('/badge/<path:domain>/<int:score>.svg')
+def badge_svg(domain, score):
+    """Dynamic SVG security score badge for sharing."""
+    score = max(0, min(100, score))
+
+    if score >= 80:
+        color = '#1a7f4b'
+        grade = 'A' if score >= 90 else 'B'
+    elif score >= 60:
+        color = '#92590e'
+        grade = 'C'
+    elif score >= 40:
+        color = '#b91c1c'
+        grade = 'D'
+    else:
+        color = '#991b1b'
+        grade = 'F'
+
+    label = 'security'
+    value = f'{score}/100 · {grade}'
+    label_w = 64
+    value_w = 88
+    total_w = label_w + value_w
+    height = 20
+
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="{height}" role="img" aria-label="{domain} security score: {score}">
+  <title>{domain} security score: {score}/100 ({grade})</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0"  stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1"  stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="{total_w}" height="{height}" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="{label_w}" height="{height}" fill="#555"/>
+    <rect x="{label_w}" width="{value_w}" height="{height}" fill="{color}"/>
+    <rect width="{total_w}" height="{height}" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="110">
+    <text x="{label_w // 2 * 10}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="{(label_w - 10) * 10}" lengthAdjust="spacing">{label}</text>
+    <text x="{label_w // 2 * 10}" y="140" transform="scale(.1)" textLength="{(label_w - 10) * 10}" lengthAdjust="spacing">{label}</text>
+    <text x="{(label_w + value_w // 2) * 10}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="{(value_w - 10) * 10}" lengthAdjust="spacing">{value}</text>
+    <text x="{(label_w + value_w // 2) * 10}" y="140" transform="scale(.1)" textLength="{(value_w - 10) * 10}" lengthAdjust="spacing">{value}</text>
+  </g>
+</svg>'''
+
+    response = make_response(svg)
+    response.headers['Content-Type'] = 'image/svg+xml'
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+
 @app.errorhandler(404)
 def not_found_error(error):
     return render_template('404.html'), 404

@@ -1,395 +1,692 @@
 {% extends "base.html" %}
 
-{% block title %}Scan Results - Security Buddy{% endblock %}
+{% block title %}Security Report — {{ results.target }} — Security Buddy{% endblock %}
 
 {% block content %}
-<div class="container my-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <!-- Header -->
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <h1 class="h2 fw-bold text-dark mb-1">Security Report</h1>
-                    <p class="text-muted mb-0">{{ results.target }}</p>
-                </div>
-                <div class="text-end">
-                    <!-- Animated SVG score ring -->
-                    <div class="score-ring-wrapper risk-color-{{ results.risk_level }}"
-                         data-score="{{ results.overall_score }}"
-                         aria-label="Security score: {{ results.overall_score }} out of 100">
-                        <svg class="score-ring" viewBox="0 0 120 120" width="110" height="110">
-                            <circle class="score-ring-bg" cx="60" cy="60" r="45"/>
-                            <circle class="score-ring-fill" cx="60" cy="60" r="45" id="scoreRingFill"/>
-                            <text class="score-ring-number" x="60" y="56"
-                                  dominant-baseline="central" text-anchor="middle"
-                                  id="scoreRingNumber">0</text>
-                            <text class="score-ring-label" x="60" y="76"
-                                  dominant-baseline="central" text-anchor="middle">/100</text>
-                        </svg>
-                    </div>
-                    <div class="risk-badge risk-{{ results.risk_level }} mt-1">
-                        {{ results.risk_level.title() }} Risk
-                    </div>
-                </div>
+{% set score = results.overall_score %}
+{% set risk  = results.risk_level %}
+
+{# Build quick wins list #}
+{% set quick_wins = [] %}
+{% if results.checks.https is defined and not results.checks.https.https_available %}
+  {% if quick_wins.append('Enable HTTPS with a free Let\'s Encrypt certificate') %}{% endif %}
+{% endif %}
+{% if results.checks.headers is defined and results.checks.headers.headers_missing %}
+  {% if quick_wins.append('Add missing headers: ' ~ results.checks.headers.headers_missing[:2] | join(', ')) %}{% endif %}
+{% endif %}
+{% if results.checks.cookies is defined and results.checks.cookies.insecure_cookies | length > 0 %}
+  {% if quick_wins.append('Set Secure; HttpOnly; SameSite=Lax on all session cookies') %}{% endif %}
+{% endif %}
+{% if results.checks.cors is defined and results.checks.cors.wildcard_origin %}
+  {% if quick_wins.append('Replace Access-Control-Allow-Origin: * with specific origins') %}{% endif %}
+{% endif %}
+{% if results.checks.ports is defined and results.checks.ports.open_ports | length > 0 %}
+  {% if quick_wins.append('Firewall database/admin ports: ' ~ results.checks.ports.open_ports[:2] | map(attribute='port') | join(', ')) %}{% endif %}
+{% endif %}
+{% if results.checks.tech is defined and results.checks.tech.version_disclosed %}
+  {% if quick_wins.append('Remove version info from Server and X-Powered-By headers') %}{% endif %}
+{% endif %}
+
+<div class="container">
+<div class="result-layout">
+
+    <!-- ── Sidebar ── -->
+    <aside class="score-sidebar">
+
+        <!-- Score card -->
+        <div class="score-card risk-color-{{ risk }}">
+            <div class="score-ring-wrapper" id="scoreRingWrapper" data-score="{{ score }}">
+                <svg viewBox="0 0 120 120" width="130" height="130" aria-label="Security score {{ score }} out of 100">
+                    <circle class="score-ring-bg" cx="60" cy="60" r="51"/>
+                    <circle class="score-ring-fill" cx="60" cy="60" r="51" id="scoreRingFill"/>
+                    <text class="score-number-text" x="60" y="55"
+                          dominant-baseline="central" text-anchor="middle"
+                          id="scoreRingNumber">0</text>
+                    <text class="score-label-text" x="60" y="76"
+                          dominant-baseline="central" text-anchor="middle">/100</text>
+                </svg>
             </div>
 
-            <!-- Overall Status with User-Friendly Explanation -->
-            <div class="alert alert-{% if results.overall_score >= 70 %}success{% elif results.overall_score >= 50 %}warning{% else %}danger{% endif %} mb-4">
-                <div class="d-flex align-items-center">
-                    <div class="status-emoji me-3">
-                        {% if results.overall_score >= 90 %}🛡️
-                        {% elif results.overall_score >= 70 %}✅
-                        {% elif results.overall_score >= 50 %}⚠️
-                        {% else %}🚨{% endif %}
-                    </div>
-                    <div class="flex-grow-1">
-                        <div class="status-title">
-                            {% if results.overall_score >= 90 %}
-                                <strong>Eccellente! Il tuo sito è molto sicuro! 🌟</strong>
-                                <div class="small mt-1 text-muted">Il tuo sito web ha ottime protezioni. I visitatori possono navigare in tranquillità.</div>
-                            {% elif results.overall_score >= 70 %}
-                                <strong>Ottimo lavoro! Il tuo sito è abbastanza sicuro 👍</strong>
-                                <div class="small mt-1 text-muted">Hai buone protezioni di base. Qualche piccolo miglioramento e sarai perfetto!</div>
-                            {% elif results.overall_score >= 50 %}
-                                <strong>Il tuo sito ha bisogno di qualche attenzione 💪</strong>
-                                <div class="small mt-1 text-muted">Ci sono alcune cose importanti da sistemare per proteggere meglio i tuoi visitatori.</div>
-                            {% else %}
-                                <strong>Attenzione: il tuo sito ha seri problemi di sicurezza 🚨</strong>
-                                <div class="small mt-1 text-muted">Non preoccuparti! Ti aiutiamo a sistemare tutto passo dopo passo.</div>
-                            {% endif %}
-                        </div>
-                        <div class="scan-info mt-2">
-                            <small class="text-muted">
-                                <i data-feather="clock" style="width: 14px; height: 14px;"></i>
-                                Scansione del {{ results.scan_time[:19] | replace('T', ' alle ') }}
-                                <span class="ms-3">
-                                    <i data-feather="target" style="width: 14px; height: 14px;"></i>
-                                    {{ results.target }}
-                                </span>
-                            </small>
-                        </div>
-                    </div>
-                </div>
+            <div class="risk-badge risk-{{ risk }}" style="margin-bottom:0.5rem;">
+                {{ risk | title }} Risk
             </div>
 
-            <!-- Simple Summary Cards -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                    <div class="summary-card text-center">
-                        <div class="summary-icon">
-                            {% if results.checks.https.https_available %}🔒{% else %}🔓{% endif %}
-                        </div>
-                        <h6>Connessione Sicura</h6>
-                        <p class="small text-muted">
-                            {% if results.checks.https.https_available %}
-                                ✅ I dati sono protetti
-                            {% else %}
-                                ❌ I dati potrebbero essere spiati
-                            {% endif %}
-                        </p>
-                    </div>
+            <div class="score-meta">
+                <div class="score-meta-item">
+                    <span>Target</span>
+                    <span class="text-mono" style="font-size:0.75rem;max-width:130px;overflow:hidden;text-overflow:ellipsis;">{{ results.target }}</span>
                 </div>
-                <div class="col-md-4">
-                    <div class="summary-card text-center">
-                        <div class="summary-icon">
-                            {% if results.checks.ssl.valid %}🆔{% else %}❓{% endif %}
-                        </div>
-                        <h6>Identità Verificata</h6>
-                        <p class="small text-muted">
-                            {% if results.checks.ssl.valid %}
-                                ✅ Il sito è autentico
-                            {% else %}
-                                ❌ Identità non verificata
-                            {% endif %}
-                        </p>
-                    </div>
+                <div class="score-meta-item">
+                    <span>Scanned</span>
+                    <span>{{ results.scan_time[:10] if results.scan_time else 'now' }}</span>
                 </div>
-                <div class="col-md-4">
-                    <div class="summary-card text-center">
-                        <div class="summary-icon">
-                            {% if results.checks.headers.headers_found|length > 3 %}🛡️{% else %}⚠️{% endif %}
-                        </div>
-                        <h6>Protezioni Extra</h6>
-                        <p class="small text-muted">
-                            {{ results.checks.headers.headers_found|length }}/6 protezioni attive
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Connectivity Check -->
-            {% if results.checks.connectivity %}
-            <div class="check-section">
-                <h4 class="check-title">
-                    <i data-feather="{% if results.checks.connectivity.reachable %}check{% else %}x{% endif %}" 
-                       class="status-icon status-{% if results.checks.connectivity.reachable %}success{% else %}danger{% endif %}"></i>
-                    Connectivity
-                </h4>
-                <div class="check-content">
-                    {% if results.checks.connectivity.reachable %}
-                        <p class="mb-1"><strong>✓ Target is reachable</strong></p>
-                        <p class="text-muted small">HTTP Status: {{ results.checks.connectivity.status_code }}</p>
-                    {% else %}
-                        <p class="mb-1"><strong>✗ Target is unreachable</strong></p>
-                        <p class="text-muted small">{{ results.checks.connectivity.message }}</p>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- HTTPS Check -->
-            {% if results.checks.https %}
-            <div class="check-section">
-                <h4 class="check-title">
-                    <i data-feather="{% if results.checks.https.https_available %}check{% else %}x{% endif %}" 
-                       class="status-icon status-{% if results.checks.https.https_available %}success{% else %}danger{% endif %}"></i>
-                    HTTPS Security
-                </h4>
-                <div class="check-content">
-                    {% if results.checks.https.https_available %}
-                        <p class="mb-1"><strong>✓ HTTPS is available</strong></p>
-                    {% else %}
-                        <p class="mb-1"><strong>✗ HTTPS is not available</strong></p>
-                    {% endif %}
-                    
-                    {% if results.checks.https.redirects_to_https %}
-                        <p class="mb-1"><strong>✓ HTTP redirects to HTTPS</strong></p>
-                    {% else %}
-                        <p class="mb-1"><strong>⚠ HTTP does not redirect to HTTPS</strong></p>
-                    {% endif %}
-                    
-                    {% if results.checks.https.issues %}
-                        <div class="issues-list mt-2">
-                            <small class="text-muted">Issues found:</small>
-                            {% for issue in results.checks.https.issues %}
-                                <div class="issue-item">{{ issue }}</div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                    
-                    <div class="user-friendly-explanation mt-3">
-                        <div class="explanation-box">
-                            <h6>🤔 Cosa significa questo?</h6>
-                            <p class="mb-2">HTTPS è come una <strong>conversazione in codice segreto</strong> tra il tuo sito e i visitatori.</p>
-                            
-                            <div class="analogy-box">
-                                <div class="analogy-icon">📬</div>
-                                <div class="analogy-text">
-                                    <strong>Pensa così:</strong> HTTP è come mandare cartoline (tutti possono leggere), 
-                                    HTTPS è come mandare lettere in buste sigillate (solo tu e il destinatario potete aprirle).
-                                </div>
-                            </div>
-                            
-                            {% if not results.checks.https.https_available %}
-                            <div class="action-needed mt-3">
-                                <h6>🛠️ Come sistemare:</h6>
-                                <ol class="simple-steps">
-                                    <li>Chiama il tuo fornitore di hosting</li>
-                                    <li>Chiedi di attivare il "certificato SSL gratuito"</li>
-                                    <li>Di solito ci vogliono 10-30 minuti</li>
-                                </ol>
-                                <div class="help-note">
-                                    <small>💡 <strong>Non sai chi chiamare?</strong> Controlla le email di quando hai comprato il dominio/hosting</small>
-                                </div>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- SSL Certificate Check -->
-            {% if results.checks.ssl %}
-            <div class="check-section">
-                <h4 class="check-title">
-                    <i data-feather="{% if results.checks.ssl.valid %}check{% else %}x{% endif %}" 
-                       class="status-icon status-{% if results.checks.ssl.valid %}success{% else %}danger{% endif %}"></i>
-                    SSL Certificate
-                </h4>
-                <div class="check-content">
-                    {% if results.checks.ssl.valid %}
-                        <p class="mb-1"><strong>✓ Valid SSL certificate</strong></p>
-                        {% if results.checks.ssl.issuer %}
-                            <p class="text-muted small">Issued by: {{ results.checks.ssl.issuer }}</p>
-                        {% endif %}
-                        {% if results.checks.ssl.days_until_expiry is not none %}
-                            <p class="text-muted small">
-                                Expires in {{ results.checks.ssl.days_until_expiry }} days
-                                {% if results.checks.ssl.expires_soon %}
-                                    <span class="text-warning">⚠ Renewal needed soon</span>
-                                {% endif %}
-                            </p>
-                        {% endif %}
-                    {% else %}
-                        <p class="mb-1"><strong>✗ SSL certificate issues detected</strong></p>
-                    {% endif %}
-                    
-                    {% if results.checks.ssl.issues %}
-                        <div class="issues-list mt-2">
-                            <small class="text-muted">Issues found:</small>
-                            {% for issue in results.checks.ssl.issues %}
-                                <div class="issue-item">{{ issue }}</div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                    
-                    <div class="why-matters mt-3">
-                        <small class="text-muted">
-                            <strong>Why this matters:</strong> SSL certificates verify your website's identity and 
-                            enable encrypted connections. Expired or invalid certificates trigger browser warnings.
-                        </small>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Security Headers Check -->
-            {% if results.checks.headers %}
-            <div class="check-section">
-                <h4 class="check-title">
-                    <i data-feather="{% if results.checks.headers.headers_found %}check{% else %}alert-triangle{% endif %}" 
-                       class="status-icon status-{% if results.checks.headers.headers_found|length > 3 %}success{% elif results.checks.headers.headers_found|length > 1 %}warning{% else %}danger{% endif %}"></i>
-                    Security Headers
-                </h4>
-                <div class="check-content">
-                    {% if results.checks.headers.headers_found %}
-                        <div class="mb-3">
-                            <small class="text-muted">Headers found:</small>
-                            {% for header in results.checks.headers.headers_found %}
-                                <div class="header-item">
-                                    <strong>{{ header.name }}</strong>
-                                    <span class="text-muted small">{{ header.value[:50] }}{% if header.value|length > 50 %}...{% endif %}</span>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                    
-                    {% if results.checks.headers.headers_missing %}
-                        <div class="missing-headers mb-3">
-                            <small class="text-muted">Missing headers:</small>
-                            {% for header in results.checks.headers.headers_missing %}
-                                <div class="missing-item">{{ header }}</div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                    
-                    {% if results.checks.headers.issues %}
-                        <div class="issues-list mt-2">
-                            <small class="text-muted">Issues found:</small>
-                            {% for issue in results.checks.headers.issues %}
-                                <div class="issue-item">{{ issue }}</div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                    
-                    <div class="why-matters mt-3">
-                        <small class="text-muted">
-                            <strong>Why this matters:</strong> Security headers help protect against common attacks 
-                            like XSS, clickjacking, and data injection. They're an essential part of web security.
-                        </small>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Domain Info -->
-            {% if results.checks.domain_info %}
-            <div class="check-section">
-                <h4 class="check-title">
-                    <i data-feather="globe" class="status-icon status-info"></i>
-                    Domain Information
-                </h4>
-                <div class="check-content">
-                    {% if results.checks.domain_info.info_available %}
-                        {% if results.checks.domain_info.ip_address %}
-                            <p class="mb-1"><strong>IP Address:</strong> {{ results.checks.domain_info.ip_address }}</p>
-                        {% endif %}
-                    {% endif %}
-                    
-                    {% if results.checks.domain_info.issues %}
-                        <div class="issues-list mt-2">
-                            <small class="text-muted">Issues found:</small>
-                            {% for issue in results.checks.domain_info.issues %}
-                                <div class="issue-item">{{ issue }}</div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Action Buttons -->
-            <div class="action-buttons mt-4">
-                <a href="{{ url_for('index') }}" class="btn btn-primary">
-                    <i data-feather="search" class="me-2"></i>Scan Another Site
-                </a>
-                
-                {% if not current_user.is_authenticated or not current_user.is_premium %}
-                <button class="btn btn-outline-secondary" onclick="showPremiumModal()">
-                    <i data-feather="download" class="me-2"></i>Download PDF Report
-                    <span class="badge bg-warning text-dark ms-2">Pro</span>
-                </button>
-                
-                <button class="btn btn-outline-secondary" onclick="showPremiumModal()">
-                    <i data-feather="bell" class="me-2"></i>Set Up Monitoring
-                    <span class="badge bg-warning text-dark ms-2">Pro</span>
-                </button>
-                {% endif %}
             </div>
         </div>
-    </div>
-</div>
 
-<!-- FAB: Rescan same target -->
-<a href="{{ url_for('index') }}?target={{ results.target | urlencode }}"
-   class="fab-rescan" id="fabRescan" aria-label="Nuova scan per {{ results.target }}">
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-         stroke-linejoin="round" class="me-1">
-        <polyline points="23 4 23 10 17 10"></polyline>
-        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-    </svg>
-    <span>Nuova scan</span>
-</a>
+        <!-- Quick Wins -->
+        {% if quick_wins %}
+        <div class="quick-wins-card">
+            <div class="quick-wins-title">
+                <i data-lucide="zap" style="width:14px;height:14px;"></i>
+                Quick Wins
+            </div>
+            {% for win in quick_wins[:3] %}
+            <div class="quick-win-item">
+                <span class="quick-win-num">{{ loop.index }}</span>
+                <span>{{ win }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
 
-<!-- Premium Modal -->
-<div class="modal fade" id="premiumModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Premium Feature</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <!-- Badge sharing -->
+        <div class="badge-share-card">
+            <div class="badge-share-title">Share result</div>
+            <div class="badge-preview">
+                <img src="{{ url_for('badge_svg', domain=results.target, score=score) }}"
+                     alt="Security score badge for {{ results.target }}"
+                     style="height:20px;">
             </div>
-            <div class="modal-body">
-                <p>This feature is available with Security Buddy Premium.</p>
-                <p>Premium includes:</p>
-                <ul>
-                    <li>PDF report downloads</li>
-                    <li>Scheduled monitoring</li>
-                    <li>Email alerts</li>
-                    <li>Advanced vulnerability scanning</li>
-                    <li>API access</li>
-                </ul>
+            <div class="badge-copy-btns">
+                <button class="btn-copy-badge"
+                        data-copy-text="{{ request.host_url }}badge/{{ results.target }}/{{ score }}.svg"
+                        data-label="Copy badge URL">
+                    <i data-lucide="link" style="width:12px;height:12px;"></i>
+                    Copy badge URL
+                </button>
+                <button class="btn-copy-badge"
+                        data-copy-text="[![Security score]({{ request.host_url }}badge/{{ results.target }}/{{ score }}.svg)]({{ request.host_url }})"
+                        data-label="Copy Markdown">
+                    <i data-lucide="code" style="width:12px;height:12px;"></i>
+                    Copy Markdown
+                </button>
             </div>
-            <div class="modal-footer">
-                {% if current_user.is_authenticated %}
-                    <a href="{{ url_for('premium') }}" class="btn btn-primary">Upgrade to Premium</a>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="sidebar-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-primary w-100">
+                <i data-lucide="search" style="width:15px;height:15px;"></i>Scan Another Target
+            </a>
+
+            {% if current_user.is_authenticated and current_user.is_premium %}
+            <a href="{{ url_for('download_pdf', scan_id=scan_id) }}" class="btn btn-secondary w-100">
+                <i data-lucide="download" style="width:15px;height:15px;"></i>Download PDF
+            </a>
+            {% else %}
+            <a href="{{ url_for('premium') }}" class="btn btn-secondary w-100">
+                <i data-lucide="star" style="width:15px;height:15px;"></i>PDF Report
+                <span class="badge badge-warning ms-1">Pro</span>
+            </a>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- ── Checks panel ── -->
+    <section class="checks-panel">
+
+        <!-- Header -->
+        <div class="result-header">
+            <div>
+                <div class="result-target">{{ results.target }}</div>
+                <div class="result-ts">
+                    {% if results.overall_score >= 90 %}🛡️ Excellent security posture
+                    {% elif results.overall_score >= 70 %}✅ Good — a few improvements needed
+                    {% elif results.overall_score >= 50 %}⚠️ Moderate risk — action required
+                    {% else %}🚨 High risk — immediate action required
+                    {% endif %}
+                </div>
+            </div>
+            <div class="risk-badge risk-{{ risk }}">{{ risk | title }} Risk</div>
+        </div>
+
+        <!-- Summary strip -->
+        <div class="summary-strip">
+            {% set pass_count = namespace(n=0) %}
+            {% set warn_count = namespace(n=0) %}
+            {% set fail_count = namespace(n=0) %}
+            {% for k, v in results.checks.items() %}
+              {% if v is mapping %}
+                {% if v.get('issues', []) | length == 0 %}{% set pass_count.n = pass_count.n + 1 %}
+                {% elif v.get('issues', []) | length <= 1 %}{% set warn_count.n = warn_count.n + 1 %}
+                {% else %}{% set fail_count.n = fail_count.n + 1 %}{% endif %}
+              {% endif %}
+            {% endfor %}
+
+            <div class="summary-item summary-pass">
+                <div class="summary-item-num">{{ pass_count.n }}</div>
+                <div class="summary-item-label">Passed</div>
+            </div>
+            <div class="summary-item summary-warn">
+                <div class="summary-item-num">{{ warn_count.n }}</div>
+                <div class="summary-item-label">Warnings</div>
+            </div>
+            <div class="summary-item summary-fail">
+                <div class="summary-item-num">{{ fail_count.n }}</div>
+                <div class="summary-item-label">Failed</div>
+            </div>
+            <div class="summary-item summary-total">
+                <div class="summary-item-num">{{ results.checks | length }}</div>
+                <div class="summary-item-label">Total checks</div>
+            </div>
+        </div>
+
+        <!-- ── Connectivity ── -->
+        {% if results.checks.connectivity is defined %}
+        {% set conn = results.checks.connectivity %}
+        <details class="check-item {% if conn.reachable %}check-pass{% else %}check-fail{% endif %}">
+            <summary>
+                <i data-lucide="{% if conn.reachable %}check-circle{% else %}x-circle{% endif %}"
+                   class="check-status-icon {% if conn.reachable %}icon-pass{% else %}icon-fail{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Connectivity</span>
+                <span class="check-summary-text">{% if conn.reachable %}Reachable{% else %}Unreachable{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if conn.reachable %}
+                <p><strong>✓ Target is reachable</strong> — HTTP {{ conn.status_code }}</p>
                 {% else %}
-                    <a href="{{ url_for('login') }}" class="btn btn-primary">Sign Up for Premium</a>
+                <p><strong>✗ Target is unreachable</strong></p>
+                {% if conn.message %}<p class="text-muted small">{{ conn.message }}</p>{% endif %}
                 {% endif %}
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
-        </div>
-    </div>
+        </details>
+        {% endif %}
+
+        <!-- ── HTTPS ── -->
+        {% if results.checks.https is defined %}
+        {% set h = results.checks.https %}
+        {% set https_ok = h.https_available and h.redirects_to_https %}
+        <details class="check-item {% if https_ok %}check-pass{% elif h.https_available %}check-warn{% else %}check-fail{% endif %}">
+            <summary>
+                <i data-lucide="{% if https_ok %}lock{% elif h.https_available %}alert-triangle{% else %}unlock{% endif %}"
+                   class="check-status-icon {% if https_ok %}icon-pass{% elif h.https_available %}icon-warn{% else %}icon-fail{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">HTTPS &amp; Redirect</span>
+                <span class="check-summary-text">{% if https_ok %}Secure{% elif h.https_available %}Partial{% else %}No HTTPS{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <p>{% if h.https_available %}✓ HTTPS enabled{% else %}✗ HTTPS not available{% endif %}</p>
+                <p>{% if h.redirects_to_https %}✓ HTTP redirects to HTTPS{% else %}⚠ HTTP does not redirect to HTTPS{% endif %}</p>
+                {% if h.issues %}
+                <div class="issues-list mt-2">
+                    {% for issue in h.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+                {% if not h.https_available %}
+                <div class="fix-box mt-3">
+                    <div class="fix-box-header">
+                        <span>Nginx — add HTTPS server block</span>
+                        <button class="btn-copy-code" data-copy-code="server {\n  listen 443 ssl;\n  ssl_certificate /etc/letsencrypt/live/{{ results.target }}/fullchain.pem;\n  ssl_certificate_key /etc/letsencrypt/live/{{ results.target }}/privkey.pem;\n}">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>server {
+  listen 443 ssl;
+  ssl_certificate /etc/letsencrypt/live/{{ results.target }}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/{{ results.target }}/privkey.pem;
+}</code></pre>
+                </div>
+                {% elif not h.redirects_to_https %}
+                <div class="fix-box mt-3">
+                    <div class="fix-box-header">
+                        <span>Nginx — redirect HTTP → HTTPS</span>
+                        <button class="btn-copy-code" data-copy-code="server { listen 80; return 301 https://$host$request_uri; }">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>server { listen 80; return 301 https://$host$request_uri; }</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── SSL Certificate ── -->
+        {% if results.checks.ssl is defined %}
+        {% set ssl = results.checks.ssl %}
+        <details class="check-item {% if ssl.valid %}check-pass{% else %}check-fail{% endif %}">
+            <summary>
+                <i data-lucide="{% if ssl.valid %}shield-check{% else %}shield-x{% endif %}"
+                   class="check-status-icon {% if ssl.valid %}icon-pass{% else %}icon-fail{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">SSL Certificate</span>
+                <span class="check-summary-text">{% if ssl.valid %}Valid{% else %}Invalid{% endif %}{% if ssl.days_until_expiry is not none %} · {{ ssl.days_until_expiry }}d{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Status</div>
+                        <div class="ssl-info-value {% if ssl.valid %}good{% else %}bad{% endif %}">
+                            {% if ssl.valid %}✓ Valid{% else %}✗ Invalid{% endif %}
+                        </div>
+                    </div>
+                    {% if ssl.issuer %}
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Issuer</div>
+                        <div class="ssl-info-value">{{ ssl.issuer }}</div>
+                    </div>
+                    {% endif %}
+                    {% if ssl.days_until_expiry is not none %}
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Expires in</div>
+                        <div class="ssl-info-value {% if ssl.expires_soon %}bad{% else %}good{% endif %}">
+                            {{ ssl.days_until_expiry }} days{% if ssl.expires_soon %} ⚠{% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if ssl.tls_version is defined %}
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">TLS Version</div>
+                        <div class="ssl-info-value {% if ssl.tls_version in ['TLSv1.3','TLSv1.2'] %}good{% else %}bad{% endif %}">
+                            {{ ssl.tls_version }}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if ssl.issues %}
+                <div class="issues-list">
+                    {% for issue in ssl.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Security Headers ── -->
+        {% if results.checks.headers is defined %}
+        {% set hdr = results.checks.headers %}
+        {% set found_n  = hdr.headers_found | length %}
+        {% set missing_n = hdr.headers_missing | length %}
+        {% set grade = 'A' if found_n >= 6 else 'B' if found_n >= 5 else 'C' if found_n >= 4 else 'D' if found_n >= 2 else 'F' %}
+        <details class="check-item {% if found_n >= 5 %}check-pass{% elif found_n >= 3 %}check-warn{% else %}check-fail{% endif %}">
+            <summary>
+                <i data-lucide="{% if found_n >= 5 %}shield-check{% elif found_n >= 3 %}alert-triangle{% else %}shield-alert{% endif %}"
+                   class="check-status-icon {% if found_n >= 5 %}icon-pass{% elif found_n >= 3 %}icon-warn{% else %}icon-fail{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Security Headers</span>
+                <span class="check-summary-text">{{ found_n }}/6 present</span>
+                <span class="grade-badge grade-{{ grade | lower }}" style="margin-right:0.25rem;">{{ grade }}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if hdr.headers_found %}
+                <div style="margin-bottom:0.75rem;">
+                    <div class="small text-muted mb-1">Present:</div>
+                    {% for h in hdr.headers_found %}
+                    <div style="padding:0.35rem 0;border-bottom:1px solid var(--color-border);font-size:0.85rem;">
+                        <span class="text-success me-2">✓</span>
+                        <strong>{{ h.name }}</strong>
+                        <span class="text-muted ms-2 small">{{ h.value[:70] }}{% if h.value | length > 70 %}…{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if hdr.headers_missing %}
+                <div style="margin-bottom:0.75rem;">
+                    <div class="small text-muted mb-1">Missing:</div>
+                    {% for name in hdr.headers_missing %}
+                    <div style="padding:0.35rem 0;font-size:0.85rem;">
+                        <span class="text-danger me-2">✗</span>{{ name }}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if hdr.csp_quality is defined and hdr.csp_quality %}
+                <div class="why-box">
+                    <strong>CSP quality: {{ hdr.csp_quality.rating | title }}</strong>
+                    {% if hdr.csp_quality.issues %} — {{ hdr.csp_quality.issues | join('; ') }}{% endif %}
+                </div>
+                {% endif %}
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Nginx — add HSTS header</span>
+                        <button class="btn-copy-code" data-copy-code="add_header Strict-Transport-Security &quot;max-age=31536000; includeSubDomains; preload&quot; always;">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;</code></pre>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Cookie Security ── -->
+        {% if results.checks.cookies is defined %}
+        {% set ck = results.checks.cookies %}
+        <details class="check-item {% if ck.insecure_cookies | length == 0 %}check-pass{% else %}check-warn{% endif %}">
+            <summary>
+                <i data-lucide="{% if ck.insecure_cookies | length == 0 %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon {% if ck.insecure_cookies | length == 0 %}icon-pass{% else %}icon-warn{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Cookie Security</span>
+                <span class="check-summary-text">{{ ck.total_cookies }} cookie(s){% if ck.insecure_cookies | length > 0 %} · {{ ck.insecure_cookies | length }} insecure{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if ck.total_cookies == 0 %}
+                <p class="text-muted">No cookies set on this response.</p>
+                {% elif ck.insecure_cookies | length == 0 %}
+                <p>✓ All cookies have Secure, HttpOnly and SameSite flags.</p>
+                {% else %}
+                <div class="cookie-table-wrap">
+                    <div class="table-wrapper">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Cookie</th>
+                                    <th>Secure</th>
+                                    <th>HttpOnly</th>
+                                    <th>SameSite</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for c in ck.insecure_cookies %}
+                                <tr>
+                                    <td><strong>{{ c.name }}</strong></td>
+                                    <td>
+                                        <span class="cookie-flag {% if 'Secure' not in c.missing_flags %}yes{% else %}no{% endif %}">
+                                            {% if 'Secure' not in c.missing_flags %}✓{% else %}✗{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="cookie-flag {% if 'HttpOnly' not in c.missing_flags %}yes{% else %}no{% endif %}">
+                                            {% if 'HttpOnly' not in c.missing_flags %}✓{% else %}✗{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="cookie-flag {% if 'SameSite' not in c.missing_flags %}yes{% else %}no{% endif %}">
+                                            {% if 'SameSite' not in c.missing_flags %}✓{% else %}✗{% endif %}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Set-Cookie example</span>
+                        <button class="btn-copy-code" data-copy-code="Set-Cookie: session=VALUE; Secure; HttpOnly; SameSite=Lax; Path=/">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>Set-Cookie: session=VALUE; Secure; HttpOnly; SameSite=Lax; Path=/</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── CORS ── -->
+        {% if results.checks.cors is defined %}
+        {% set cors = results.checks.cors %}
+        <details class="check-item {% if cors.issues | length == 0 %}check-pass{% elif cors.credentials_with_wildcard %}check-fail{% else %}check-warn{% endif %}">
+            <summary>
+                <i data-lucide="{% if cors.issues | length == 0 %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon {% if cors.issues | length == 0 %}icon-pass{% elif cors.credentials_with_wildcard %}icon-fail{% else %}icon-warn{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">CORS Policy</span>
+                <span class="check-summary-text">{% if not cors.cors_header_present %}Not set{% elif cors.credentials_with_wildcard %}Critical{% elif cors.wildcard_origin %}Wildcard{% else %}OK{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if not cors.cors_header_present %}
+                <p>✓ No permissive CORS headers detected.</p>
+                {% elif cors.credentials_with_wildcard %}
+                <p class="text-danger"><strong>🚨 Critical: wildcard origin with credentials enabled</strong></p>
+                {% elif cors.wildcard_origin %}
+                <p class="text-warning"><strong>⚠ Wildcard Access-Control-Allow-Origin: *</strong></p>
+                {% else %}
+                <p>✓ CORS configured with specific origins.</p>
+                {% endif %}
+                {% if cors.issues %}
+                <div class="issues-list mt-2">
+                    {% for issue in cors.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Nginx — restrict CORS origin</span>
+                        <button class="btn-copy-code" data-copy-code="add_header Access-Control-Allow-Origin &quot;https://your-frontend.com&quot; always;">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>add_header Access-Control-Allow-Origin "https://your-frontend.com" always;</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── HTTP Methods ── -->
+        {% if results.checks.http_methods is defined and results.checks.http_methods.allowed_methods %}
+        {% set methods = results.checks.http_methods %}
+        <details class="check-item {% if methods.dangerous_methods | length == 0 %}check-pass{% else %}check-warn{% endif %}">
+            <summary>
+                <i data-lucide="{% if methods.dangerous_methods | length == 0 %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon {% if methods.dangerous_methods | length == 0 %}icon-pass{% else %}icon-warn{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">HTTP Methods</span>
+                <span class="check-summary-text">{{ methods.allowed_methods | join(', ') }}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if methods.dangerous_methods | length == 0 %}
+                <p>✓ No dangerous HTTP methods detected.</p>
+                {% else %}
+                <div class="issues-list">
+                    {% for issue in methods.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Nginx — restrict methods</span>
+                        <button class="btn-copy-code" data-copy-code="if ($request_method !~ ^(GET|HEAD|POST)$) { return 405; }">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>if ($request_method !~ ^(GET|HEAD|POST)$) { return 405; }</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Technology Fingerprint ── -->
+        {% if results.checks.tech is defined %}
+        {% set tech = results.checks.tech %}
+        <details class="check-item {% if not tech.version_disclosed %}check-pass{% else %}check-warn{% endif %}">
+            <summary>
+                <i data-lucide="{% if not tech.version_disclosed %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon {% if not tech.version_disclosed %}icon-pass{% else %}icon-warn{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Technology Fingerprint</span>
+                <span class="check-summary-text">{% if tech.version_disclosed %}Version disclosed{% else %}OK{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if tech.technologies %}
+                <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
+                    {% for t in tech.technologies %}
+                    <span class="badge badge-neutral">{{ t.name }}{% if t.version is defined and t.version %} {{ t.version }}{% endif %}</span>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small mb-2">No technology stack detected in headers.</p>
+                {% endif %}
+                {% if tech.issues %}
+                <div class="issues-list">
+                    {% for issue in tech.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Nginx &amp; Apache — hide version</span>
+                        <button class="btn-copy-code" data-copy-code="server_tokens off; # Nginx\nServerTokens Prod # Apache">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>server_tokens off;        # Nginx
+ServerTokens Prod          # Apache</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Open Ports ── -->
+        {% if results.checks.ports is defined %}
+        {% set ports = results.checks.ports %}
+        <details class="check-item {% if ports.open_ports | length == 0 %}check-pass{% else %}check-warn{% endif %}">
+            <summary>
+                <i data-lucide="{% if ports.open_ports | length == 0 %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon {% if ports.open_ports | length == 0 %}icon-pass{% else %}icon-warn{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Open Ports</span>
+                <span class="check-summary-text">{% if ports.open_ports | length == 0 %}None found{% else %}{{ ports.open_ports | length }} open{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if ports.open_ports | length == 0 %}
+                <p>✓ No risky ports found open.</p>
+                {% else %}
+                <div class="port-risk-list">
+                    {% for p in ports.open_ports %}
+                    <div class="port-item">
+                        <span class="port-number">:{{ p.port }}</span>
+                        <span class="port-service">{{ p.description }}</span>
+                        <span class="port-risk-label">
+                            <span class="badge badge-warning">Exposed</span>
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="fix-box mt-3">
+                    <div class="fix-box-header">
+                        <span>UFW — block database port</span>
+                        <button class="btn-copy-code" data-copy-code="ufw deny {% if ports.open_ports %}{{ ports.open_ports[0].port }}{% else %}3306{% endif %}  # or allow from trusted IPs only">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>ufw deny {% if ports.open_ports %}{{ ports.open_ports[0].port }}{% else %}3306{% endif %}
+# or allow from trusted IPs only:
+ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_ports[0].port }}{% else %}3306{% endif %}</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Domain Info ── -->
+        {% if results.checks.domain_info is defined %}
+        {% set di = results.checks.domain_info %}
+        <details class="check-item check-info">
+            <summary>
+                <i data-lucide="globe" class="check-status-icon icon-info" style="width:18px;height:18px;"></i>
+                <span class="check-name">Domain Information</span>
+                <span class="check-summary-text">{% if di.ip_address %}{{ di.ip_address }}{% else %}Info{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if di.ip_address %}
+                <p><strong>IP Address:</strong> {{ di.ip_address }}</p>
+                {% endif %}
+                {% if di.issues %}
+                <div class="issues-list mt-2">
+                    {% for issue in di.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+                {% if not di.info_available %}
+                <p class="text-muted small">Domain lookup information not available.</p>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+    </section>
 </div>
+</div>
+
+<!-- FAB -->
+<a href="{{ url_for('index') }}?target={{ results.target | urlencode }}"
+   class="fab-rescan" id="fabRescan" aria-label="Re-scan {{ results.target }}">
+    <i data-lucide="refresh-cw" style="width:15px;height:15px;"></i>
+    Re-scan
+</a>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function showPremiumModal() {
-    const modal = new bootstrap.Modal(document.getElementById('premiumModal'));
-    modal.show();
-}
+// Score ring + count-up
+(function() {
+    const wrapper = document.getElementById('scoreRingWrapper');
+    if (!wrapper) return;
+    const score = parseInt(wrapper.dataset.score, 10) || 0;
+    const fill  = document.getElementById('scoreRingFill');
+    const numEl = document.getElementById('scoreRingNumber');
+    if (!fill || !numEl) return;
+
+    const r = 51;
+    const C = 2 * Math.PI * r; // 320.44
+    fill.style.strokeDasharray  = C;
+    fill.style.strokeDashoffset = C;
+
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            fill.style.strokeDashoffset = C * (1 - score / 100);
+        }, 120);
+    });
+
+    const duration = 900;
+    const start = performance.now();
+    function tick(now) {
+        const t = Math.min((now - start) / duration, 1);
+        const ease = 1 - Math.pow(1 - t, 3);
+        numEl.textContent = Math.round(ease * score);
+        if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+})();
+
+// Copy badge buttons
+document.querySelectorAll('.btn-copy-badge').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const text = this.dataset.copyText;
+        const label = this.dataset.label;
+        navigator.clipboard.writeText(text).then(() => {
+            const orig = this.innerHTML;
+            this.classList.add('copied');
+            this.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;"></i> Copied!';
+            lucide.createIcons();
+            setTimeout(() => {
+                this.classList.remove('copied');
+                this.innerHTML = orig;
+                lucide.createIcons();
+            }, 2000);
+        });
+    });
+});
+
+// Copy code buttons
+document.querySelectorAll('.btn-copy-code').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const text = this.dataset.copyCode;
+        navigator.clipboard.writeText(text).then(() => {
+            const orig = this.innerHTML;
+            this.classList.add('copied');
+            this.innerHTML = '<i data-lucide="check" style="width:11px;height:11px;"></i>Copied!';
+            lucide.createIcons();
+            setTimeout(() => {
+                this.classList.remove('copied');
+                this.innerHTML = orig;
+                lucide.createIcons();
+            }, 2000);
+        });
+    });
+});
+
+lucide.createIcons();
 </script>
 {% endblock %}
