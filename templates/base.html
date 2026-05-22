@@ -37,7 +37,11 @@
                     <ul class="navbar-nav">
                         <li>
                             <a class="nav-link{% if request.endpoint == 'index' %} nav-link-active{% endif %}"
-                               href="{{ url_for('index') }}">Scanner</a>
+                               href="{{ url_for('index') }}">Security</a>
+                        </li>
+                        <li>
+                            <a class="nav-link{% if request.endpoint == 'seo_scan' %} nav-link-active{% endif %}"
+                               href="{{ url_for('seo_scan') }}">SEO</a>
                         </li>
                         {% if current_user.is_authenticated %}
                         <li>

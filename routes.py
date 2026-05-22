@@ -325,6 +325,34 @@ def badge_svg(domain, score):
     return response
 
 
+@app.route('/seo', methods=['GET', 'POST'])
+def seo_scan():
+    """Dedicated SEO analysis page"""
+    if request.method == 'GET':
+        return render_template('seo.html')
+
+    target = request.form.get('target', '').strip()
+    if not target:
+        flash('Please enter a domain to analyse.', 'warning')
+        return redirect(url_for('seo_scan'))
+
+    validator = AdvancedValidator()
+    target = clean_target(target)
+    is_valid, error_msg = validator.validate_target(target)
+
+    if not is_valid:
+        flash(f'Invalid target: {error_msg}', 'error')
+        return redirect(url_for('seo_scan'))
+
+    try:
+        seo = SEOAnalyzer()
+        results = seo.analyze(target)
+        return render_template('seo.html', results=results, target=target)
+    except Exception as e:
+        flash(f'SEO analysis failed: {str(e)}', 'error')
+        return redirect(url_for('seo_scan'))
+
+
 @app.errorhandler(404)
 def not_found_error(error):
     return render_template('404.html'), 404
