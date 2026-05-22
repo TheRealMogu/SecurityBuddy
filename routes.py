@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 from app import app, db
 from models import User, ScanResult, APIKey, MonitoringConfig
 from scanner import SecurityScanner
+from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
 from pdf_generator import SecurityReportPDF
 from premium_features import PremiumAnalytics, AdvancedScanner
@@ -43,6 +44,14 @@ def scan():
         scanner = SecurityScanner()
         results = scanner.scan_target(target)
         
+        # SEO analysis (domain targets only)
+        if results.get('scan_type') == 'domain':
+            try:
+                seo = SEOAnalyzer()
+                results['seo'] = seo.analyze(target)
+            except Exception as seo_err:
+                results['seo'] = {'error': str(seo_err)}
+
         # Advanced scanning for premium users
         if current_user.is_authenticated and current_user.is_premium:
             advanced_scanner = AdvancedScanner()
