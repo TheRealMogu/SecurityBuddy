@@ -605,6 +605,551 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
         </details>
         {% endif %}
 
+        <!-- ══ SEO Analysis ══════════════════════════════════════════════ -->
+        {% if results.seo is defined and results.seo and not results.seo.get('error') %}
+        {% set seo = results.seo %}
+        {% set seo_rating = seo.rating %}
+
+        <!-- Section divider -->
+        <div class="seo-section-header">
+            <div class="seo-section-title">
+                <i data-lucide="search" style="width:16px;height:16px;color:var(--color-primary);"></i>
+                SEO Analysis
+            </div>
+            <div class="seo-score-badge seo-rating-{{ seo_rating }}">
+                {{ seo.score }}/100
+                <span class="seo-rating-label">{{ seo_rating | replace('_', ' ') | title }}</span>
+            </div>
+        </div>
+
+        <!-- SEO summary strip -->
+        {% set seo_pass = namespace(n=0) %}
+        {% set seo_warn = namespace(n=0) %}
+        {% set seo_fail = namespace(n=0) %}
+        {% for k, v in seo.checks.items() %}
+          {% if v is mapping %}
+            {% if v.get('issues', []) | length > 0 %}{% set seo_fail.n = seo_fail.n + 1 %}
+            {% elif v.get('warnings', []) | length > 0 %}{% set seo_warn.n = seo_warn.n + 1 %}
+            {% else %}{% set seo_pass.n = seo_pass.n + 1 %}{% endif %}
+          {% endif %}
+        {% endfor %}
+        <div class="summary-strip" style="margin-bottom:1rem;">
+            <div class="summary-item summary-pass">
+                <div class="summary-item-num">{{ seo_pass.n }}</div>
+                <div class="summary-item-label">Passed</div>
+            </div>
+            <div class="summary-item summary-warn">
+                <div class="summary-item-num">{{ seo_warn.n }}</div>
+                <div class="summary-item-label">Warnings</div>
+            </div>
+            <div class="summary-item summary-fail">
+                <div class="summary-item-num">{{ seo_fail.n }}</div>
+                <div class="summary-item-label">Issues</div>
+            </div>
+            <div class="summary-item summary-total">
+                <div class="summary-item-num">{{ seo.checks | length }}</div>
+                <div class="summary-item-label">Checks</div>
+            </div>
+        </div>
+
+        <!-- ── URL Analysis ── -->
+        {% if seo.checks.url is defined %}
+        {% set ur = seo.checks.url %}
+        {% set ur_status = 'fail' if ur.issues else ('warn' if ur.warnings else 'pass') %}
+        <details class="check-item check-{{ ur_status }}">
+            <summary>
+                <i data-lucide="{% if ur_status == 'pass' %}check-circle{% elif ur_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ ur_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">URL &amp; Redirect</span>
+                <span class="check-summary-text">
+                    {{ ur.redirect_count }} redirect(s) · {{ ur.url_length }} chars
+                    {% if ur.has_underscores %} · underscores{% endif %}
+                    {% if ur.has_query_params %} · query params{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Final URL</div>
+                        <div class="ssl-info-value" style="font-size:0.78rem;word-break:break-all;">{{ ur.final_url[:80] }}{% if ur.final_url | length > 80 %}…{% endif %}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Redirects</div>
+                        <div class="ssl-info-value {% if ur.redirect_count == 0 %}good{% elif ur.redirect_count == 1 %}{% else %}bad{% endif %}">
+                            {{ ur.redirect_count }}{% if ur.redirect_count == 0 %} (none){% elif ur.redirect_count == 1 %} (ok){% else %} (too many){% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">URL length</div>
+                        <div class="ssl-info-value {% if ur.url_length <= 75 %}good{% elif ur.url_length > 115 %}bad{% endif %}">{{ ur.url_length }} chars</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">URL structure</div>
+                        <div class="ssl-info-value {% if not ur.has_underscores and not ur.has_uppercase %}good{% else %}bad{% endif %}">
+                            {% if not ur.has_underscores and not ur.has_uppercase %}Clean{% else %}{% if ur.has_underscores %}underscores {% endif %}{% if ur.has_uppercase %}uppercase{% endif %}{% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if ur.redirect_chain %}
+                <div class="seo-redirect-chain">
+                    {% for hop in ur.redirect_chain %}
+                    <div class="seo-redirect-hop">
+                        <span class="seo-redirect-status seo-redirect-{{ hop.status }}">{{ hop.status }}</span>
+                        <span class="seo-redirect-url">{{ hop.url[:70] }}{% if hop.url | length > 70 %}…{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if ur.issues %}<div class="issues-list mt-2">{% for i in ur.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if ur.warnings %}<div class="seo-warnings-list mt-2">{% for w in ur.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if ur.passed %}<div class="seo-passed-list mt-2">{% for p in ur.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Meta Tags ── -->
+        {% if seo.checks.meta is defined %}
+        {% set m = seo.checks.meta %}
+        {% set meta_status = 'fail' if m.issues else ('warn' if m.warnings else 'pass') %}
+        <details class="check-item check-{{ meta_status }}">
+            <summary>
+                <i data-lucide="{% if meta_status == 'pass' %}check-circle{% elif meta_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ meta_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Meta Tags</span>
+                <span class="check-summary-text">
+                    {% if m.title %}Title {{ m.title_length }}c{% else %}No title{% endif %}
+                    {% if m.description %} · Desc {{ m.description_length }}c{% else %} · No description{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Title</div>
+                        <div class="ssl-info-value {% if m.title and 30 <= m.title_length <= 60 %}good{% elif not m.title %}bad{% endif %}">
+                            {% if m.title %}{{ m.title[:55] }}{% if m.title_length > 55 %}…{% endif %}
+                            <span class="small text-muted">({{ m.title_length }} chars)</span>
+                            {% else %}Missing{% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Meta Description</div>
+                        <div class="ssl-info-value {% if m.description and 120 <= m.description_length <= 160 %}good{% elif not m.description %}bad{% endif %}">
+                            {% if m.description %}{{ m.description[:60] }}{% if m.description_length > 60 %}…{% endif %}
+                            <span class="small text-muted">({{ m.description_length }} chars)</span>
+                            {% else %}Missing{% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Canonical URL</div>
+                        <div class="ssl-info-value {% if m.canonical %}good{% else %}bad{% endif %}">
+                            {% if m.canonical %}{{ m.canonical[:50] }}{% if m.canonical | length > 50 %}…{% endif %}{% else %}Not set{% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Indexing</div>
+                        <div class="ssl-info-value {% if m.noindex %}bad{% else %}good{% endif %}">
+                            {% if m.noindex %}noindex (blocked){% elif m.nofollow_meta %}nofollow{% else %}Indexable{% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if m.issues %}<div class="issues-list">{% for i in m.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if m.warnings %}<div class="seo-warnings-list">{% for w in m.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if m.passed %}<div class="seo-passed-list">{% for p in m.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Content Quality ── -->
+        {% if seo.checks.content is defined %}
+        {% set cq = seo.checks.content %}
+        {% set cq_status = 'fail' if cq.issues else ('warn' if cq.warnings else 'pass') %}
+        <details class="check-item check-{{ cq_status }}">
+            <summary>
+                <i data-lucide="{% if cq_status == 'pass' %}check-circle{% elif cq_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ cq_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Content Quality</span>
+                <span class="check-summary-text">
+                    {{ cq.word_count }} words
+                    {% if cq.is_spa %} · SPA detected{% endif %}
+                    {% if cq.language %} · {{ cq.language }}{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if not cq.is_spa %}
+                {% set wc = cq.word_count %}
+                {% set wc_pct = [[(wc / 600 * 100) | round | int, 100] | min, 0] | max %}
+                <div class="seo-bar-wrap">
+                    <div class="seo-bar-label">
+                        <span>Word count</span>
+                        <span class="{% if wc >= 600 %}text-success{% elif wc >= 300 %}text-warning{% else %}text-danger{% endif %}">{{ wc }} words</span>
+                    </div>
+                    <div class="seo-bar-track">
+                        <div class="seo-bar-fill {% if wc >= 600 %}fill-good{% elif wc >= 300 %}fill-warn{% else %}fill-bad{% endif %}"
+                             style="width:{{ wc_pct }}%"></div>
+                    </div>
+                    <div class="seo-bar-ticks">
+                        <span>0</span><span>300</span><span>600+</span>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin:0.75rem 0;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Language</div>
+                        <div class="ssl-info-value {% if cq.language %}good{% else %}bad{% endif %}">
+                            {{ cq.language if cq.language else 'Not set' }}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Charset</div>
+                        <div class="ssl-info-value {% if cq.charset %}good{% else %}bad{% endif %}">
+                            {{ cq.charset if cq.charset else 'Not declared' }}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">SPA / JS render</div>
+                        <div class="ssl-info-value {% if cq.is_spa %}bad{% else %}good{% endif %}">
+                            {{ 'Detected' if cq.is_spa else 'No' }}
+                        </div>
+                    </div>
+                </div>
+                {% if cq.issues %}<div class="issues-list">{% for i in cq.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if cq.warnings %}<div class="seo-warnings-list">{% for w in cq.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if cq.passed %}<div class="seo-passed-list">{% for p in cq.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Headings ── -->
+        {% if seo.checks.headings is defined %}
+        {% set hd = seo.checks.headings %}
+        {% set hd_status = 'fail' if hd.issues else ('warn' if hd.warnings else 'pass') %}
+        <details class="check-item check-{{ hd_status }}">
+            <summary>
+                <i data-lucide="{% if hd_status == 'pass' %}check-circle{% elif hd_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ hd_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Heading Structure</span>
+                <span class="check-summary-text">H1: {{ hd.h1_count }} · H2: {{ hd.h2_count }} · H3: {{ hd.h3_count }}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="seo-heading-row">
+                    <span class="seo-heading-tag {% if hd.h1_count == 1 %}ok{% elif hd.h1_count == 0 %}bad{% else %}warn{% endif %}">H1 × {{ hd.h1_count }}</span>
+                    <span class="seo-heading-tag {% if hd.h2_count > 0 %}ok{% else %}warn{% endif %}">H2 × {{ hd.h2_count }}</span>
+                    <span class="seo-heading-tag">H3 × {{ hd.h3_count }}</span>
+                </div>
+                {% if hd.h1_text %}<p class="small text-muted mt-2">First H1: <em>"{{ hd.h1_text }}"</em></p>{% endif %}
+                {% if hd.issues %}<div class="issues-list mt-2">{% for i in hd.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if hd.warnings %}<div class="seo-warnings-list mt-2">{% for w in hd.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if hd.passed %}<div class="seo-passed-list mt-2">{% for p in hd.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Images ── -->
+        {% if seo.checks.images is defined %}
+        {% set img = seo.checks.images %}
+        {% set img_status = 'fail' if img.issues else ('warn' if img.warnings else 'pass') %}
+        <details class="check-item check-{{ img_status }}">
+            <summary>
+                <i data-lucide="{% if img_status == 'pass' %}check-circle{% elif img_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ img_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Images &amp; Alt Text</span>
+                <span class="check-summary-text">
+                    {{ img.total }} img{% if img.missing_alt > 0 %} · {{ img.missing_alt }} no-alt{% endif %}{% if img.missing_dimensions > 0 %} · {{ img.missing_dimensions }} no-dims{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if img.total > 0 %}
+                {% set alt_pct = ((img.total - img.missing_alt) / img.total * 100) | round | int %}
+                <div class="seo-bar-wrap">
+                    <div class="seo-bar-label">
+                        <span>Alt text coverage</span>
+                        <span class="{% if alt_pct == 100 %}text-success{% elif alt_pct >= 70 %}text-warning{% else %}text-danger{% endif %}">{{ alt_pct }}%</span>
+                    </div>
+                    <div class="seo-bar-track">
+                        <div class="seo-bar-fill {% if alt_pct == 100 %}fill-good{% elif alt_pct >= 70 %}fill-warn{% else %}fill-bad{% endif %}"
+                             style="width:{{ alt_pct }}%"></div>
+                    </div>
+                </div>
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin:0.75rem 0;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Total images</div>
+                        <div class="ssl-info-value">{{ img.total }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Missing dims (CLS)</div>
+                        <div class="ssl-info-value {% if img.missing_dimensions > 0 %}bad{% else %}good{% endif %}">{{ img.missing_dimensions }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Lazy loading</div>
+                        <div class="ssl-info-value {% if img.lazy_loading > 0 %}good{% endif %}">{{ img.lazy_loading }}</div>
+                    </div>
+                </div>
+                {% if img.modern_formats > 0 %}
+                <p class="small text-muted">{{ img.modern_formats }} image(s) use modern format (WebP/AVIF) ✓</p>
+                {% endif %}
+                {% endif %}
+                {% if img.issues %}<div class="issues-list">{% for i in img.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if img.warnings %}<div class="seo-warnings-list">{% for w in img.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if img.passed %}<div class="seo-passed-list">{% for p in img.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Links ── -->
+        {% if seo.checks.links is defined %}
+        {% set lk = seo.checks.links %}
+        {% set lk_status = 'fail' if lk.issues else ('warn' if lk.warnings else 'pass') %}
+        <details class="check-item check-{{ lk_status }}">
+            <summary>
+                <i data-lucide="{% if lk_status == 'pass' %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon icon-{{ lk_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Links</span>
+                <span class="check-summary-text">{{ lk.internal }} internal · {{ lk.external }} external{% if lk.nofollow > 0 %} · {{ lk.nofollow }} nofollow{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="seo-link-stats">
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count">{{ lk.internal }}</span>
+                        <span class="seo-link-label">Internal</span>
+                    </div>
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count">{{ lk.external }}</span>
+                        <span class="seo-link-label">External</span>
+                    </div>
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count">{{ lk.nofollow }}</span>
+                        <span class="seo-link-label">Nofollow</span>
+                    </div>
+                </div>
+                {% if lk.warnings %}<div class="seo-warnings-list mt-2">{% for w in lk.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if lk.passed %}<div class="seo-passed-list mt-2">{% for p in lk.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Technical SEO ── -->
+        {% if seo.checks.technical is defined %}
+        {% set tc = seo.checks.technical %}
+        {% set tc_status = 'fail' if tc.issues else ('warn' if tc.warnings else 'pass') %}
+        <details class="check-item check-{{ tc_status }}">
+            <summary>
+                <i data-lucide="{% if tc_status == 'pass' %}check-circle{% elif tc_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ tc_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Technical SEO</span>
+                <span class="check-summary-text">
+                    {{ tc.load_time_ms }} ms · {{ tc.page_size_kb }} KB
+                    {% if tc.viewport %} · Mobile OK{% else %} · No viewport{% endif %}
+                    {% if tc.compression %} · {{ tc.compression }}{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Response time</div>
+                        <div class="ssl-info-value {% if tc.load_time_ms < 1500 %}good{% elif tc.load_time_ms < 3000 %}{% else %}bad{% endif %}">{{ tc.load_time_ms }} ms</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Page size</div>
+                        <div class="ssl-info-value">{{ tc.page_size_kb }} KB</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Compression</div>
+                        <div class="ssl-info-value {% if tc.compression %}good{% else %}bad{% endif %}">{{ tc.compression if tc.compression else 'None' }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Viewport</div>
+                        <div class="ssl-info-value {% if tc.viewport %}good{% else %}bad{% endif %}">{% if tc.viewport %}Present{% else %}Missing{% endif %}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Favicon</div>
+                        <div class="ssl-info-value {% if tc.favicon %}good{% else %}bad{% endif %}">{% if tc.favicon %}Declared{% else %}Missing{% endif %}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">AMP / Pagination</div>
+                        <div class="ssl-info-value {% if tc.amp_version or tc.has_pagination %}good{% endif %}">
+                            {% if tc.amp_version %}AMP{% endif %}{% if tc.amp_version and tc.has_pagination %} · {% endif %}{% if tc.has_pagination %}Paginated{% endif %}{% if not tc.amp_version and not tc.has_pagination %}—{% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if tc.issues %}<div class="issues-list">{% for i in tc.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if tc.warnings %}<div class="seo-warnings-list">{% for w in tc.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if tc.passed %}<div class="seo-passed-list">{% for p in tc.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Page Resources ── -->
+        {% if seo.checks.resources is defined %}
+        {% set rs = seo.checks.resources %}
+        {% set rs_status = 'fail' if rs.issues else ('warn' if rs.warnings else 'pass') %}
+        <details class="check-item check-{{ rs_status }}">
+            <summary>
+                <i data-lucide="{% if rs_status == 'pass' %}check-circle{% elif rs_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ rs_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Page Resources</span>
+                <span class="check-summary-text">{{ rs.external_js }} JS · {{ rs.external_css }} CSS · {{ rs.inline_scripts }} inline</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="seo-link-stats">
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count {% if rs.external_js > 15 %}text-danger{% elif rs.external_js > 8 %}text-warning{% else %}text-success{% endif %}">{{ rs.external_js }}</span>
+                        <span class="seo-link-label">External JS</span>
+                    </div>
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count {% if rs.external_css > 6 %}text-danger{% elif rs.external_css > 3 %}text-warning{% else %}text-success{% endif %}">{{ rs.external_css }}</span>
+                        <span class="seo-link-label">External CSS</span>
+                    </div>
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count">{{ rs.inline_scripts }}</span>
+                        <span class="seo-link-label">Inline scripts</span>
+                    </div>
+                </div>
+                {% if rs.issues %}<div class="issues-list mt-2">{% for i in rs.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if rs.warnings %}<div class="seo-warnings-list mt-2">{% for w in rs.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if rs.passed %}<div class="seo-passed-list mt-2">{% for p in rs.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Social / Open Graph ── -->
+        {% if seo.checks.social is defined %}
+        {% set sc = seo.checks.social %}
+        {% set sc_status = 'warn' if sc.warnings else 'pass' %}
+        <details class="check-item check-{{ sc_status }}">
+            <summary>
+                <i data-lucide="{% if sc_status == 'pass' %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon icon-{{ sc_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Social &amp; Open Graph</span>
+                <span class="check-summary-text">
+                    {% if sc.og_title %}OG ✓{% else %}OG ✗{% endif %}
+                    · {% if sc.twitter_card %}Twitter ✓{% else %}Twitter ✗{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="seo-og-grid">
+                    {% for key, val in [('og:title', sc.og_title), ('og:description', sc.og_description), ('og:image', sc.og_image), ('og:type', sc.og_type), ('twitter:card', sc.twitter_card), ('twitter:image', sc.twitter_image)] %}
+                    <div class="seo-og-row">
+                        <span class="seo-og-key">{{ key }}</span>
+                        {% if val %}
+                        <span class="seo-og-val ok">{{ val[:70] }}{% if val | length > 70 %}…{% endif %}</span>
+                        {% else %}
+                        <span class="seo-og-val missing">Not set</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if sc.warnings %}<div class="seo-warnings-list mt-2">{% for w in sc.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if sc.passed %}<div class="seo-passed-list mt-2">{% for p in sc.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Structured Data ── -->
+        {% if seo.checks.structured_data is defined %}
+        {% set sd = seo.checks.structured_data %}
+        {% set sd_status = 'warn' if sd.warnings else 'pass' %}
+        <details class="check-item check-{{ sd_status }}">
+            <summary>
+                <i data-lucide="{% if sd_status == 'pass' %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon icon-{{ sd_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Structured Data</span>
+                <span class="check-summary-text">
+                    {% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% else %}None{% endif %}
+                    {% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if sd.schema_types %}
+                <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
+                    {% for t in sd.schema_types %}<span class="badge badge-neutral">{{ t }}</span>{% endfor %}
+                </div>
+                {% elif sd.json_ld_count > 0 %}
+                <p class="small text-muted">{{ sd.json_ld_count }} JSON-LD block(s) — no @type detected</p>
+                {% elif sd.has_microdata %}
+                <p class="small text-muted">Microdata (itemscope/itemtype) detected in HTML</p>
+                {% else %}
+                <p class="small text-muted">No JSON-LD or Microdata found on this page.</p>
+                {% endif %}
+                {% if sd.hreflang_count > 0 %}
+                <p class="small text-muted mt-1">{{ sd.hreflang_count }} hreflang tag(s) — international SEO configured</p>
+                {% endif %}
+                {% if sd.warnings %}<div class="seo-warnings-list mt-1">{% for w in sd.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if sd.passed %}<div class="seo-passed-list mt-1">{% for p in sd.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── robots.txt ── -->
+        {% if seo.checks.robots_txt is defined %}
+        {% set rb = seo.checks.robots_txt %}
+        {% set rb_status = 'fail' if rb.issues else ('warn' if rb.warnings else 'pass') %}
+        <details class="check-item check-{{ rb_status }}">
+            <summary>
+                <i data-lucide="{% if rb_status == 'pass' %}check-circle{% elif rb_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ rb_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">robots.txt</span>
+                <span class="check-summary-text">{% if rb.present %}Found · {{ rb.disallow_count }} Disallow rule(s){% else %}Not found{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if not rb.present %}
+                <p class="text-muted small">No robots.txt found at <code>{{ rb.url }}</code></p>
+                {% else %}
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Disallow rules</div>
+                        <div class="ssl-info-value">{{ rb.disallow_count }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Sitemap declared</div>
+                        <div class="ssl-info-value {% if rb.sitemap_declared %}good{% endif %}">{{ 'Yes' if rb.sitemap_declared else 'No' }}</div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if rb.issues %}<div class="issues-list">{% for i in rb.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if rb.warnings %}<div class="seo-warnings-list">{% for w in rb.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if rb.passed %}<div class="seo-passed-list">{% for p in rb.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Sitemap ── -->
+        {% if seo.checks.sitemap is defined %}
+        {% set sm = seo.checks.sitemap %}
+        {% set sm_status = 'warn' if not sm.present else 'pass' %}
+        <details class="check-item check-{{ sm_status }}">
+            <summary>
+                <i data-lucide="{% if sm.present %}check-circle{% else %}alert-triangle{% endif %}"
+                   class="check-status-icon icon-{{ sm_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">XML Sitemap</span>
+                <span class="check-summary-text">{% if sm.present %}Found · {{ sm.url_count }} URL(s){% else %}Not found{% endif %}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if sm.present %}
+                <p><strong>✓ Sitemap found</strong> at <code>{{ sm.url }}</code></p>
+                {% if sm.url_count > 0 %}<p class="small text-muted">Contains ~{{ sm.url_count }} URL(s)</p>{% endif %}
+                {% else %}
+                <p class="text-muted small">XML sitemap not found at /sitemap.xml or /sitemap_index.xml</p>
+                {% endif %}
+                {% if sm.warnings %}<div class="seo-warnings-list mt-2">{% for w in sm.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if sm.passed %}<div class="seo-passed-list mt-2">{% for p in sm.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        {% endif %}{# end seo block #}
+
     </section>
 </div>
 </div>
