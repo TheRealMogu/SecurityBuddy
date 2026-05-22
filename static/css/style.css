@@ -2013,6 +2013,43 @@ button { cursor: pointer; font-family: inherit; }
   margin-top: 0.1rem;
 }
 
+/* Redirect chain */
+.seo-redirect-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+.seo-redirect-hop {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+}
+.seo-redirect-status {
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.seo-redirect-301, .seo-redirect-308 { background: var(--color-success-dim); color: var(--color-success); }
+.seo-redirect-302, .seo-redirect-307 { background: var(--color-warning-dim); color: var(--color-warning); }
+.seo-redirect-url { color: var(--color-text-muted); word-break: break-all; }
+
+/* Word count bar ticks */
+.seo-bar-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--color-text-faint);
+  margin-top: 0.2rem;
+}
+
 /* OG / Twitter grid */
 .seo-og-grid { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; }
 .seo-og-row {
