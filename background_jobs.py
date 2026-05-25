@@ -189,6 +189,81 @@ class BackgroundJobManager:
             job.current_step = f'Error: {str(e)}'
             self.logger.error(f"Job {job_id} failed: {str(e)}")
 
+    def submit_seo_crawl_job(self, target: str, max_pages: int = 100) -> str:
+        """Start a site-wide SEO crawl in a dedicated background thread."""
+        job    = SEOCrawlJob(target, max_pages)
+        job_id = f"seo_{uuid.uuid4().hex}"
+        self.active_jobs[job_id] = job
+        t = threading.Thread(
+            target=self._run_seo_crawl, args=(job_id, job), daemon=True
+        )
+        t.start()
+        self.logger.info(f"Submitted SEO crawl job {job_id} for {target}")
+        return job_id
+
+    def get_seo_crawl_status(self, job_id: str):
+        """Return status dict for an SEO crawl job."""
+        job = self.active_jobs.get(job_id) or self.completed_jobs.get(job_id)
+        if not job:
+            return None
+        return {
+            'job_id':        job_id,
+            'status':        job.status,
+            'progress':      job.progress,
+            'current_step':  job.current_step,
+            'pages_crawled': job.pages_crawled,
+            'target':        job.target,
+            'created_at':    job.created_at.isoformat(),
+            'result':        job.result,
+            'error':         job.error,
+        }
+
+    def _run_seo_crawl(self, job_id: str, job: 'SEOCrawlJob'):
+        try:
+            from seo_analyzer import SEOAnalyzer
+            job.status       = 'running'
+            job.current_step = 'Fetching root page…'
+            job.progress     = 2
+
+            def _progress(analysed, total):
+                job.pages_crawled = analysed
+                job.progress      = max(2, min(95, round(analysed / total * 88) + 5))
+                job.current_step  = f'Analysed {analysed} / {total} pages…'
+
+            result = SEOAnalyzer().analyze_site(
+                job.target, max_pages=job.max_pages, progress_callback=_progress
+            )
+            job.pages_crawled = result.get('pages_crawled', 0)
+            job.result        = result
+            job.progress      = 100
+            job.current_step  = 'Crawl complete!'
+            job.status        = 'completed'
+        except Exception as e:
+            job.status       = 'failed'
+            job.error        = str(e)
+            job.current_step = f'Error: {str(e)}'
+            self.logger.error(f"SEO crawl {job_id} failed: {e}")
+        finally:
+            self.completed_jobs[job_id] = self.active_jobs.pop(job_id, job)
+            crawl_jobs = {k: v for k, v in self.completed_jobs.items() if k.startswith('seo_')}
+            if len(crawl_jobs) > 50:
+                oldest = min(crawl_jobs, key=lambda k: crawl_jobs[k].created_at)
+                del self.completed_jobs[oldest]
+
+
+class SEOCrawlJob:
+    def __init__(self, target: str, max_pages: int = 100):
+        self.target        = target
+        self.max_pages     = max_pages
+        self.status        = 'pending'
+        self.created_at    = datetime.utcnow()
+        self.progress      = 0
+        self.current_step  = 'Queued…'
+        self.pages_crawled = 0
+        self.result        = None
+        self.error         = None
+
+
 # Global job manager instance
 job_manager = BackgroundJobManager()
 

@@ -1,6 +1,6 @@
 import json
 from urllib.parse import urlparse
-from flask import render_template, request, redirect, url_for, flash, session, make_response, send_file
+from flask import render_template, request, redirect, url_for, flash, session, make_response, send_file, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash
 from app import app, db
@@ -12,6 +12,7 @@ from pdf_generator import SecurityReportPDF
 from premium_features import PremiumAnalytics, AdvancedScanner
 from notification_system import NotificationSystem
 from api_routes import api_bp
+from background_jobs import job_manager
 
 # Register API blueprint
 app.register_blueprint(api_bp)
@@ -351,6 +352,49 @@ def seo_scan():
     except Exception as e:
         flash(f'SEO analysis failed: {str(e)}', 'error')
         return redirect(url_for('seo_scan'))
+
+
+@app.route('/seo/crawl', methods=['POST'])
+def seo_crawl_start():
+    """Start a site-wide SEO crawl as a background job."""
+    target = request.form.get('target', '').strip()
+    if not target:
+        return jsonify({'error': 'No target provided'}), 400
+
+    target = clean_target(target)
+    validator = AdvancedValidator()
+    is_valid, error_msg = validator.validate_target(target)
+    if not is_valid:
+        return jsonify({'error': error_msg}), 400
+
+    job_id = job_manager.submit_seo_crawl_job(target, max_pages=100)
+    return jsonify({'job_id': job_id})
+
+
+@app.route('/seo/crawl/<job_id>/status')
+def seo_crawl_status(job_id):
+    """Poll the status of a site-wide SEO crawl job."""
+    status = job_manager.get_seo_crawl_status(job_id)
+    if status is None:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(status)
+
+
+@app.route('/seo/crawl/<job_id>/report')
+def seo_crawl_report(job_id):
+    """Show the site SEO report (or a waiting page if still running)."""
+    status = job_manager.get_seo_crawl_status(job_id)
+    if not status:
+        flash('Crawl not found or expired.', 'error')
+        return redirect(url_for('seo_scan'))
+    if status['status'] != 'completed':
+        return render_template('seo_crawl_waiting.html',
+                               job_id=job_id,
+                               target=status['target'],
+                               status=status)
+    return render_template('seo_site.html',
+                           crawl=status['result'],
+                           job_id=job_id)
 
 
 @app.errorhandler(404)
