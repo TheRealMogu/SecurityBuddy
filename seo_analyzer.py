@@ -603,9 +603,7 @@ class SEOAnalyzer:
                 'add <link rel="canonical" href="…"> even on unique pages'
             )
 
-        # meta keywords (useful for Bing)
-        if parser.meta.get('keywords'):
-            r['passed'].append('meta keywords present (Bing signal)')
+        # meta keywords — informational only, not a pass
 
         # Meta refresh — can disrupt Googlebot indexing
         if parser.meta_refresh_delay is not None:
@@ -688,19 +686,25 @@ class SEOAnalyzer:
         if not is_spa:
             if wc < 100:
                 r['issues'].append(
-                    f'Extremely thin content ({wc} words) — Google penalises near-empty pages; '
+                    f'Extremely thin content ({wc} words) — near-empty pages are penalised by Google; '
                     'add meaningful textual content'
                 )
                 r['score'] += 1
-            elif wc < 300:
-                r['warnings'].append(
-                    f'Low word count ({wc} words) — thin content risk; '
-                    'aim for 300+ words minimum, 600+ for informational pages'
+            elif wc < 200:
+                r['issues'].append(
+                    f'Thin content ({wc} words) — Google classifies pages under 200 words as low-quality; '
+                    'aim for at least 300 words, 600+ for informational pages'
                 )
-                r['score'] += 3
-            elif wc < 600:
-                r['passed'].append(f'Acceptable content length ({wc} words)')
-                r['score'] += 6
+                r['score'] += 2
+            elif wc < 400:
+                r['warnings'].append(
+                    f'Low word count ({wc} words) — below recommended minimum for ranking; '
+                    'aim for 400+ words; longer content ranks better for competitive keywords'
+                )
+                r['score'] += 5
+            elif wc < 800:
+                r['passed'].append(f'Adequate content length ({wc} words)')
+                r['score'] += 7
             else:
                 r['passed'].append(f'Good content length ({wc} words)')
                 r['score'] += 8
@@ -716,7 +720,6 @@ class SEOAnalyzer:
             )
 
         if parser.charset:
-            r['passed'].append(f'Charset declared: {parser.charset}')
             r['score'] += 2
         else:
             r['warnings'].append(
@@ -739,18 +742,21 @@ class SEOAnalyzer:
                 'minimal text content detected; crawlers will see mostly markup'
             )
 
-        # Paragraph structure
+        # Paragraph structure — only flag as problem, don't pad passed list
         if not is_spa:
-            if parser.paragraph_count >= 3:
-                r['passed'].append(f'{parser.paragraph_count} content paragraphs — good structure')
-            elif parser.paragraph_count > 0:
+            if parser.paragraph_count == 0 and wc > 50:
                 r['warnings'].append(
-                    f'Only {parser.paragraph_count} paragraph(s) — '
-                    'use more <p> tags for readable, well-structured content'
+                    'No <p> tags detected — use paragraph tags for readable, well-structured content'
+                )
+            elif parser.paragraph_count == 1:
+                r['warnings'].append(
+                    'Only 1 paragraph — use more <p> tags to structure content; '
+                    'helps readability and featured snippet eligibility'
                 )
 
+        # Keywords are informational only, not a "pass"
         if keywords:
-            r['passed'].append(f'Top keywords: {", ".join(keywords[:5])}')
+            r['top_keywords'] = keywords
 
         return r
 
@@ -820,8 +826,11 @@ class SEOAnalyzer:
         }
 
         if not imgs:
-            r['score'] += 5
-            r['passed'].append('No images to evaluate')
+            r['score'] += 3
+            r['warnings'].append(
+                'No images found — visual content improves engagement, dwell time, '
+                'and image-search visibility; add relevant images with descriptive alt text'
+            )
         else:
             if not missing_alt:
                 r['passed'].append(f'All {len(imgs)} image(s) have alt attributes')
@@ -922,17 +931,21 @@ class SEOAnalyzer:
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        if internal:
+        if len(internal) >= 3:
             r['passed'].append(f'{len(internal)} internal link(s) — good for crawl depth and PageRank flow')
             r['score'] += 5
-        else:
+        elif internal:
             r['warnings'].append(
-                'No internal links detected — '
-                'internal links distribute PageRank and help crawlers discover other pages'
+                f'Only {len(internal)} internal link(s) — '
+                'add more internal links to distribute PageRank and improve crawl depth'
             )
-
-        if external:
-            r['passed'].append(f'{len(external)} external link(s)')
+            r['score'] += 2
+        else:
+            r['issues'].append(
+                'No internal links detected — '
+                'internal links are essential for PageRank distribution and crawler discovery; '
+                'link to at least 2–3 related pages'
+            )
 
         if empty_anchors:
             r['warnings'].append(
@@ -988,9 +1001,10 @@ class SEOAnalyzer:
             r['passed'].append(f'Content compression: {enc}')
             r['score'] += 4
         else:
-            r['warnings'].append(
+            r['issues'].append(
                 'No content compression (gzip/brotli) — '
-                'enable compression to reduce transfer size and improve page speed ranking signal'
+                'uncompressed HTML is 3–10× larger than it needs to be; '
+                'enable compression at server/CDN level to improve page speed and Core Web Vitals'
             )
 
         ms = load_ms
@@ -1140,13 +1154,13 @@ class SEOAnalyzer:
             missing = [k for k in ('title', 'description', 'image') if not og.get(k)]
             r['warnings'].append(
                 f'Incomplete Open Graph — missing: og:{", og:".join(missing)}; '
-                'incomplete OG tags produce poor social share previews'
+                'incomplete OG tags produce poor social share previews on Facebook, LinkedIn, WhatsApp'
             )
             r['score'] += 3
         else:
-            r['warnings'].append(
-                'No Open Graph tags — '
-                'social shares on Facebook, LinkedIn and WhatsApp will have no image or description'
+            r['issues'].append(
+                'No Open Graph tags — social shares on Facebook, LinkedIn and WhatsApp '
+                'will display no image, title or description; add og:title, og:description, og:image'
             )
 
         if tw.get('card'):
@@ -1154,8 +1168,8 @@ class SEOAnalyzer:
             r['score'] += 4
         else:
             r['warnings'].append(
-                'No Twitter Card meta tags — '
-                'links on X/Twitter will not show rich card previews; '
+                'No Twitter/X Card meta tags — '
+                'links shared on X will not show rich card previews; '
                 'add twitter:card, twitter:title, twitter:image'
             )
 
@@ -1268,10 +1282,10 @@ class SEOAnalyzer:
             r['passed'].append('RDFa markup (vocab/typeof) detected')
             r['score'] += 2
         else:
-            r['warnings'].append(
-                'No JSON-LD, Microdata, or RDFa structured data — '
-                'add Schema.org markup to unlock rich results: '
-                'FAQs, breadcrumbs, events, products, reviews…'
+            r['issues'].append(
+                'No structured data found (no JSON-LD, Microdata, or RDFa) — '
+                'structured markup is required to unlock rich results in SERPs; '
+                'add at minimum BreadcrumbList + Organization or WebSite schema'
             )
 
         if parser.hreflang:
