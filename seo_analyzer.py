@@ -1679,6 +1679,72 @@ class SEOAnalyzer:
 
     # ── Site-wide crawl & analysis ─────────────────────────────────────
 
+    def _fetch_sitemap_urls(self, base_url: str, max_urls: int = 300) -> list:
+        """Parse sitemap.xml (including sitemap indexes) and return page URLs on the same domain."""
+        parsed = urlparse(base_url)
+        origin = f'{parsed.scheme}://{parsed.netloc}'
+        host   = parsed.netloc
+
+        candidates = [
+            f'{origin}/sitemap.xml',
+            f'{origin}/sitemap_index.xml',
+            f'{origin}/sitemap-index.xml',
+        ]
+        # Also try sitemap URLs declared in robots.txt
+        try:
+            rp = urllib.robotparser.RobotFileParser()
+            rp.set_url(f'{origin}/robots.txt')
+            rp.read()
+            for sm in (rp.site_maps() or []):
+                if sm not in candidates:
+                    candidates.insert(0, sm)
+        except Exception:
+            pass
+
+        def _locs(xml: str) -> list:
+            return re.findall(r'<loc>\s*(https?://[^\s<]+)\s*</loc>', xml, re.IGNORECASE)
+
+        urls: list = []
+        for candidate in candidates:
+            try:
+                resp = self.session.get(candidate, timeout=8, allow_redirects=True)
+                if resp.status_code != 200:
+                    continue
+                xml = resp.text[:600_000]
+                if not ('<loc>' in xml or 'urlset' in xml or 'sitemapindex' in xml):
+                    continue
+                if 'sitemapindex' in xml:
+                    # Fetch each sub-sitemap (limit to first 15)
+                    for sub in _locs(xml)[:15]:
+                        try:
+                            sr = self.session.get(sub, timeout=8, allow_redirects=True)
+                            if sr.status_code == 200:
+                                urls.extend(_locs(sr.text[:400_000]))
+                                if len(urls) >= max_urls:
+                                    break
+                        except Exception:
+                            continue
+                else:
+                    urls.extend(_locs(xml))
+                if urls:
+                    break
+            except Exception:
+                continue
+
+        # Filter to same domain, deduplicate, cap
+        seen: set = set()
+        result: list = []
+        for u in urls:
+            try:
+                if urlparse(u).netloc == host and u not in seen:
+                    seen.add(u)
+                    result.append(u)
+                    if len(result) >= max_urls:
+                        break
+            except Exception:
+                continue
+        return result
+
     def analyze_site(self, target: str, max_pages: int = 100,
                      progress_callback=None) -> dict:
         """Crawl all pages of a site and run SEO checks on each."""
@@ -1688,17 +1754,18 @@ class SEOAnalyzer:
             base_url = target
 
         result = {
-            'target':        target,
-            'base_url':      base_url,
-            'pages':         [],
-            'summary':       {},
-            'common_issues': [],
-            'site_score':    0,
-            'site_rating':   'unknown',
-            'pages_crawled': 0,
-            'root_robots':   None,
-            'root_sitemap':  None,
-            'error':         None,
+            'target':              target,
+            'base_url':            base_url,
+            'pages':               [],
+            'summary':             {},
+            'common_issues':       [],
+            'site_score':          0,
+            'site_rating':         'unknown',
+            'pages_crawled':       0,
+            'sitemap_seeds_used':  0,
+            'root_robots':         None,
+            'root_sitemap':        None,
+            'error':               None,
         }
 
         try:
@@ -1711,7 +1778,16 @@ class SEOAnalyzer:
             result['root_robots']  = self._check_robots_txt(base_url)
             result['root_sitemap'] = self._check_sitemap(base_url)
 
-            crawler    = SiteCrawler(self.session, base_url, max_pages=max_pages)
+            crawler = SiteCrawler(self.session, base_url, max_pages=max_pages)
+
+            # Seed crawler from sitemap so SPAs and JS-heavy sites are crawled properly
+            sitemap_seeds = self._fetch_sitemap_urls(base_url, max_urls=max_pages * 3)
+            for seed in sitemap_seeds:
+                key = SiteCrawler._key(seed)
+                if key not in crawler._visited:
+                    crawler._queue.append((seed, 1))
+            result['sitemap_seeds_used'] = len(sitemap_seeds)
+
             pages_data = crawler.crawl()
 
             page_results = []
