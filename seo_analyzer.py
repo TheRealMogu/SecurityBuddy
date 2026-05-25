@@ -4,7 +4,7 @@ import time
 import requests
 import urllib.robotparser
 from collections import Counter
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from html.parser import HTMLParser
 
 _TEXT_SKIP = {'script', 'style', 'noscript', 'nav', 'footer', 'aside', 'header'}
@@ -80,6 +80,7 @@ class _SEOHTMLParser(HTMLParser):
         self.scripts        = []
         self.stylesheets    = []
         self.inline_scripts = 0
+        self.http_resources = []   # [(tag, url)] HTTP-loaded resources on this page
 
         # ── Body text ──────────────────────────────────────────────────
         self._body_parts   = []
@@ -125,6 +126,8 @@ class _SEOHTMLParser(HTMLParser):
                 self._script_type = attrs.get('type', '')
                 src = attrs.get('src')
                 if src:
+                    if src.startswith('http://'):
+                        self.http_resources.append(('script', src))
                     self.scripts.append(src)
                     self._in_script = False
                 else:
@@ -174,6 +177,8 @@ class _SEOHTMLParser(HTMLParser):
             elif 'icon' in rel and not self.favicon_href:
                 self.favicon_href = href
             elif rel == 'stylesheet' and href:
+                if href.startswith('http://'):
+                    self.http_resources.append(('stylesheet', href))
                 self.stylesheets.append(href)
             elif rel == 'manifest':
                 self.has_manifest = True
@@ -186,9 +191,25 @@ class _SEOHTMLParser(HTMLParser):
             self._buf = []
             return
 
+        if tag in ('iframe', 'embed', 'frame'):
+            src = attrs.get('src', '')
+            if src.startswith('http://'):
+                self.http_resources.append((tag, src))
+            return
+
+        if tag == 'form':
+            action = attrs.get('action', '')
+            if action.startswith('http://'):
+                self.http_resources.append(('form', action))
+
         if tag == 'img':
+            src = attrs.get('src', '')
+            if src.startswith('http://'):
+                self.http_resources.append(('img', src))
+            if self._in_anchor and self.links:
+                self.links[-1]['has_img'] = True
             self.images.append({
-                'src':     attrs.get('src', ''),
+                'src':     src,
                 'alt':     attrs.get('alt'),
                 'loading': attrs.get('loading', ''),
                 'width':   attrs.get('width'),
@@ -201,7 +222,7 @@ class _SEOHTMLParser(HTMLParser):
             if href:
                 self._in_anchor = True
                 self._anchor_buf = []
-                self.links.append({'href': href, 'rel': attrs.get('rel', ''), 'text': ''})
+                self.links.append({'href': href, 'rel': attrs.get('rel', ''), 'text': '', 'has_img': False})
 
     def handle_endtag(self, tag):
         if tag == 'title' and self._in_title:
@@ -318,7 +339,7 @@ class SEOAnalyzer:
 
             # ── Run all checks ──────────────────────────────────────────
             result['checks']['url']             = self._check_url(base_url, response)
-            result['checks']['https']           = self._check_https(response, html_source)
+            result['checks']['https']           = self._check_https(response, parser)
             result['checks']['meta']            = self._check_meta(parser, response)
             result['checks']['content']         = self._check_content(parser, html_source)
             result['checks']['headings']        = self._check_headings(parser)
@@ -402,7 +423,7 @@ class SEOAnalyzer:
 
     # ── Check: HTTPS & transport security ─────────────────────────────
 
-    def _check_https(self, response, html_source: str) -> dict:
+    def _check_https(self, response, parser: '_SEOHTMLParser') -> dict:
         final_url = response.url
         is_https  = final_url.startswith('https://')
         hsts      = response.headers.get('Strict-Transport-Security', '')
@@ -451,22 +472,21 @@ class SEOAnalyzer:
                 'and improve browser trust signals'
             )
 
-        # Mixed content: HTTP resources inside an HTTPS page
+        # Mixed content: HTTP-loaded resources (scripts, stylesheets, images, iframes, forms)
+        # detected by the parser — does NOT flag regular <a href="http://"> links.
         if is_https:
-            mixed = re.findall(
-                r'(?:src|href|action|data-src)\s*=\s*["\']http://[^"\']+["\']',
-                html_source,
-                re.I,
-            )
+            mixed = parser.http_resources
             r['mixed_content_count'] = len(mixed)
             if mixed:
+                type_counts = Counter(t for t, _ in mixed)
+                detail = ', '.join(f'{v} {k}' for k, v in type_counts.most_common())
                 r['issues'].append(
-                    f'{len(mixed)} mixed-content resource(s) detected — '
-                    'HTTP resources on an HTTPS page trigger browser security warnings '
-                    'and hurt Core Web Vitals; update all resource URLs to HTTPS'
+                    f'{len(mixed)} mixed-content resource(s) detected ({detail}) — '
+                    'HTTP resources on an HTTPS page are blocked or warned by browsers; '
+                    'update all resource URLs to HTTPS'
                 )
             else:
-                r['passed'].append('No mixed content detected — all in-page resources use HTTPS')
+                r['passed'].append('No mixed content — all loaded resources use HTTPS')
 
         return r
 
@@ -528,9 +548,13 @@ class SEOAnalyzer:
             r['score'] += 10
 
         if parser.canonical:
-            r['passed'].append('Canonical URL declared')
+            # Resolve relative canonical to absolute so the value is always meaningful
+            canonical_abs = urljoin(response.url if response else parser.canonical, parser.canonical)
+            r['canonical'] = canonical_abs
+            r['passed'].append(f'Canonical URL declared')
             r['score'] += 3
         else:
+            r['canonical'] = None
             r['warnings'].append(
                 'No canonical URL — risk of duplicate-content issues; '
                 'add <link rel="canonical" href="…"> even on unique pages'
@@ -563,7 +587,11 @@ class SEOAnalyzer:
 
     def _check_content(self, parser: _SEOHTMLParser, html_source: str) -> dict:
         wc     = parser.word_count
-        is_spa = wc < 50 and len(parser.scripts) > 3
+        # SPA heuristic: very little server-rendered text AND many external JS files AND no H1.
+        # All three conditions must hold to avoid false-flagging analytics-heavy static pages.
+        is_spa = (wc < 40
+                  and len(parser.scripts) > 5
+                  and len(parser.headings.get('h1', [])) == 0)
 
         html_len  = max(len(html_source), 1)
         text_len  = len(parser.body_text)
@@ -746,6 +774,9 @@ class SEOAnalyzer:
                     r['issues'].append(msg)
                 else:
                     r['warnings'].append(msg)
+            else:
+                r['passed'].append('All images have width/height attributes — no CLS risk')
+                r['score'] += 2
 
             if len(imgs) > 3:
                 if lazy:
@@ -792,11 +823,13 @@ class SEOAnalyzer:
             if 'nofollow' in rel:
                 nofollow.append(href)
 
-            # Anchor text quality
+            # Anchor text quality — skip image-only links (<a><img></a>) which are
+            # intentional logo/icon patterns and don't need descriptive text.
             text_lc = text.lower()
-            if not text_lc:
+            has_img = link.get('has_img', False)
+            if not text_lc and not has_img:
                 empty_anchors.append(href)
-            elif text_lc in _GENERIC_ANCHORS or len(text_lc) <= 2:
+            elif text_lc and (text_lc in _GENERIC_ANCHORS or len(text_lc) <= 2):
                 generic_anchors.append(text_lc)
 
         r = {
@@ -1121,7 +1154,7 @@ class SEOAnalyzer:
         }
 
         try:
-            resp = self.session.get(robots_url, timeout=8, allow_redirects=False)
+            resp = self.session.get(robots_url, timeout=8, allow_redirects=True)
             body = resp.text
             ct   = resp.headers.get('Content-Type', '')
 
