@@ -4,7 +4,7 @@ import json
 import time
 import requests
 import urllib.robotparser
-from collections import Counter
+from collections import Counter, deque
 from urllib.parse import urlparse, urljoin
 from html.parser import HTMLParser
 
@@ -334,6 +334,87 @@ class _SEOHTMLParser(HTMLParser):
 # ══════════════════════════════════════════════════════════════════════════
 # SEOAnalyzer
 # ══════════════════════════════════════════════════════════════════════════
+
+class SiteCrawler:
+    """BFS crawler that discovers and fetches all HTML pages within a single domain."""
+
+    MAX_DEPTH   = 4
+    CRAWL_DELAY = 0.35   # seconds between requests
+
+    _SKIP_EXT = frozenset({
+        '.pdf', '.zip', '.tar', '.gz', '.jpg', '.jpeg', '.png', '.gif',
+        '.svg', '.webp', '.avif', '.mp4', '.mp3', '.avi', '.mov',
+        '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.xml', '.json', '.csv', '.rss', '.atom', '.ico', '.woff', '.woff2',
+    })
+
+    def __init__(self, session, base_url: str, max_pages: int = 100):
+        self.session    = session
+        parsed          = urlparse(base_url)
+        self.host       = parsed.netloc
+        self.max_pages  = max_pages
+        self._visited: set   = set()
+        self._queue:   deque = deque([(base_url, 0)])
+        self.pages:    list  = []
+
+    def _normalise(self, href: str, page_url: str):
+        try:
+            url    = urljoin(page_url, href)
+            parsed = urlparse(url)
+        except Exception:
+            return None
+        if parsed.scheme not in ('http', 'https'):
+            return None
+        if parsed.netloc != self.host:
+            return None
+        path = parsed.path.lower()
+        if any(path.endswith(ext) for ext in self._SKIP_EXT):
+            return None
+        return parsed._replace(fragment='').geturl()
+
+    @staticmethod
+    def _key(url: str) -> str:
+        return url.rstrip('/')
+
+    def crawl(self) -> list:
+        """BFS crawl; returns list of {url, html, response, load_ms}."""
+        while self._queue and len(self.pages) < self.max_pages:
+            url, depth = self._queue.popleft()
+            key = self._key(url)
+            if key in self._visited:
+                continue
+            self._visited.add(key)
+            try:
+                t0       = time.monotonic()
+                response = self.session.get(url, timeout=12, allow_redirects=True)
+                load_ms  = round((time.monotonic() - t0) * 1000)
+                if 'html' not in response.headers.get('Content-Type', '').lower():
+                    continue
+                html = response.text[:400_000]
+                self.pages.append({
+                    'url':      response.url,
+                    'html':     html,
+                    'response': response,
+                    'load_ms':  load_ms,
+                })
+                if depth < self.MAX_DEPTH:
+                    parser = _SEOHTMLParser()
+                    try:
+                        parser.feed(html)
+                    except Exception:
+                        pass
+                    for link in parser.links:
+                        href = link.get('href', '')
+                        if not href:
+                            continue
+                        norm = self._normalise(href, response.url)
+                        if norm and self._key(norm) not in self._visited:
+                            self._queue.append((norm, depth + 1))
+                time.sleep(self.CRAWL_DELAY)
+            except Exception:
+                continue
+        return self.pages
+
 
 class SEOAnalyzer:
     """
@@ -1595,3 +1676,192 @@ class SEOAnalyzer:
         if score >= 60: return 'good'
         if score >= 40: return 'needs_work'
         return 'poor'
+
+    # ── Site-wide crawl & analysis ─────────────────────────────────────
+
+    def analyze_site(self, target: str, max_pages: int = 100,
+                     progress_callback=None) -> dict:
+        """Crawl all pages of a site and run SEO checks on each."""
+        if not target.startswith(('http://', 'https://')):
+            base_url = f'https://{target}'
+        else:
+            base_url = target
+
+        result = {
+            'target':        target,
+            'base_url':      base_url,
+            'pages':         [],
+            'summary':       {},
+            'common_issues': [],
+            'site_score':    0,
+            'site_rating':   'unknown',
+            'pages_crawled': 0,
+            'root_robots':   None,
+            'root_sitemap':  None,
+            'error':         None,
+        }
+
+        try:
+            test = self.session.get(base_url, timeout=10, allow_redirects=True)
+            if 'html' not in test.headers.get('Content-Type', '').lower():
+                result['error'] = 'Root URL did not return an HTML page'
+                return result
+            base_url = test.url
+
+            result['root_robots']  = self._check_robots_txt(base_url)
+            result['root_sitemap'] = self._check_sitemap(base_url)
+
+            crawler    = SiteCrawler(self.session, base_url, max_pages=max_pages)
+            pages_data = crawler.crawl()
+
+            page_results = []
+            total = max(len(pages_data), 1)
+            for i, page in enumerate(pages_data):
+                if progress_callback:
+                    progress_callback(i + 1, total)
+                pr = self._analyse_prefetched(
+                    page['url'], page['html'], page['response'], page['load_ms']
+                )
+                page_results.append({
+                    'url':    page['url'],
+                    'score':  pr.get('score', 0),
+                    'rating': pr.get('rating', 'unknown'),
+                    'checks': pr.get('checks', {}),
+                    'error':  pr.get('error'),
+                })
+
+            result['pages']         = page_results
+            result['pages_crawled'] = len(page_results)
+
+            valid = [p['score'] for p in page_results if not p.get('error')]
+            if valid:
+                result['site_score']  = round(sum(valid) / len(valid))
+                result['site_rating'] = self._rating(result['site_score'])
+
+            result['summary']       = self._site_summary(page_results)
+            result['common_issues'] = self._common_issues(page_results)
+
+        except requests.exceptions.RequestException as e:
+            result['error'] = str(e)
+
+        return result
+
+    def _analyse_prefetched(self, url: str, html_source: str,
+                             response, load_ms: int) -> dict:
+        """Run per-page checks on already-fetched content (skips robots/sitemap/pagespeed)."""
+        r = {'score': 0, 'rating': 'unknown', 'checks': {}}
+        try:
+            parser = _SEOHTMLParser()
+            try:
+                parser.feed(html_source)
+            except Exception:
+                pass
+            r['checks']['url']             = self._check_url(url, response)
+            r['checks']['https']           = self._check_https(response, parser)
+            r['checks']['meta']            = self._check_meta(parser, response)
+            r['checks']['content']         = self._check_content(parser, html_source)
+            r['checks']['headings']        = self._check_headings(parser)
+            r['checks']['images']          = self._check_images(parser)
+            r['checks']['links']           = self._check_links(parser, url)
+            r['checks']['technical']       = self._check_technical(parser, response, load_ms)
+            r['checks']['resources']       = self._check_resources(parser)
+            r['checks']['social']          = self._check_social(parser)
+            r['checks']['structured_data'] = self._check_structured_data(parser)
+            r['score']  = self._calculate_score_page(r['checks'])
+            r['rating'] = self._rating(r['score'])
+        except Exception as e:
+            r['error'] = str(e)
+        return r
+
+    def _calculate_score_page(self, checks: dict) -> int:
+        """Score 0–100 for a single page (no robots/sitemap/pagespeed; max raw = 123)."""
+        caps = {
+            'url':             10,
+            'https':           10,
+            'meta':            22,
+            'content':         14,
+            'headings':        15,
+            'images':          10,
+            'links':            5,
+            'technical':       13,
+            'resources':        5,
+            'social':          12,
+            'structured_data':  7,
+        }
+        raw = sum(
+            min(checks.get(k, {}).get('score', 0), cap)
+            for k, cap in caps.items()
+        )
+        return min(max(round(raw * 100 / 123), 0), 100)
+
+    def _site_summary(self, pages: list) -> dict:
+        total = len(pages)
+        if not total:
+            return {}
+        total_issues   = sum(
+            sum(len(c.get('issues',   [])) for c in p['checks'].values())
+            for p in pages
+        )
+        total_warnings = sum(
+            sum(len(c.get('warnings', [])) for c in p['checks'].values())
+            for p in pages
+        )
+        scores = [p['score'] for p in pages if not p.get('error')]
+        return {
+            'total_pages':    total,
+            'total_issues':   total_issues,
+            'total_warnings': total_warnings,
+            'pages_critical': sum(1 for s in scores if s < 40),
+            'pages_poor':     sum(1 for s in scores if 40 <= s < 60),
+            'pages_ok':       sum(1 for s in scores if 60 <= s < 80),
+            'pages_good':     sum(1 for s in scores if s >= 80),
+            'avg_score':      round(sum(scores) / len(scores)) if scores else 0,
+        }
+
+    def _common_issues(self, pages: list) -> list:
+        """Checks that have issues/warnings across the most pages."""
+        _LABELS = {
+            'meta':            'Meta Tags',
+            'content':         'Content Quality',
+            'headings':        'Heading Structure',
+            'images':          'Images',
+            'links':           'Links',
+            'technical':       'Technical SEO',
+            'social':          'Open Graph / Social',
+            'structured_data': 'Structured Data',
+            'https':           'HTTPS / Transport',
+            'url':             'URL Structure',
+            'resources':       'Page Resources',
+        }
+        per_check: dict = {}
+        for page in pages:
+            for key, data in page.get('checks', {}).items():
+                if key not in _LABELS:
+                    continue
+                if key not in per_check:
+                    per_check[key] = {'pages_issues': 0, 'pages_warnings': 0, 'example': ''}
+                if data.get('issues'):
+                    per_check[key]['pages_issues'] += 1
+                    if not per_check[key]['example']:
+                        per_check[key]['example'] = data['issues'][0]
+                elif data.get('warnings'):
+                    per_check[key]['pages_warnings'] += 1
+                    if not per_check[key]['example']:
+                        per_check[key]['example'] = data['warnings'][0]
+
+        total = max(len(pages), 1)
+        rows = []
+        for key, data in per_check.items():
+            affected = data['pages_issues'] or data['pages_warnings']
+            if affected < 2:
+                continue
+            rows.append({
+                'check':    _LABELS[key],
+                'key':      key,
+                'affected': affected,
+                'pct':      round(affected / total * 100),
+                'severity': 'issue' if data['pages_issues'] else 'warning',
+                'example':  data['example'][:120] if data['example'] else '',
+            })
+        rows.sort(key=lambda x: (-x['affected'], x['severity'] == 'warning'))
+        return rows

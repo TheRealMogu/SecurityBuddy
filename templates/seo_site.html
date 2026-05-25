@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Site SEO Report — {{ crawl.target }} — Security Buddy{% endblock %}
+
+{% block content %}
+{% set s = crawl.summary %}
+
+{# ── Header ── #}
+<div class="container" style="padding-top:2rem;padding-bottom:0.5rem;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
+        <div>
+            <div style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:0.25rem;">
+                <a href="{{ url_for('seo_scan') }}" style="color:var(--color-text-muted);text-decoration:none;">SEO Analyser</a>
+                <i data-lucide="chevron-right" style="width:12px;height:12px;vertical-align:-1px;margin:0 2px;"></i>
+                Site Report
+            </div>
+            <h1 style="font-size:1.55rem;font-weight:700;margin:0 0 0.2rem;">
+                <i data-lucide="globe" style="width:20px;height:20px;color:var(--color-primary);vertical-align:-2px;margin-right:6px;"></i>
+                {{ crawl.target }}
+            </h1>
+            <div style="font-size:0.85rem;color:var(--color-text-muted);">{{ crawl.pages_crawled }} pages crawled and analysed</div>
+        </div>
+        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+            <a href="{{ url_for('seo_scan') }}?target={{ crawl.target }}" class="btn btn-secondary" style="font-size:0.83rem;">
+                <i data-lucide="search" style="width:13px;height:13px;"></i> Analyse single page
+            </a>
+            <a href="{{ url_for('seo_scan') }}" class="btn btn-primary" style="font-size:0.83rem;">
+                <i data-lucide="refresh-cw" style="width:13px;height:13px;"></i> New crawl
+            </a>
+        </div>
+    </div>
+</div>
+
+{# ── Summary cards ── #}
+<div class="container" style="margin-bottom:1.5rem;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.8rem;">
+        {% set rc = 'risk-color-low' if crawl.site_rating == 'excellent' else ('risk-color-medium' if crawl.site_rating == 'good' else 'risk-color-high') %}
+        <div class="score-card {{ rc }}" style="padding:1rem;text-align:center;min-height:auto;">
+            <div style="font-size:2.4rem;font-weight:800;line-height:1;">{{ crawl.site_score }}</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Avg. SEO score</div>
+            <div class="seo-score-badge seo-rating-{{ crawl.site_rating }}" style="margin:0.4rem auto 0;display:inline-block;">
+                {{ crawl.site_rating | replace('_',' ') | title }}
+            </div>
+        </div>
+        <div class="score-card" style="padding:1rem;text-align:center;min-height:auto;">
+            <div style="font-size:2.4rem;font-weight:800;line-height:1;">{{ s.total_pages }}</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Pages analysed</div>
+        </div>
+        <div class="score-card" style="padding:1rem;text-align:center;min-height:auto;">
+            <div style="font-size:2.4rem;font-weight:800;line-height:1;color:var(--color-danger,#dc3545);">{{ s.total_issues }}</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Total issues</div>
+        </div>
+        <div class="score-card" style="padding:1rem;text-align:center;min-height:auto;">
+            <div style="font-size:2.4rem;font-weight:800;line-height:1;color:var(--color-warning,#f59e0b);">{{ s.total_warnings }}</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Total warnings</div>
+        </div>
+        <div class="score-card" style="padding:1rem;min-height:auto;">
+            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:0.5rem;">Score distribution</div>
+            {% set distr = [
+                (s.pages_good,     'Good ≥80',    '#22c55e'),
+                (s.pages_ok,       'OK 60–79',    '#f59e0b'),
+                (s.pages_poor,     'Poor 40–59',  '#f97316'),
+                (s.pages_critical, 'Critical <40','#ef4444'),
+            ] %}
+            {% for count, label, color in distr %}
+            {% if count %}
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;margin-bottom:0.2rem;">
+                <span style="width:10px;height:10px;border-radius:50%;background:{{ color }};flex-shrink:0;display:inline-block;"></span>
+                <span style="flex:1;">{{ label }}</span>
+                <strong>{{ count }}</strong>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{# ── Site-level checks (robots + sitemap) ── #}
+{% if crawl.root_robots or crawl.root_sitemap %}
+<div class="container" style="margin-bottom:1.5rem;">
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">
+        <i data-lucide="settings" style="width:16px;height:16px;color:var(--color-primary);vertical-align:-2px;margin-right:5px;"></i>
+        Site-level checks
+    </h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.75rem;">
+        {% for check_name, check_data in [('robots.txt', crawl.root_robots), ('XML Sitemap', crawl.root_sitemap)] %}
+        {% if check_data %}
+        {% set cs = 'fail' if check_data.issues else ('warn' if check_data.warnings else 'pass') %}
+        <div class="check-item check-{{ cs }}" style="padding:0.85rem 1rem;">
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+                <i data-lucide="{% if cs == 'pass' %}check-circle{% elif cs == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="icon-{{ cs }}" style="width:16px;height:16px;"></i>
+                <strong style="font-size:0.9rem;">{{ check_name }}</strong>
+            </div>
+            {% if check_data.issues %}<div class="issues-list" style="margin:0;">{% for i in check_data.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+            {% if check_data.warnings %}<div class="seo-warnings-list" style="margin:0;">{% for w in check_data.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+            {% if check_data.passed %}<div class="seo-passed-list" style="margin:0;">{% for p in check_data.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# ── Common issues across pages ── #}
+{% if crawl.common_issues %}
+<div class="container" style="margin-bottom:1.5rem;">
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">
+        <i data-lucide="alert-triangle" style="width:16px;height:16px;color:var(--color-warning,#f59e0b);vertical-align:-2px;margin-right:5px;"></i>
+        Common issues across pages
+    </h2>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+            <tr style="border-bottom:2px solid var(--color-border,#e2e8f0);">
+                <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;">Check</th>
+                <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600;">Pages affected</th>
+                <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600;">%</th>
+                <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;">Severity</th>
+                <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;min-width:200px;">Example</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in crawl.common_issues %}
+        <tr style="border-bottom:1px solid var(--color-border,#e2e8f0);">
+            <td style="padding:0.55rem 0.75rem;font-weight:500;">{{ row.check }}</td>
+            <td style="padding:0.55rem 0.75rem;text-align:center;">
+                <strong>{{ row.affected }}</strong> / {{ row.total_pages if row.total_pages is defined else crawl.pages_crawled }}
+            </td>
+            <td style="padding:0.55rem 0.75rem;text-align:center;">
+                <div style="background:var(--color-bg-secondary,#f1f5f9);border-radius:4px;overflow:hidden;width:60px;height:14px;margin:0 auto;position:relative;">
+                    <div style="height:100%;width:{{ row.pct }}%;background:{% if row.severity == 'issue' %}var(--color-danger,#ef4444){% else %}var(--color-warning,#f59e0b){% endif %};"></div>
+                </div>
+                <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:1px;">{{ row.pct }}%</div>
+            </td>
+            <td style="padding:0.55rem 0.75rem;">
+                <span class="{% if row.severity == 'issue' %}badge-danger{% else %}badge-warning{% endif %}"
+                      style="font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;font-weight:600;
+                             background:{% if row.severity == 'issue' %}#fee2e2{% else %}#fef3c7{% endif %};
+                             color:{% if row.severity == 'issue' %}#dc2626{% else %}#d97706{% endif %};">
+                    {{ row.severity | title }}
+                </span>
+            </td>
+            <td style="padding:0.55rem 0.75rem;color:var(--color-text-muted);font-size:0.8rem;max-width:320px;">
+                {% if row.example %}{{ row.example[:110] }}{% if row.example|length > 110 %}…{% endif %}{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Per-page results ── #}
+<div class="container" style="margin-bottom:3rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
+        <h2 style="font-size:1.1rem;font-weight:700;margin:0;">
+            <i data-lucide="list" style="width:16px;height:16px;color:var(--color-primary);vertical-align:-2px;margin-right:5px;"></i>
+            All pages
+        </h2>
+        <div style="font-size:0.78rem;color:var(--color-text-muted);">
+            Click a page to expand detailed check results
+        </div>
+    </div>
+
+    {% for page in crawl.pages | sort(attribute='score') %}
+    {% set ps = 'fail' if page.score < 40 else ('warn' if page.score < 70 else 'pass') %}
+    {% set pr = 'poor' if page.score < 40 else ('needs_work' if page.score < 60 else ('good' if page.score < 80 else 'excellent')) %}
+    {% set pi_count = namespace(n=0) %}
+    {% set pw_count = namespace(n=0) %}
+    {% for k, v in page.checks.items() %}
+      {% if v is mapping %}
+        {% set pi_count.n = pi_count.n + (v.get('issues', []) | length) %}
+        {% set pw_count.n = pw_count.n + (v.get('warnings', []) | length) %}
+      {% endif %}
+    {% endfor %}
+
+    <details class="check-item check-{{ ps }}" style="margin-bottom:0.4rem;">
+        <summary style="display:flex;align-items:center;gap:0.6rem;padding:0.7rem 1rem;cursor:pointer;user-select:none;list-style:none;">
+            <span class="seo-score-badge seo-rating-{{ pr }}" style="min-width:42px;text-align:center;font-size:0.78rem;padding:0.2rem 0.45rem;flex-shrink:0;">
+                {{ page.score }}
+            </span>
+            <span style="flex:1;font-size:0.83rem;word-break:break-all;font-family:var(--font-mono,monospace);">{{ page.url }}</span>
+            <span style="flex-shrink:0;font-size:0.75rem;color:var(--color-text-muted);white-space:nowrap;">
+                {% if pi_count.n %}<span style="color:var(--color-danger,#dc3545);">{{ pi_count.n }} issue{{ 's' if pi_count.n != 1 }}</span>{% endif %}
+                {% if pi_count.n and pw_count.n %} · {% endif %}
+                {% if pw_count.n %}<span style="color:var(--color-warning,#d97706);">{{ pw_count.n }} warn{{ 's' if pw_count.n != 1 }}</span>{% endif %}
+            </span>
+            <i data-lucide="chevron-down" class="check-chevron" style="width:15px;height:15px;flex-shrink:0;"></i>
+        </summary>
+
+        <div class="check-body" style="padding:0.75rem 1rem 1rem;">
+            {% if page.error %}
+                <div class="issue-item">Error: {{ page.error }}</div>
+            {% else %}
+                {% for check_key, check_data in page.checks.items() %}
+                {% if check_data is mapping %}
+                {% set ck_s = 'fail' if check_data.issues else ('warn' if check_data.warnings else 'pass') %}
+                {% set ck_labels = {
+                    'url': 'URL & Redirect',
+                    'https': 'HTTPS',
+                    'meta': 'Meta Tags',
+                    'content': 'Content',
+                    'headings': 'Headings',
+                    'images': 'Images',
+                    'links': 'Links',
+                    'technical': 'Technical',
+                    'resources': 'Resources',
+                    'social': 'Open Graph',
+                    'structured_data': 'Structured Data',
+                } %}
+                <div style="margin-bottom:0.6rem;">
+                    <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;font-weight:600;color:var(--color-text-muted);margin-bottom:0.3rem;">
+                        <i data-lucide="{% if ck_s == 'pass' %}check-circle{% elif ck_s == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                           class="icon-{{ ck_s }}" style="width:13px;height:13px;"></i>
+                        {{ ck_labels.get(check_key, check_key | replace('_',' ') | title) }}
+                    </div>
+                    {% if check_data.issues %}<div class="issues-list" style="margin:0 0 0.3rem;">{% for i in check_data.issues %}<div class="issue-item" style="font-size:0.78rem;">{{ i }}</div>{% endfor %}</div>{% endif %}
+                    {% if check_data.warnings %}<div class="seo-warnings-list" style="margin:0 0 0.3rem;">{% for w in check_data.warnings %}<div class="seo-warning-item" style="font-size:0.78rem;">{{ w }}</div>{% endfor %}</div>{% endif %}
+                    {% if check_data.passed and ck_s == 'pass' %}<div class="seo-passed-list" style="margin:0;">{% for p in check_data.passed[:2] %}<div class="seo-passed-item" style="font-size:0.78rem;">{{ p }}</div>{% endfor %}</div>{% endif %}
+                </div>
+                {% endif %}
+                {% endfor %}
+            {% endif %}
+        </div>
+    </details>
+    {% endfor %}
+</div>
+
+{% endblock %}
