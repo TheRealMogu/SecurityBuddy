@@ -524,6 +524,7 @@
                     </div>
                 </div>
                 {% if img.modern_formats > 0 %}<p class="small text-muted">{{ img.modern_formats }} WebP/AVIF ✓</p>{% endif %}
+                {% if img.responsive_srcset is defined and img.responsive_srcset > 0 %}<p class="small text-muted">{{ img.responsive_srcset }} responsive (srcset) ✓</p>{% endif %}
                 {% endif %}
                 {{ check_lists(img) }}
             </div>
@@ -583,6 +584,8 @@
                     <div class="ssl-info-item"><div class="ssl-info-label">Cache-Control</div><div class="ssl-info-value {% if tc.cache_control %}good{% else %}bad{% endif %}">{% if tc.cache_control %}{{ tc.cache_control[:30] }}{% if tc.cache_control|length > 30 %}…{% endif %}{% else %}Not set{% endif %}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">ETag / Last-Mod</div><div class="ssl-info-value {% if tc.has_etag %}good{% endif %}">{% if tc.has_etag %}Present{% else %}—{% endif %}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">Preload hints</div><div class="ssl-info-value {% if tc.preload_count > 0 %}good{% endif %}">{{ tc.preload_count }}</div></div>
+                    <div class="ssl-info-item"><div class="ssl-info-label">Preconnect</div><div class="ssl-info-value {% if tc.preconnect_count is defined and tc.preconnect_count > 0 %}good{% endif %}">{{ tc.preconnect_count if tc.preconnect_count is defined else '—' }}</div></div>
+                    <div class="ssl-info-item"><div class="ssl-info-label">Dialogs</div><div class="ssl-info-value {% if tc.dialog_count is defined and tc.dialog_count > 0 %}bad{% endif %}">{{ tc.dialog_count if tc.dialog_count is defined else '0' }}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">AMP / Pagination</div><div class="ssl-info-value {% if tc.amp_version or tc.has_pagination %}good{% endif %}">{% if tc.amp_version %}AMP {% endif %}{% if tc.has_pagination %}Paginated{% endif %}{% if not tc.amp_version and not tc.has_pagination %}—{% endif %}</div></div>
                 </div>
                 {{ check_lists(tc) }}
@@ -652,19 +655,24 @@
         {# 10. Structured Data #}
         {% if results.checks.structured_data is defined %}
         {% set sd = results.checks.structured_data %}
-        {% set sd_s = 'warn' if sd.warnings else 'pass' %}
+        {% set sd_s = 'fail' if sd.issues else ('warn' if sd.warnings else 'pass') %}
         <details class="check-item check-{{ sd_s }}">
             <summary>
-                <i data-lucide="{% if sd_s == 'pass' %}check-circle{% else %}alert-triangle{% endif %}"
+                <i data-lucide="{% if sd_s == 'pass' %}check-circle{% elif sd_s == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
                    class="check-status-icon icon-{{ sd_s }}" style="width:18px;height:18px;"></i>
                 <span class="check-name">Structured Data</span>
-                <span class="check-summary-text">{% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% elif sd.has_rdfa %}RDFa{% else %}None{% endif %}{% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}</span>
+                <span class="check-summary-text">{% if sd.json_ld_count > 0 %}{{ sd.valid_ld_count }}/{{ sd.json_ld_count }} valid JSON-LD{% elif sd.has_microdata %}Microdata{% elif sd.has_rdfa %}RDFa{% else %}None{% endif %}{% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}</span>
                 <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
             </summary>
             <div class="check-body">
                 {% if sd.schema_types %}
                 <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
-                    {% for t in sd.schema_types %}<span class="badge badge-neutral">{{ t }}</span>{% endfor %}
+                    {% for t in sd.schema_types %}
+                    <span class="badge {% if t in ['FAQPage','Course','CourseInstance','ClaimReview','LearningResource','SpecialAnnouncement','VehicleListing','EstimatedSalary'] %}badge-danger{% else %}badge-neutral{% endif %}"
+                          {% if t in ['FAQPage','Course','CourseInstance','ClaimReview','LearningResource','SpecialAnnouncement','VehicleListing','EstimatedSalary'] %}title="Deprecated by Google — no longer produces rich results"{% endif %}>
+                        {{ t }}{% if t in ['FAQPage','Course','CourseInstance','ClaimReview','LearningResource','SpecialAnnouncement','VehicleListing','EstimatedSalary'] %} ⚠{% endif %}
+                    </span>
+                    {% endfor %}
                 </div>
                 {% if sd.valid_ld_count is defined and sd.valid_ld_count < sd.json_ld_count %}
                 <p class="small text-warning">⚠ {{ sd.json_ld_count - sd.valid_ld_count }} block(s) missing @context or @type</p>

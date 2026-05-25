@@ -9,6 +9,23 @@ from html.parser import HTMLParser
 
 _TEXT_SKIP = {'script', 'style', 'noscript', 'nav', 'footer', 'aside', 'header'}
 
+# Schema.org types deprecated by Google (no longer produce rich results as of 2026)
+_DEPRECATED_SCHEMA = frozenset({
+    'FAQPage',              # dropped from rich results May 2026
+    'Course', 'CourseInstance',  # Course Info rich result dropped
+    'ClaimReview',          # dropped
+    'LearningResource',     # dropped
+    'SpecialAnnouncement',  # COVID-era, dropped
+    'VehicleListing',       # dropped
+    'EstimatedSalary',      # salary estimate via JobPosting, dropped
+})
+
+# Article-type schema that Google validates for E-E-A-T
+_ARTICLE_TYPES = frozenset({'Article', 'NewsArticle', 'BlogPosting'})
+
+# Organisation types that unlock Knowledge Panel and trust signals
+_ORG_TYPES = frozenset({'Organization', 'LocalBusiness', 'NGO', 'Corporation', 'EducationalOrganization'})
+
 _STOPWORDS = {
     # English
     'the','a','an','and','or','but','in','on','at','to','for','of','with',
@@ -65,8 +82,13 @@ class _SEOHTMLParser(HTMLParser):
         self.favicon_href = None
         self.amp_url      = None
         self.pagination   = {'prev': None, 'next': None}
-        self.has_manifest = False
-        self.preload_count = 0
+        self.has_manifest        = False
+        self.preload_count       = 0
+        self.preconnect_count    = 0
+        self.has_author_link     = False   # <link rel="author">
+        self.meta_refresh_delay  = None    # int seconds if <meta http-equiv="refresh">
+        self.dialog_count        = 0       # <dialog> elements (intrusive interstitial proxy)
+        self.srcset_images       = 0       # <img srcset="..."> responsive image count
 
         # ── Body structure ──────────────────────────────────────────────
         self.headings       = {'h1': [], 'h2': [], 'h3': []}
@@ -142,16 +164,22 @@ class _SEOHTMLParser(HTMLParser):
             return
 
         if tag == 'meta':
-            name    = attrs.get('name', '').lower()
-            prop    = attrs.get('property', '').lower()
-            content = attrs.get('content', '')
-            charset = attrs.get('charset')
+            name      = attrs.get('name', '').lower()
+            prop      = attrs.get('property', '').lower()
+            content   = attrs.get('content', '')
+            charset   = attrs.get('charset')
+            http_equiv = attrs.get('http-equiv', '').lower()
             if charset:
                 self.charset = charset
             elif 'charset=' in content.lower():
                 m = re.search(r'charset=([\w-]+)', content, re.I)
                 if m:
                     self.charset = m.group(1)
+            if http_equiv == 'refresh' and self.meta_refresh_delay is None:
+                try:
+                    self.meta_refresh_delay = int(re.match(r'(\d+)', content).group(1))
+                except (AttributeError, ValueError):
+                    self.meta_refresh_delay = 0
             if name:
                 self.meta[name] = content
             if prop.startswith('og:'):
@@ -184,12 +212,19 @@ class _SEOHTMLParser(HTMLParser):
                 self.has_manifest = True
             elif rel == 'preload':
                 self.preload_count += 1
+            elif rel == 'preconnect':
+                self.preconnect_count += 1
+            elif rel == 'author':
+                self.has_author_link = True
             return
 
         if tag in ('h1', 'h2', 'h3'):
             self._current_heading = tag
             self._buf = []
             return
+
+        if tag == 'dialog' and self._in_body:
+            self.dialog_count += 1
 
         if tag in ('iframe', 'embed', 'frame'):
             src = attrs.get('src', '')
@@ -208,12 +243,16 @@ class _SEOHTMLParser(HTMLParser):
                 self.http_resources.append(('img', src))
             if self._in_anchor and self.links:
                 self.links[-1]['has_img'] = True
+            if attrs.get('srcset'):
+                self.srcset_images += 1
             self.images.append({
                 'src':     src,
                 'alt':     attrs.get('alt'),
                 'loading': attrs.get('loading', ''),
                 'width':   attrs.get('width'),
                 'height':  attrs.get('height'),
+                'srcset':  bool(attrs.get('srcset')),
+                'decoding': attrs.get('decoding', ''),
             })
             return
 
@@ -564,6 +603,32 @@ class SEOAnalyzer:
         if parser.meta.get('keywords'):
             r['passed'].append('meta keywords present (Bing signal)')
 
+        # Meta refresh — can disrupt Googlebot indexing
+        if parser.meta_refresh_delay is not None:
+            if parser.meta_refresh_delay == 0:
+                r['issues'].append(
+                    'Instant meta refresh (content="0; url=…") detected — '
+                    'Google may not pass full ranking credit through a meta refresh; '
+                    'use a proper 301 HTTP redirect instead'
+                )
+            else:
+                r['warnings'].append(
+                    f'Meta refresh with delay={parser.meta_refresh_delay}s — '
+                    'can disrupt crawling; use HTTP redirects for page moves'
+                )
+
+        # E-E-A-T author signal
+        author = parser.meta.get('author', '')
+        if author:
+            r['passed'].append(f'Author declared: meta author="{author}"')
+        elif parser.has_author_link:
+            r['passed'].append('Author page linked via rel="author" — E-E-A-T signal')
+        else:
+            r['warnings'].append(
+                'No author signal — add <meta name="author"> or <link rel="author"> '
+                'to help Google identify the content creator (E-E-A-T)'
+            )
+
         robots = parser.meta.get('robots', '').lower()
         if 'noindex' in robots:
             r['noindex'] = True
@@ -746,6 +811,7 @@ class SEOAnalyzer:
             'lazy_loading':       len(lazy),
             'missing_dimensions': len(no_dims),
             'modern_formats':     len(modern_fmt),
+            'responsive_srcset':  parser.srcset_images,
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
@@ -793,6 +859,16 @@ class SEOAnalyzer:
                 r['warnings'].append(
                     'No WebP/AVIF images detected — '
                     'convert images to WebP or AVIF for 25–50% smaller file sizes'
+                )
+
+            if parser.srcset_images > 0:
+                r['passed'].append(
+                    f'{parser.srcset_images}/{len(imgs)} image(s) use srcset — responsive images configured'
+                )
+            elif len(imgs) > 0:
+                r['warnings'].append(
+                    'No srcset attribute on images — '
+                    'add srcset for responsive images to serve appropriate resolution per device'
                 )
 
         return r
@@ -878,17 +954,20 @@ class SEOAnalyzer:
         last_mod = response.headers.get('Last-Modified')
 
         r = {
-            'load_time_ms':   load_ms,
-            'page_size_kb':   round(len(response.content) / 1024, 1),
-            'compression':    enc,
-            'viewport':       bool(parser.meta.get('viewport')),
-            'amp_version':    bool(parser.amp_url),
-            'has_pagination': bool(parser.pagination['prev'] or parser.pagination['next']),
-            'favicon':        bool(parser.favicon_href),
-            'has_manifest':   parser.has_manifest,
-            'preload_count':  parser.preload_count,
-            'cache_control':  cc or None,
-            'has_etag':       bool(etag),
+            'load_time_ms':    load_ms,
+            'page_size_kb':    round(len(response.content) / 1024, 1),
+            'compression':     enc,
+            'viewport':        bool(parser.meta.get('viewport')),
+            'amp_version':     bool(parser.amp_url),
+            'has_pagination':  bool(parser.pagination['prev'] or parser.pagination['next']),
+            'favicon':         bool(parser.favicon_href),
+            'has_manifest':    parser.has_manifest,
+            'preload_count':   parser.preload_count,
+            'preconnect_count': parser.preconnect_count,
+            'dialog_count':    parser.dialog_count,
+            'meta_refresh':    parser.meta_refresh_delay,
+            'cache_control':   cc or None,
+            'has_etag':        bool(etag),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
@@ -961,6 +1040,19 @@ class SEOAnalyzer:
 
         if parser.preload_count > 0:
             r['passed'].append(f'{parser.preload_count} resource(s) with rel=preload — good performance hint')
+
+        if parser.preconnect_count > 0:
+            r['passed'].append(
+                f'{parser.preconnect_count} rel=preconnect hint(s) — '
+                'early connection setup reduces latency for third-party origins'
+            )
+
+        if parser.dialog_count > 0:
+            r['warnings'].append(
+                f'{parser.dialog_count} <dialog> element(s) detected — '
+                'verify these are not intrusive interstitials; '
+                'Google may penalise pages where full-screen popups block content on mobile'
+            )
 
         if parser.amp_url:
             r['passed'].append('AMP version linked (rel=amphtml)')
@@ -1101,18 +1193,65 @@ class SEOAnalyzer:
                     f'{invalid_items} JSON-LD block(s) missing @context or @type — '
                     'invalid blocks are ignored by Google Rich Results'
                 )
-            # Rich result eligibility hints
-            rich = {'FAQPage', 'HowTo', 'Recipe', 'Product', 'Review', 'Event',
-                    'BreadcrumbList', 'Organization', 'Article', 'WebSite', 'Person'}
-            found_rich = [t for t in types if t in rich]
+
+            # Warn on deprecated types (removed from Google rich results 2025-2026)
+            deprecated_found = [t for t in types if t in _DEPRECATED_SCHEMA]
+            if deprecated_found:
+                for dt in deprecated_found:
+                    if dt == 'FAQPage':
+                        r['issues'].append(
+                            'FAQPage schema DEPRECATED — Google dropped FAQ rich results May 2026; '
+                            'remove markup or replace with HowTo / Q&A page where appropriate'
+                        )
+                    else:
+                        r['warnings'].append(
+                            f'{dt} schema type deprecated by Google — '
+                            'no longer eligible for rich results; '
+                            'remove or replace with a supported type'
+                        )
+
+            # Rich result eligibility hints (exclude deprecated types)
+            rich = {'HowTo', 'Recipe', 'Product', 'Review', 'Event',
+                    'BreadcrumbList', 'Organization', 'Article', 'WebSite', 'Person',
+                    'NewsArticle', 'BlogPosting', 'JobPosting', 'LocalBusiness',
+                    'SoftwareApplication', 'Book', 'Movie', 'VideoObject'}
+            found_rich = [t for t in types if t in rich and t not in _DEPRECATED_SCHEMA]
             if found_rich:
                 r['passed'].append(f'Rich result eligible types: {", ".join(found_rich)}')
-            else:
+            elif not deprecated_found:
                 r['warnings'].append(
                     'JSON-LD found but no rich-result types detected — '
-                    'consider adding FAQPage, BreadcrumbList, or Product schema '
+                    'consider adding BreadcrumbList, Product, or HowTo schema '
                     'to unlock rich results in SERPs'
                 )
+
+            # Validate Article/BlogPosting/NewsArticle required fields for E-E-A-T
+            article_items = [i for i in valid_items if i.get('@type') in _ARTICLE_TYPES]
+            for article in article_items:
+                missing = [f for f in ('headline', 'author', 'datePublished', 'image')
+                           if not article.get(f)]
+                if missing:
+                    r['warnings'].append(
+                        f'Article schema missing: {", ".join(missing)} — '
+                        'these fields are required for Google E-E-A-T signals and article rich results'
+                    )
+                else:
+                    r['passed'].append(
+                        'Article schema complete (headline, author, datePublished, image) — E-E-A-T ready'
+                    )
+
+            # Validate Organization/LocalBusiness recommended fields
+            org_items = [i for i in valid_items if i.get('@type') in _ORG_TYPES]
+            for org in org_items:
+                missing = [f for f in ('name', 'url', 'logo') if not org.get(f)]
+                if missing:
+                    r['warnings'].append(
+                        f'Organization schema missing: {", ".join(missing)} — '
+                        'complete org markup improves Knowledge Panel eligibility'
+                    )
+                else:
+                    r['passed'].append('Organization schema complete (name, url, logo)')
+
         elif items:
             r['warnings'].append(
                 f'{len(items)} JSON-LD block(s) found but missing @context/@type — validate at schema.org'
