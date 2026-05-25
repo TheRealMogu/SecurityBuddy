@@ -11,15 +11,15 @@
         <div class="text-center">
             <h1 class="hero-headline">SEO Analysis</h1>
             <p class="hero-subtext">
-                12 automated SEO checks — meta tags, content quality, headings, images,
-                structured data, Open Graph, robots.txt and more.
+                13 automated SEO checks — HTTPS, meta tags, content quality, headings, images,
+                anchor text, structured data, Open Graph, robots.txt and more.
                 No account required.
             </p>
 
             <div class="trust-badges">
                 <span class="trust-badge">
                     <i data-lucide="search" style="width:13px;height:13px;color:var(--color-primary);"></i>
-                    12 checks
+                    13 checks
                 </span>
                 <span class="trust-badge">
                     <i data-lucide="file-text" style="width:13px;height:13px;color:var(--color-primary);"></i>
@@ -118,9 +118,14 @@
                 <p>JSON-LD types, Microdata, hreflang — needed for rich results in Google.</p>
             </div>
             <div class="feature-card">
+                <div class="feature-icon"><i data-lucide="lock" style="width:20px;height:20px;"></i></div>
+                <h5>HTTPS &amp; Transport</h5>
+                <p>HTTPS enforcement, HSTS header, mixed-content detection on secure pages.</p>
+            </div>
+            <div class="feature-card">
                 <div class="feature-icon"><i data-lucide="cpu" style="width:20px;height:20px;"></i></div>
                 <h5>Technical SEO</h5>
-                <p>Response time, compression, viewport, favicon, AMP, pagination tags.</p>
+                <p>Response time, compression, Cache-Control, viewport, favicon, preload hints.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon"><i data-lucide="layers" style="width:20px;height:20px;"></i></div>
@@ -308,7 +313,51 @@
         </details>
         {% endif %}
 
-        {# 2. Meta Tags #}
+        {# 2. HTTPS & Transport Security #}
+        {% if results.checks.https is defined %}
+        {% set ht = results.checks.https %}
+        {% set ht_s = 'fail' if ht.issues else ('warn' if ht.warnings else 'pass') %}
+        <details class="check-item check-{{ ht_s }}">
+            <summary>
+                <i data-lucide="{% if ht_s == 'pass' %}lock{% elif ht_s == 'warn' %}alert-triangle{% else %}unlock{% endif %}"
+                   class="check-status-icon icon-{{ ht_s }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">HTTPS &amp; Transport</span>
+                <span class="check-summary-text">
+                    {% if ht.is_https %}HTTPS ✓{% else %}HTTP ✗{% endif %}
+                    {% if ht.hsts %} · HSTS ✓{% else %} · No HSTS{% endif %}
+                    {% if ht.mixed_content_count > 0 %} · {{ ht.mixed_content_count }} mixed{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Protocol</div>
+                        <div class="ssl-info-value {% if ht.is_https %}good{% else %}bad{% endif %}">
+                            {% if ht.is_https %}HTTPS (secure){% else %}HTTP (insecure){% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">HSTS</div>
+                        <div class="ssl-info-value {% if ht.hsts %}good{% else %}bad{% endif %}">
+                            {% if ht.hsts %}{{ ht.hsts[:55] }}{% if ht.hsts|length > 55 %}…{% endif %}{% else %}Not set{% endif %}
+                        </div>
+                    </div>
+                    {% if ht.is_https %}
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Mixed content</div>
+                        <div class="ssl-info-value {% if ht.mixed_content_count == 0 %}good{% else %}bad{% endif %}">
+                            {{ ht.mixed_content_count }} resource(s)
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {{ check_lists(ht) }}
+            </div>
+        </details>
+        {% endif %}
+
+        {# 3. Meta Tags #}
         {% if results.checks.meta is defined %}
         {% set m = results.checks.meta %}
         {% set m_s = 'fail' if m.issues else ('warn' if m.warnings else 'pass') %}
@@ -390,7 +439,23 @@
                         <div class="ssl-info-label">SPA / JS</div>
                         <div class="ssl-info-value {% if cq.is_spa %}bad{% else %}good{% endif %}">{{ 'Detected' if cq.is_spa else 'No' }}</div>
                     </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Paragraphs</div>
+                        <div class="ssl-info-value {% if cq.paragraph_count >= 3 %}good{% elif cq.paragraph_count > 0 %}{% else %}bad{% endif %}">{{ cq.paragraph_count }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Text/HTML ratio</div>
+                        <div class="ssl-info-value {% if cq.text_html_ratio >= 25 %}good{% elif cq.text_html_ratio >= 10 %}{% else %}bad{% endif %}">{{ cq.text_html_ratio }}%</div>
+                    </div>
                 </div>
+                {% if cq.top_keywords %}
+                <div style="margin-bottom:0.75rem;">
+                    <div class="ssl-info-label" style="margin-bottom:0.35rem;">Top keywords</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
+                        {% for kw in cq.top_keywords %}<span class="badge badge-neutral">{{ kw }}</span>{% endfor %}
+                    </div>
+                </div>
+                {% endif %}
                 {{ check_lists(cq) }}
             </div>
         </details>
@@ -482,6 +547,14 @@
                     <div class="seo-link-stat"><span class="seo-link-count">{{ lk.internal }}</span><span class="seo-link-label">Internal</span></div>
                     <div class="seo-link-stat"><span class="seo-link-count">{{ lk.external }}</span><span class="seo-link-label">External</span></div>
                     <div class="seo-link-stat"><span class="seo-link-count">{{ lk.nofollow }}</span><span class="seo-link-label">Nofollow</span></div>
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count {% if lk.generic_anchors > 0 %}text-warning{% else %}text-success{% endif %}">{{ lk.generic_anchors }}</span>
+                        <span class="seo-link-label">Generic anchors</span>
+                    </div>
+                    <div class="seo-link-stat">
+                        <span class="seo-link-count {% if lk.empty_anchors > 0 %}text-danger{% else %}text-success{% endif %}">{{ lk.empty_anchors }}</span>
+                        <span class="seo-link-label">Empty anchors</span>
+                    </div>
                 </div>
                 {{ check_lists(lk) }}
             </div>
@@ -507,6 +580,9 @@
                     <div class="ssl-info-item"><div class="ssl-info-label">Compression</div><div class="ssl-info-value {% if tc.compression %}good{% else %}bad{% endif %}">{{ tc.compression or 'None' }}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">Viewport</div><div class="ssl-info-value {% if tc.viewport %}good{% else %}bad{% endif %}">{% if tc.viewport %}Present{% else %}Missing{% endif %}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">Favicon</div><div class="ssl-info-value {% if tc.favicon %}good{% else %}bad{% endif %}">{% if tc.favicon %}Declared{% else %}Missing{% endif %}</div></div>
+                    <div class="ssl-info-item"><div class="ssl-info-label">Cache-Control</div><div class="ssl-info-value {% if tc.cache_control %}good{% else %}bad{% endif %}">{% if tc.cache_control %}{{ tc.cache_control[:30] }}{% if tc.cache_control|length > 30 %}…{% endif %}{% else %}Not set{% endif %}</div></div>
+                    <div class="ssl-info-item"><div class="ssl-info-label">ETag / Last-Mod</div><div class="ssl-info-value {% if tc.has_etag %}good{% endif %}">{% if tc.has_etag %}Present{% else %}—{% endif %}</div></div>
+                    <div class="ssl-info-item"><div class="ssl-info-label">Preload hints</div><div class="ssl-info-value {% if tc.preload_count > 0 %}good{% endif %}">{{ tc.preload_count }}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">AMP / Pagination</div><div class="ssl-info-value {% if tc.amp_version or tc.has_pagination %}good{% endif %}">{% if tc.amp_version %}AMP {% endif %}{% if tc.has_pagination %}Paginated{% endif %}{% if not tc.amp_version and not tc.has_pagination %}—{% endif %}</div></div>
                 </div>
                 {{ check_lists(tc) }}
@@ -582,7 +658,7 @@
                 <i data-lucide="{% if sd_s == 'pass' %}check-circle{% else %}alert-triangle{% endif %}"
                    class="check-status-icon icon-{{ sd_s }}" style="width:18px;height:18px;"></i>
                 <span class="check-name">Structured Data</span>
-                <span class="check-summary-text">{% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% else %}None{% endif %}{% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}</span>
+                <span class="check-summary-text">{% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% elif sd.has_rdfa %}RDFa{% else %}None{% endif %}{% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}</span>
                 <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
             </summary>
             <div class="check-body">
@@ -590,10 +666,15 @@
                 <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
                     {% for t in sd.schema_types %}<span class="badge badge-neutral">{{ t }}</span>{% endfor %}
                 </div>
+                {% if sd.valid_ld_count is defined and sd.valid_ld_count < sd.json_ld_count %}
+                <p class="small text-warning">⚠ {{ sd.json_ld_count - sd.valid_ld_count }} block(s) missing @context or @type</p>
+                {% endif %}
                 {% elif sd.has_microdata %}
                 <p class="small text-muted">Microdata (itemscope/itemtype) detected</p>
+                {% elif sd.has_rdfa %}
+                <p class="small text-muted">RDFa markup (vocab/typeof) detected</p>
                 {% else %}
-                <p class="small text-muted">No JSON-LD or Microdata found.</p>
+                <p class="small text-muted">No JSON-LD, Microdata, or RDFa found.</p>
                 {% endif %}
                 {% if sd.hreflang_count > 0 %}<p class="small text-muted">{{ sd.hreflang_count }} hreflang tag(s)</p>{% endif %}
                 {{ check_lists(sd) }}
@@ -615,9 +696,10 @@
             </summary>
             <div class="check-body">
                 {% if rb.present %}
-                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0.75rem;">
                     <div class="ssl-info-item"><div class="ssl-info-label">Disallow rules</div><div class="ssl-info-value">{{ rb.disallow_count }}</div></div>
                     <div class="ssl-info-item"><div class="ssl-info-label">Sitemap declared</div><div class="ssl-info-value {% if rb.sitemap_declared %}good{% endif %}">{{ 'Yes' if rb.sitemap_declared else 'No' }}</div></div>
+                    <div class="ssl-info-item"><div class="ssl-info-label">Crawl-Delay</div><div class="ssl-info-value {% if rb.crawl_delay and rb.crawl_delay > 10 %}bad{% elif rb.crawl_delay %}{% endif %}">{{ rb.crawl_delay ~ 's' if rb.crawl_delay else '—' }}</div></div>
                 </div>
                 {% else %}
                 <p class="text-muted small">Not found at <code>{{ rb.url }}</code></p>
@@ -682,13 +764,16 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-sm me-1"></span>Analysing…';
         const steps = [
-            { text: 'Fetching page…',              pct: 15 },
-            { text: 'Parsing HTML…',               pct: 28 },
+            { text: 'Fetching page…',              pct: 10 },
+            { text: 'Checking HTTPS & transport…', pct: 20 },
+            { text: 'Parsing HTML…',               pct: 30 },
             { text: 'Checking meta tags…',         pct: 40 },
-            { text: 'Analysing content…',          pct: 54 },
-            { text: 'Checking Open Graph…',        pct: 66 },
-            { text: 'Fetching robots.txt…',        pct: 78 },
-            { text: 'Checking sitemap…',           pct: 90 },
+            { text: 'Analysing content & keywords…', pct: 50 },
+            { text: 'Checking headings & links…',  pct: 60 },
+            { text: 'Checking Open Graph…',        pct: 68 },
+            { text: 'Checking structured data…',   pct: 76 },
+            { text: 'Fetching robots.txt…',        pct: 84 },
+            { text: 'Checking sitemap…',           pct: 92 },
             { text: 'Calculating SEO score…',      pct: 100 },
         ];
         let i = 0;

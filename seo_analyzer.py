@@ -2,11 +2,46 @@ import re
 import json
 import time
 import requests
+import urllib.robotparser
+from collections import Counter
 from urllib.parse import urlparse
 from html.parser import HTMLParser
 
-# Tags whose text content should be excluded from the body word count
 _TEXT_SKIP = {'script', 'style', 'noscript', 'nav', 'footer', 'aside', 'header'}
+
+_STOPWORDS = {
+    # English
+    'the','a','an','and','or','but','in','on','at','to','for','of','with',
+    'by','from','that','this','which','is','are','was','were','be','been',
+    'it','its','as','have','has','had','do','does','did','will','would',
+    'could','should','may','might','shall','can','not','no','so','if',
+    'then','than','such','about','into','through','during','before',
+    'after','above','below','between','each','all','both','few','more',
+    'most','other','some','any','up','out','there','here','when',
+    'where','how','what','who','he','she','they','we','you','me',
+    'him','her','us','them','my','your','his','our','their',
+    # Italian
+    'il','lo','la','le','gli','un','una','del','della','dei','delle',
+    'nel','nella','nei','nelle','di','da','con','su','per','tra','fra',
+    'sono','come','si','ci','anche','non','che','questa','questo',
+    'questi','queste','ogni','molto','bene','dopo','dove','quando',
+    # Spanish
+    'el','los','las','unos','unas','por','para','sin','sobre','entre',
+    'hasta','desde','ante','bajo','su','sus','nos','como','este','esta',
+    # French
+    'du','au','aux','dans','avec','sans','sous','vers','chez','ou','et',
+    'mais','donc','car','ni','que','quoi','dont','les','des','une',
+    # German
+    'der','die','das','des','dem','den','ein','eine','und','oder','aber',
+    'von','zu','an','auf','für','mit','bei','nach','ist','sind','war',
+}
+
+_GENERIC_ANCHORS = frozenset({
+    'click here', 'click', 'here', 'read more', 'more', 'learn more',
+    'this', 'link', 'page', 'visit', 'go', 'continue', 'next', 'info',
+    'details', 'download', 'view', 'see', 'check', 'website', 'site',
+    'home', 'back', 'forward', 'open', 'get', 'start', 'now',
+})
 
 
 class _SEOHTMLParser(HTMLParser):
@@ -16,43 +51,49 @@ class _SEOHTMLParser(HTMLParser):
         super().__init__(convert_charrefs=True)
 
         # ── Document-level ─────────────────────────────────────────────
-        self.html_lang   = None   # <html lang="...">
-        self.charset     = None   # <meta charset> or Content-Type
+        self.html_lang    = None
+        self.charset      = None
 
         # ── <head> metadata ────────────────────────────────────────────
-        self.title       = None
-        self.meta        = {}     # name → content
-        self.canonical   = None
-        self.open_graph  = {}     # og:* → content
-        self.twitter     = {}     # twitter:* → content
-        self.json_ld     = []     # parsed JSON-LD objects
-        self.hreflang    = []     # [{hreflang, href}, …]
+        self.title        = None
+        self.meta         = {}
+        self.canonical    = None
+        self.open_graph   = {}
+        self.twitter      = {}
+        self.json_ld      = []
+        self.hreflang     = []
         self.favicon_href = None
-        self.amp_url     = None
-        self.pagination  = {'prev': None, 'next': None}
+        self.amp_url      = None
+        self.pagination   = {'prev': None, 'next': None}
+        self.has_manifest = False
+        self.preload_count = 0
 
         # ── Body structure ──────────────────────────────────────────────
-        self.headings    = {'h1': [], 'h2': [], 'h3': []}
-        self.images      = []     # {src, alt, loading, width, height}
-        self.links       = []     # {href, rel}
-        self.has_microdata = False
+        self.headings       = {'h1': [], 'h2': [], 'h3': []}
+        self.images         = []
+        self.links          = []        # {href, rel, text}
+        self.paragraph_count = 0
+        self.has_microdata  = False
+        self.has_rdfa       = False     # vocab/typeof attributes
 
         # ── Resources ──────────────────────────────────────────────────
-        self.scripts      = []    # external JS src values
-        self.stylesheets  = []    # external CSS href values
+        self.scripts        = []
+        self.stylesheets    = []
         self.inline_scripts = 0
 
-        # ── Body text (for word count) ──────────────────────────────────
-        self._body_parts  = []
-        self._in_body     = False
-        self._skip_depth  = 0    # depth inside _TEXT_SKIP tags
+        # ── Body text ──────────────────────────────────────────────────
+        self._body_parts   = []
+        self._in_body      = False
+        self._skip_depth   = 0
 
-        # ── Internal parse state ────────────────────────────────────────
-        self._in_title    = False
+        # ── Parse state ────────────────────────────────────────────────
+        self._in_title        = False
         self._current_heading = None
-        self._in_script   = False
-        self._script_type = None
-        self._buf         = []
+        self._in_script       = False
+        self._script_type     = None
+        self._buf             = []
+        self._in_anchor       = False
+        self._anchor_buf      = []
 
     # ── Event handlers ─────────────────────────────────────────────────
 
@@ -67,13 +108,19 @@ class _SEOHTMLParser(HTMLParser):
             self._in_body = True
             return
 
+        # RDFa detection (any tag with vocab/typeof/property from schema.org)
+        if attrs.get('vocab') or attrs.get('typeof'):
+            self.has_rdfa = True
+
         if attrs.get('itemscope') is not None:
             self.has_microdata = True
 
-        # ── Skip-tag bookkeeping ────────────────────────────────────────
+        # Paragraph count (content area only)
+        if tag == 'p' and self._in_body and self._skip_depth == 0:
+            self.paragraph_count += 1
+
         if tag in _TEXT_SKIP:
             self._skip_depth += 1
-
             if tag == 'script':
                 self._script_type = attrs.get('type', '')
                 src = attrs.get('src')
@@ -86,26 +133,22 @@ class _SEOHTMLParser(HTMLParser):
                     self._buf = []
             return
 
-        # ── Title ───────────────────────────────────────────────────────
         if tag == 'title':
             self._in_title = True
             self._buf = []
             return
 
-        # ── Meta ────────────────────────────────────────────────────────
         if tag == 'meta':
             name    = attrs.get('name', '').lower()
             prop    = attrs.get('property', '').lower()
             content = attrs.get('content', '')
             charset = attrs.get('charset')
-
             if charset:
                 self.charset = charset
             elif 'charset=' in content.lower():
                 m = re.search(r'charset=([\w-]+)', content, re.I)
                 if m:
                     self.charset = m.group(1)
-
             if name:
                 self.meta[name] = content
             if prop.startswith('og:'):
@@ -115,7 +158,6 @@ class _SEOHTMLParser(HTMLParser):
                 self.twitter[key[8:]] = content
             return
 
-        # ── Link ────────────────────────────────────────────────────────
         if tag == 'link':
             rel  = attrs.get('rel', '').lower()
             href = attrs.get('href', '')
@@ -133,30 +175,33 @@ class _SEOHTMLParser(HTMLParser):
                 self.favicon_href = href
             elif rel == 'stylesheet' and href:
                 self.stylesheets.append(href)
+            elif rel == 'manifest':
+                self.has_manifest = True
+            elif rel == 'preload':
+                self.preload_count += 1
             return
 
-        # ── Headings ────────────────────────────────────────────────────
         if tag in ('h1', 'h2', 'h3'):
             self._current_heading = tag
             self._buf = []
             return
 
-        # ── Images ──────────────────────────────────────────────────────
         if tag == 'img':
             self.images.append({
-                'src':    attrs.get('src', ''),
-                'alt':    attrs.get('alt'),        # None = attr absent, '' = empty
+                'src':     attrs.get('src', ''),
+                'alt':     attrs.get('alt'),
                 'loading': attrs.get('loading', ''),
-                'width':  attrs.get('width'),
-                'height': attrs.get('height'),
+                'width':   attrs.get('width'),
+                'height':  attrs.get('height'),
             })
             return
 
-        # ── Links ───────────────────────────────────────────────────────
         if tag == 'a':
             href = attrs.get('href', '')
             if href:
-                self.links.append({'href': href, 'rel': attrs.get('rel', '')})
+                self._in_anchor = True
+                self._anchor_buf = []
+                self.links.append({'href': href, 'rel': attrs.get('rel', ''), 'text': ''})
 
     def handle_endtag(self, tag):
         if tag == 'title' and self._in_title:
@@ -171,6 +216,14 @@ class _SEOHTMLParser(HTMLParser):
                 self.headings[tag].append(text)
             self._current_heading = None
             self._buf = []
+            return
+
+        if tag == 'a' and self._in_anchor:
+            text = ' '.join(''.join(self._anchor_buf).split())
+            if self.links and not self.links[-1]['text']:
+                self.links[-1]['text'] = text
+            self._in_anchor = False
+            self._anchor_buf = []
             return
 
         if tag in _TEXT_SKIP:
@@ -195,10 +248,24 @@ class _SEOHTMLParser(HTMLParser):
             self._buf.append(data)
         elif self._in_body and self._skip_depth == 0:
             self._body_parts.append(data)
+            if self._in_anchor:
+                self._anchor_buf.append(data)
+        elif self._in_anchor:
+            # Capture anchor text even inside nav/footer/aside/header
+            self._anchor_buf.append(data)
 
     @property
     def word_count(self) -> int:
         return len([w for w in re.split(r'\s+', ' '.join(self._body_parts)) if w.strip()])
+
+    @property
+    def body_text(self) -> str:
+        return ' '.join(self._body_parts)
+
+    def top_keywords(self, n: int = 8) -> list:
+        words = re.findall(r'[a-zA-ZÀ-ÿ]{4,}', self.body_text.lower())
+        filtered = [w for w in words if w not in _STOPWORDS]
+        return [word for word, _ in Counter(filtered).most_common(n)]
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -207,8 +274,8 @@ class _SEOHTMLParser(HTMLParser):
 
 class SEOAnalyzer:
     """
-    12-check SEO analyzer using only direct HTTP requests.
-    No headless browser required; covers everything detectable from raw HTML.
+    13-check SEO analyzer using direct HTTP requests + urllib.robotparser.
+    Covers everything detectable from raw HTML without a headless browser.
     """
 
     def __init__(self):
@@ -241,25 +308,28 @@ class SEOAnalyzer:
                 result['error'] = f'Non-HTML response ({ct})'
                 return result
 
+            html_source = response.text[:500_000]
+
             parser = _SEOHTMLParser()
             try:
-                parser.feed(response.text[:500_000])
+                parser.feed(html_source)
             except Exception:
                 pass
 
             # ── Run all checks ──────────────────────────────────────────
-            result['checks']['url']            = self._check_url(base_url, response)
-            result['checks']['meta']           = self._check_meta(parser, response)
-            result['checks']['content']        = self._check_content(parser)
-            result['checks']['headings']       = self._check_headings(parser)
-            result['checks']['images']         = self._check_images(parser)
-            result['checks']['links']          = self._check_links(parser, base_url)
-            result['checks']['technical']      = self._check_technical(parser, response, load_ms)
-            result['checks']['resources']      = self._check_resources(parser)
-            result['checks']['social']         = self._check_social(parser)
+            result['checks']['url']             = self._check_url(base_url, response)
+            result['checks']['https']           = self._check_https(response, html_source)
+            result['checks']['meta']            = self._check_meta(parser, response)
+            result['checks']['content']         = self._check_content(parser, html_source)
+            result['checks']['headings']        = self._check_headings(parser)
+            result['checks']['images']          = self._check_images(parser)
+            result['checks']['links']           = self._check_links(parser, base_url)
+            result['checks']['technical']       = self._check_technical(parser, response, load_ms)
+            result['checks']['resources']       = self._check_resources(parser)
+            result['checks']['social']          = self._check_social(parser)
             result['checks']['structured_data'] = self._check_structured_data(parser)
-            result['checks']['robots_txt']     = self._check_robots_txt(base_url)
-            result['checks']['sitemap']        = self._check_sitemap(base_url)
+            result['checks']['robots_txt']      = self._check_robots_txt(base_url)
+            result['checks']['sitemap']         = self._check_sitemap(base_url)
 
             result['score']  = self._calculate_score(result['checks'])
             result['rating'] = self._rating(result['score'])
@@ -277,27 +347,25 @@ class SEOAnalyzer:
         redirects = len(response.history)
 
         r = {
-            'original_url':   base_url,
-            'final_url':      response.url,
-            'redirect_count': redirects,
-            'redirect_chain': [{'url': h.url, 'status': h.status_code} for h in response.history],
-            'url_length':     len(response.url),
+            'original_url':    base_url,
+            'final_url':       response.url,
+            'redirect_count':  redirects,
+            'redirect_chain':  [{'url': h.url, 'status': h.status_code} for h in response.history],
+            'url_length':      len(response.url),
             'has_underscores': '_' in path,
-            'has_uppercase':  path != path.lower(),
+            'has_uppercase':   path != path.lower(),
             'has_query_params': bool(parsed.query),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        # Redirect chain
         if redirects == 0:
             r['passed'].append('No redirects — URL resolves directly')
             r['score'] += 4
         elif redirects == 1:
-            h = response.history[0]
-            r['passed'].append(f'Single redirect ({h.status_code}) — acceptable')
+            r['passed'].append(f'Single redirect ({response.history[0].status_code}) — acceptable')
             r['score'] += 3
         elif redirects == 2:
-            r['warnings'].append(f'{redirects} redirects in chain — aim for 1 max to preserve crawl budget')
+            r['warnings'].append(f'{redirects} redirects — aim for 1 max to preserve crawl budget')
             r['score'] += 1
         else:
             r['issues'].append(
@@ -305,7 +373,6 @@ class SEOAnalyzer:
                 'fix to a single hop'
             )
 
-        # URL length
         if r['url_length'] <= 75:
             r['passed'].append(f'URL length good ({r["url_length"]} chars)')
             r['score'] += 2
@@ -315,16 +382,14 @@ class SEOAnalyzer:
         else:
             r['warnings'].append(f'URL too long ({r["url_length"]} chars) — may be truncated in SERPs')
 
-        # Underscores in path
         if '_' in path:
             r['warnings'].append(
-                'Underscores in URL path — use hyphens (-) instead; Google treats underscores as word joiners, '
-                'not separators'
+                'Underscores in URL path — use hyphens (-) instead; '
+                'Google treats underscores as word joiners, not separators'
             )
         else:
             r['score'] += 2
 
-        # Uppercase
         if path != path.lower():
             r['warnings'].append(
                 'Uppercase letters in URL — can cause duplicate content if server is case-sensitive; '
@@ -332,6 +397,76 @@ class SEOAnalyzer:
             )
         else:
             r['score'] += 2
+
+        return r
+
+    # ── Check: HTTPS & transport security ─────────────────────────────
+
+    def _check_https(self, response, html_source: str) -> dict:
+        final_url = response.url
+        is_https  = final_url.startswith('https://')
+        hsts      = response.headers.get('Strict-Transport-Security', '')
+
+        r = {
+            'is_https':           is_https,
+            'hsts':               hsts or None,
+            'mixed_content_count': 0,
+            'score': 0, 'issues': [], 'warnings': [], 'passed': [],
+        }
+
+        if is_https:
+            r['passed'].append('Site served over HTTPS — encrypted connection')
+            r['score'] += 6
+        else:
+            r['issues'].append(
+                'Site not served over HTTPS — major SEO ranking penalty; '
+                'Google flags HTTP pages as "Not secure" and downgrades them in results; '
+                'migrate to HTTPS with a free Let\'s Encrypt certificate'
+            )
+
+        # HSTS
+        if hsts:
+            max_age_m = re.search(r'max-age=(\d+)', hsts)
+            if max_age_m:
+                days = int(max_age_m.group(1)) // 86400
+                if days >= 180:
+                    r['passed'].append(f'HSTS enabled — max-age={days} days (strong)')
+                    r['score'] += 4
+                elif days >= 30:
+                    r['warnings'].append(
+                        f'HSTS max-age short ({days} days) — '
+                        'recommend ≥180 days to qualify for HSTS preload lists'
+                    )
+                    r['score'] += 2
+                else:
+                    r['warnings'].append(f'HSTS max-age very short ({days} days) — increase to at least 180 days')
+                    r['score'] += 1
+            else:
+                r['passed'].append('HSTS header present')
+                r['score'] += 2
+        elif is_https:
+            r['warnings'].append(
+                'No Strict-Transport-Security (HSTS) header — '
+                'add it to enforce HTTPS, prevent protocol downgrade attacks, '
+                'and improve browser trust signals'
+            )
+
+        # Mixed content: HTTP resources inside an HTTPS page
+        if is_https:
+            mixed = re.findall(
+                r'(?:src|href|action|data-src)\s*=\s*["\']http://[^"\']+["\']',
+                html_source,
+                re.I,
+            )
+            r['mixed_content_count'] = len(mixed)
+            if mixed:
+                r['issues'].append(
+                    f'{len(mixed)} mixed-content resource(s) detected — '
+                    'HTTP resources on an HTTPS page trigger browser security warnings '
+                    'and hurt Core Web Vitals; update all resource URLs to HTTPS'
+                )
+            else:
+                r['passed'].append('No mixed content detected — all in-page resources use HTTPS')
 
         return r
 
@@ -344,12 +479,12 @@ class SEOAnalyzer:
             'description':        parser.meta.get('description'),
             'description_length': len(parser.meta.get('description', '')),
             'canonical':          parser.canonical,
+            'keywords':           parser.meta.get('keywords'),
             'noindex':            False,
             'nofollow_meta':      False,
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        # Title
         title = parser.title
         if not title:
             r['issues'].append(
@@ -359,7 +494,7 @@ class SEOAnalyzer:
         elif len(title) < 30:
             r['warnings'].append(
                 f'Title too short ({len(title)} chars) — aim for 50–60 chars; '
-                'short titles waste ranking keyword space'
+                'short titles waste keyword ranking space'
             )
             r['score'] += 6
         elif len(title) > 60:
@@ -372,7 +507,6 @@ class SEOAnalyzer:
             r['passed'].append(f'Title length optimal ({len(title)} chars): "{title[:55]}"')
             r['score'] += 12
 
-        # Meta description
         desc = parser.meta.get('description', '')
         if not desc:
             r['issues'].append(
@@ -393,17 +527,19 @@ class SEOAnalyzer:
             r['passed'].append(f'Meta description optimal ({len(desc)} chars)')
             r['score'] += 10
 
-        # Canonical
         if parser.canonical:
-            r['passed'].append(f'Canonical URL declared')
+            r['passed'].append('Canonical URL declared')
             r['score'] += 3
         else:
             r['warnings'].append(
-                'No canonical URL — risk of duplicate content penalties; '
-                'add <link rel="canonical" href="..."> even on unique pages'
+                'No canonical URL — risk of duplicate-content issues; '
+                'add <link rel="canonical" href="…"> even on unique pages'
             )
 
-        # robots meta
+        # meta keywords (useful for Bing)
+        if parser.meta.get('keywords'):
+            r['passed'].append('meta keywords present (Bing signal)')
+
         robots = parser.meta.get('robots', '').lower()
         if 'noindex' in robots:
             r['noindex'] = True
@@ -412,13 +548,12 @@ class SEOAnalyzer:
             r['nofollow_meta'] = True
             r['warnings'].append('robots meta: nofollow — search engines will not follow links on this page')
 
-        # X-Robots-Tag header (overrides meta robots)
         if response:
             xr = response.headers.get('X-Robots-Tag', '').lower()
             if 'noindex' in xr:
-                r['issues'].append(f'X-Robots-Tag header: noindex — page blocked from indexing via HTTP header (overrides meta robots)')
+                r['issues'].append('X-Robots-Tag: noindex — page blocked from indexing via HTTP header')
             elif 'nofollow' in xr:
-                r['warnings'].append(f'X-Robots-Tag header: nofollow')
+                r['warnings'].append('X-Robots-Tag: nofollow — link following blocked via HTTP header')
             elif xr:
                 r['passed'].append(f'X-Robots-Tag: {xr}')
 
@@ -426,27 +561,33 @@ class SEOAnalyzer:
 
     # ── Check: Content quality ─────────────────────────────────────────
 
-    def _check_content(self, parser: _SEOHTMLParser) -> dict:
-        wc      = parser.word_count
-        is_spa  = wc < 50 and len(parser.scripts) > 3
+    def _check_content(self, parser: _SEOHTMLParser, html_source: str) -> dict:
+        wc     = parser.word_count
+        is_spa = wc < 50 and len(parser.scripts) > 3
+
+        html_len  = max(len(html_source), 1)
+        text_len  = len(parser.body_text)
+        txt_ratio = round(text_len / html_len * 100, 1)
+        keywords  = parser.top_keywords(8)
 
         r = {
-            'word_count': wc,
-            'language':   parser.html_lang,
-            'charset':    parser.charset,
-            'is_spa':     is_spa,
+            'word_count':    wc,
+            'language':      parser.html_lang,
+            'charset':       parser.charset,
+            'is_spa':        is_spa,
+            'paragraph_count': parser.paragraph_count,
+            'text_html_ratio': txt_ratio,
+            'top_keywords':  keywords,
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        # SPA detection
         if is_spa:
             r['warnings'].append(
                 'Page appears to be a Single Page Application (SPA) — '
-                'search engines may not execute JavaScript and will see little/no content; '
+                'search engines may not execute JavaScript and will see little content; '
                 'consider Server-Side Rendering (SSR) or pre-rendering'
             )
 
-        # Word count (skip SPA penalty)
         if not is_spa:
             if wc < 100:
                 r['issues'].append(
@@ -467,26 +608,52 @@ class SEOAnalyzer:
                 r['passed'].append(f'Good content length ({wc} words)')
                 r['score'] += 8
 
-        # Language attribute
         if parser.html_lang:
             r['passed'].append(f'Language declared: lang="{parser.html_lang}"')
             r['score'] += 4
         else:
             r['warnings'].append(
-                'No lang attribute on <html> element — '
+                'No lang attribute on <html> — '
                 'declare the page language (e.g. <html lang="en">) '
                 'for correct language detection by search engines and screen readers'
             )
 
-        # Charset
         if parser.charset:
             r['passed'].append(f'Charset declared: {parser.charset}')
             r['score'] += 2
         else:
             r['warnings'].append(
                 'No charset declaration — add <meta charset="UTF-8"> '
-                'as the first element inside <head> to prevent encoding issues'
+                'as the first element inside <head>'
             )
+
+        # Text-to-HTML ratio
+        if txt_ratio >= 25:
+            r['passed'].append(f'Text-to-HTML ratio {txt_ratio}% — good content density')
+        elif txt_ratio >= 10:
+            r['warnings'].append(
+                f'Low text-to-HTML ratio ({txt_ratio}%) — '
+                'page has relatively little text compared to markup; '
+                'reduce boilerplate HTML or add more content'
+            )
+        else:
+            r['warnings'].append(
+                f'Very low text-to-HTML ratio ({txt_ratio}%) — '
+                'minimal text content detected; crawlers will see mostly markup'
+            )
+
+        # Paragraph structure
+        if not is_spa:
+            if parser.paragraph_count >= 3:
+                r['passed'].append(f'{parser.paragraph_count} content paragraphs — good structure')
+            elif parser.paragraph_count > 0:
+                r['warnings'].append(
+                    f'Only {parser.paragraph_count} paragraph(s) — '
+                    'use more <p> tags for readable, well-structured content'
+                )
+
+        if keywords:
+            r['passed'].append(f'Top keywords: {", ".join(keywords[:5])}')
 
         return r
 
@@ -525,11 +692,12 @@ class SEOAnalyzer:
             r['score'] += 5
         else:
             r['warnings'].append(
-                'No H2 headings — sub-headings improve readability, keyword distribution and featured snippet eligibility'
+                'No H2 headings — sub-headings improve readability, '
+                'keyword distribution and featured snippet eligibility'
             )
 
         if h3s:
-            r['passed'].append(f'{len(h3s)} H3 heading(s)')
+            r['passed'].append(f'{len(h3s)} H3 heading(s) — deep content structure')
 
         return r
 
@@ -544,12 +712,12 @@ class SEOAnalyzer:
         modern_fmt  = [i for i in imgs if i['src'].lower().endswith(('.webp', '.avif'))]
 
         r = {
-            'total':             len(imgs),
-            'missing_alt':       len(missing_alt),
-            'empty_alt':         len(empty_alt),
-            'lazy_loading':      len(lazy),
+            'total':              len(imgs),
+            'missing_alt':        len(missing_alt),
+            'empty_alt':          len(empty_alt),
+            'lazy_loading':       len(lazy),
             'missing_dimensions': len(no_dims),
-            'modern_formats':    len(modern_fmt),
+            'modern_formats':     len(modern_fmt),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
@@ -557,7 +725,6 @@ class SEOAnalyzer:
             r['score'] += 5
             r['passed'].append('No images to evaluate')
         else:
-            # Alt text
             if not missing_alt:
                 r['passed'].append(f'All {len(imgs)} image(s) have alt attributes')
                 r['score'] += 8
@@ -569,31 +736,26 @@ class SEOAnalyzer:
                 )
                 r['score'] += max(0, 8 - len(missing_alt) * 2)
 
-            # Dimensions (CLS / Core Web Vitals)
             if no_dims:
                 cls_pct = round(len(no_dims) / len(imgs) * 100)
+                msg = (
+                    f'{len(no_dims)}/{len(imgs)} images ({cls_pct}%) missing width/height attributes — '
+                    'causes Cumulative Layout Shift (CLS), a Core Web Vitals ranking factor'
+                )
                 if cls_pct > 50:
-                    r['issues'].append(
-                        f'{len(no_dims)}/{len(imgs)} images ({cls_pct}%) missing width/height attributes — '
-                        'causes Cumulative Layout Shift (CLS), a Core Web Vitals ranking factor'
-                    )
+                    r['issues'].append(msg)
                 else:
-                    r['warnings'].append(
-                        f'{len(no_dims)} image(s) missing width/height — '
-                        'add explicit dimensions to prevent layout shift (CLS)'
-                    )
+                    r['warnings'].append(msg)
 
-            # Lazy loading
             if len(imgs) > 3:
                 if lazy:
                     r['passed'].append(f'{len(lazy)}/{len(imgs)} image(s) use lazy loading')
                 else:
                     r['warnings'].append(
-                        'No lazy loading detected — add loading="lazy" to all images below the fold '
+                        'No lazy loading — add loading="lazy" to below-the-fold images '
                         'to speed up initial page render'
                     )
 
-            # Modern formats
             if modern_fmt:
                 r['passed'].append(f'{len(modern_fmt)} image(s) in modern format (WebP/AVIF)')
             elif len(imgs) > 0:
@@ -609,12 +771,16 @@ class SEOAnalyzer:
     def _check_links(self, parser: _SEOHTMLParser, base_url: str) -> dict:
         base_netloc = urlparse(base_url).netloc
         internal, external, nofollow = [], [], []
+        generic_anchors, empty_anchors = [], []
 
         for link in parser.links:
             href = link['href']
             rel  = link.get('rel', '')
+            text = (link.get('text') or '').strip()
+
             if not href or href.startswith(('#', 'mailto:', 'tel:', 'javascript:')):
                 continue
+
             if href.startswith('http'):
                 if urlparse(href).netloc == base_netloc:
                     internal.append(href)
@@ -622,14 +788,24 @@ class SEOAnalyzer:
                     external.append(href)
             elif href.startswith('/'):
                 internal.append(href)
+
             if 'nofollow' in rel:
                 nofollow.append(href)
 
+            # Anchor text quality
+            text_lc = text.lower()
+            if not text_lc:
+                empty_anchors.append(href)
+            elif text_lc in _GENERIC_ANCHORS or len(text_lc) <= 2:
+                generic_anchors.append(text_lc)
+
         r = {
-            'total':    len(parser.links),
-            'internal': len(internal),
-            'external': len(external),
-            'nofollow': len(nofollow),
+            'total':           len(parser.links),
+            'internal':        len(internal),
+            'external':        len(external),
+            'nofollow':        len(nofollow),
+            'generic_anchors': len(generic_anchors),
+            'empty_anchors':   len(empty_anchors),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
@@ -638,12 +814,25 @@ class SEOAnalyzer:
             r['score'] += 5
         else:
             r['warnings'].append(
-                'No internal links detected in page HTML — '
-                'internal links distribute PageRank and help search engines discover other pages'
+                'No internal links detected — '
+                'internal links distribute PageRank and help crawlers discover other pages'
             )
 
         if external:
             r['passed'].append(f'{len(external)} external link(s)')
+
+        if empty_anchors:
+            r['warnings'].append(
+                f'{len(empty_anchors)} link(s) with empty anchor text — '
+                'add descriptive text to all links for SEO and accessibility'
+            )
+
+        if generic_anchors:
+            r['warnings'].append(
+                f'{len(generic_anchors)} link(s) with generic anchor text '
+                '("click here", "read more", etc.) — '
+                'use keyword-rich descriptive anchors instead'
+            )
 
         return r
 
@@ -651,21 +840,25 @@ class SEOAnalyzer:
 
     def _check_technical(self, parser: _SEOHTMLParser, response, load_ms: int) -> dict:
         enc      = response.headers.get('Content-Encoding') or None
-        x_robots = response.headers.get('X-Robots-Tag', '')
+        cc       = response.headers.get('Cache-Control', '')
+        etag     = response.headers.get('ETag')
+        last_mod = response.headers.get('Last-Modified')
 
         r = {
-            'load_time_ms':  load_ms,
-            'page_size_kb':  round(len(response.content) / 1024, 1),
-            'compression':   enc,
-            'viewport':      bool(parser.meta.get('viewport')),
-            'x_robots_tag':  x_robots or None,
-            'amp_version':   bool(parser.amp_url),
+            'load_time_ms':   load_ms,
+            'page_size_kb':   round(len(response.content) / 1024, 1),
+            'compression':    enc,
+            'viewport':       bool(parser.meta.get('viewport')),
+            'amp_version':    bool(parser.amp_url),
             'has_pagination': bool(parser.pagination['prev'] or parser.pagination['next']),
-            'favicon':       bool(parser.favicon_href),
+            'favicon':        bool(parser.favicon_href),
+            'has_manifest':   parser.has_manifest,
+            'preload_count':  parser.preload_count,
+            'cache_control':  cc or None,
+            'has_etag':       bool(etag),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        # Viewport
         if r['viewport']:
             r['passed'].append('Viewport meta tag present — mobile-friendly')
             r['score'] += 4
@@ -675,61 +868,75 @@ class SEOAnalyzer:
                 'Google uses mobile-first indexing'
             )
 
-        # Compression
         if enc in ('gzip', 'br', 'deflate', 'zstd'):
             r['passed'].append(f'Content compression: {enc}')
             r['score'] += 4
         else:
             r['warnings'].append(
                 'No content compression (gzip/brotli) — '
-                'enable compression to reduce transfer size; '
-                'impacts page speed ranking signal'
+                'enable compression to reduce transfer size and improve page speed ranking signal'
             )
 
-        # Server response time (TTFB proxy)
         ms = load_ms
         if ms < 500:
-            r['passed'].append(f'Excellent TTFB proxy ({ms} ms)')
+            r['passed'].append(f'Excellent server response ({ms} ms)')
             r['score'] += 5
         elif ms < 1500:
-            r['passed'].append(f'Good response time ({ms} ms)')
+            r['passed'].append(f'Good server response ({ms} ms)')
             r['score'] += 4
         elif ms < 3000:
             r['warnings'].append(
-                f'Slow response time ({ms} ms) — '
+                f'Slow response ({ms} ms) — '
                 'aim for under 1,500 ms; slow TTFB degrades LCP and user experience'
             )
             r['score'] += 2
         else:
             r['issues'].append(
-                f'Very slow response time ({ms} ms) — '
+                f'Very slow response ({ms} ms) — '
                 'Core Web Vitals (LCP) will be poor; '
                 'investigate server performance, caching, or CDN'
             )
 
-        # Page size
         kb = r['page_size_kb']
         if 0 < kb <= 2000:
-            r['passed'].append(f'Page size: {kb} KB')
+            r['passed'].append(f'Page HTML size: {kb} KB')
         elif kb > 2000:
-            r['warnings'].append(f'Large page HTML ({kb} KB) — heavy pages hurt mobile users and page speed')
+            r['warnings'].append(f'Large page HTML ({kb} KB) — heavy pages hurt mobile performance')
 
-        # Favicon
         if r['favicon']:
             r['passed'].append('Favicon declared in HTML')
         else:
             r['warnings'].append(
                 'No favicon declared — add <link rel="icon" href="/favicon.ico"> '
-                'for brand recognition in browser tabs, bookmarks and search results'
+                'for brand recognition in browser tabs and search results'
             )
 
-        # AMP
+        # Caching headers
+        if cc:
+            if any(d in cc for d in ('max-age', 's-maxage', 'public', 'no-store', 'no-cache')):
+                r['passed'].append(f'Cache-Control configured: {cc[:60]}')
+            else:
+                r['warnings'].append(f'Cache-Control present but may not be optimal: {cc[:60]}')
+        else:
+            r['warnings'].append(
+                'No Cache-Control header — configure caching to improve repeat-visit performance; '
+                'helps CDN and browser cache behaviour'
+            )
+
+        if etag or last_mod:
+            r['passed'].append('Conditional-request headers present (ETag/Last-Modified)')
+
+        if parser.preload_count > 0:
+            r['passed'].append(f'{parser.preload_count} resource(s) with rel=preload — good performance hint')
+
         if parser.amp_url:
             r['passed'].append('AMP version linked (rel=amphtml)')
 
-        # Pagination
         if r['has_pagination']:
             r['passed'].append('Pagination tags present (rel=prev/next)')
+
+        if parser.has_manifest:
+            r['passed'].append('Web App Manifest linked (PWA signal)')
 
         return r
 
@@ -747,7 +954,6 @@ class SEOAnalyzer:
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        # External JS
         if js_count <= 8:
             r['passed'].append(f'{js_count} external JS file(s)')
             r['score'] += 3
@@ -763,7 +969,6 @@ class SEOAnalyzer:
                 'bundle and minify JavaScript; consider lazy-loading non-critical scripts'
             )
 
-        # External CSS
         if css_count <= 3:
             r['passed'].append(f'{css_count} external CSS file(s)')
             r['score'] += 2
@@ -821,7 +1026,7 @@ class SEOAnalyzer:
         else:
             r['warnings'].append(
                 'No Twitter Card meta tags — '
-                'links shared on X/Twitter will not show rich card previews; '
+                'links on X/Twitter will not show rich card previews; '
                 'add twitter:card, twitter:title, twitter:image'
             )
 
@@ -840,30 +1045,62 @@ class SEOAnalyzer:
                 elif isinstance(t, list):
                     types.extend(str(x) for x in t)
 
+        # Validate JSON-LD: each item should have @context and @type
+        valid_items   = [i for i in items if isinstance(i, dict) and i.get('@context') and i.get('@type')]
+        invalid_items = len(items) - len(valid_items)
+
         r = {
             'json_ld_count':  len(items),
+            'valid_ld_count': len(valid_items),
             'schema_types':   types,
             'has_microdata':  parser.has_microdata,
+            'has_rdfa':       parser.has_rdfa,
             'hreflang_count': len(parser.hreflang),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        if items:
+        if valid_items:
             type_str = ', '.join(types) if types else 'untyped'
-            r['passed'].append(f'JSON-LD structured data: {type_str}')
+            r['passed'].append(f'JSON-LD structured data found: {type_str}')
             r['score'] += 5
+            if invalid_items > 0:
+                r['warnings'].append(
+                    f'{invalid_items} JSON-LD block(s) missing @context or @type — '
+                    'invalid blocks are ignored by Google Rich Results'
+                )
+            # Rich result eligibility hints
+            rich = {'FAQPage', 'HowTo', 'Recipe', 'Product', 'Review', 'Event',
+                    'BreadcrumbList', 'Organization', 'Article', 'WebSite', 'Person'}
+            found_rich = [t for t in types if t in rich]
+            if found_rich:
+                r['passed'].append(f'Rich result eligible types: {", ".join(found_rich)}')
+            else:
+                r['warnings'].append(
+                    'JSON-LD found but no rich-result types detected — '
+                    'consider adding FAQPage, BreadcrumbList, or Product schema '
+                    'to unlock rich results in SERPs'
+                )
+        elif items:
+            r['warnings'].append(
+                f'{len(items)} JSON-LD block(s) found but missing @context/@type — validate at schema.org'
+            )
+            r['score'] += 1
         elif parser.has_microdata:
             r['passed'].append('Microdata (itemscope/itemtype) detected')
             r['score'] += 3
+        elif parser.has_rdfa:
+            r['passed'].append('RDFa markup (vocab/typeof) detected')
+            r['score'] += 2
         else:
             r['warnings'].append(
-                'No JSON-LD or Microdata structured data — '
+                'No JSON-LD, Microdata, or RDFa structured data — '
                 'add Schema.org markup to unlock rich results: '
-                'reviews, FAQs, breadcrumbs, events, products…'
+                'FAQs, breadcrumbs, events, products, reviews…'
             )
 
         if parser.hreflang:
             r['passed'].append(f'{len(parser.hreflang)} hreflang tag(s) — international targeting configured')
+            r['score'] += 2
 
         return r
 
@@ -877,6 +1114,8 @@ class SEOAnalyzer:
             'present':          False,
             'sitemap_declared': False,
             'disallow_count':   0,
+            'crawl_delay':      None,
+            'googlebot_blocked': False,
             'url':              robots_url,
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
@@ -893,31 +1132,49 @@ class SEOAnalyzer:
 
             if valid:
                 r['present'] = True
-                disallows = [l for l in body.splitlines() if re.match(r'(?i)disallow\s*:', l)]
-                r['disallow_count'] = len(disallows)
 
-                if re.search(r'(?im)^sitemap\s*:', body):
+                # Use urllib.robotparser for proper spec-compliant parsing
+                rp = urllib.robotparser.RobotFileParser()
+                rp.set_url(robots_url)
+                rp.parse(body.splitlines())
+
+                # Googlebot access
+                googlebot_ok = rp.can_fetch('Googlebot', '/')
+                r['googlebot_blocked'] = not googlebot_ok
+
+                # Crawl-Delay
+                cd = rp.crawl_delay('*') or rp.crawl_delay('Googlebot')
+                if cd is not None:
+                    r['crawl_delay'] = cd
+                    if cd > 10:
+                        r['warnings'].append(
+                            f'Crawl-Delay: {cd}s — very restrictive; '
+                            'may significantly reduce indexing frequency'
+                        )
+                    else:
+                        r['passed'].append(f'Crawl-Delay: {cd}s')
+
+                # Sitemap declarations (site_maps() available since Python 3.8)
+                sitemaps = rp.site_maps() or []
+                if sitemaps:
+                    r['sitemap_declared'] = True
+                    r['passed'].append(f'Sitemap declared in robots.txt: {sitemaps[0]}')
+                elif re.search(r'(?im)^sitemap\s*:', body):
                     r['sitemap_declared'] = True
                     r['passed'].append('Sitemap declared in robots.txt')
 
-                r['passed'].append(f'robots.txt found ({len(disallows)} Disallow rule(s))')
-                r['score'] += 5
+                disallows = [l for l in body.splitlines() if re.match(r'(?i)disallow\s*:', l)]
+                r['disallow_count'] = len(disallows)
 
-                # Blanket block detection
-                ua_star = False
-                for line in body.splitlines():
-                    s = line.strip()
-                    if re.match(r'(?i)^user-agent\s*:\s*\*', s):
-                        ua_star = True
-                    elif ua_star and re.match(r'(?i)^disallow\s*:\s*/$', s):
-                        r['issues'].append(
-                            'robots.txt blocks ALL crawlers (Disallow: /) — '
-                            'site will be de-indexed from every search engine; '
-                            'remove or restrict to specific paths'
-                        )
-                        break
-                    elif ua_star and s and not s.startswith('#'):
-                        ua_star = False
+                if not googlebot_ok:
+                    r['issues'].append(
+                        'robots.txt is blocking Googlebot from crawling / — '
+                        'site will be de-indexed; remove the blanket Disallow: /'
+                    )
+                else:
+                    r['passed'].append(f'robots.txt found · {len(disallows)} Disallow rule(s) · Googlebot allowed')
+                    r['score'] += 5
+
             else:
                 r['warnings'].append(
                     'robots.txt not found or invalid — '
@@ -963,8 +1220,8 @@ class SEOAnalyzer:
 
         if not r['present']:
             r['warnings'].append(
-                'XML sitemap not found — '
-                'a sitemap at /sitemap.xml ensures search engines discover all pages, '
+                'XML sitemap not found at /sitemap.xml or /sitemap_index.xml — '
+                'a sitemap ensures search engines discover all pages, '
                 'especially on large or dynamically generated sites'
             )
 
@@ -973,20 +1230,20 @@ class SEOAnalyzer:
     # ── Score aggregation ──────────────────────────────────────────────
 
     def _calculate_score(self, checks: dict) -> int:
-        # Per-check caps (total possible = 128, naturally scales to 100)
         caps = {
-            'url':            10,
-            'meta':           22,
-            'content':        14,
-            'headings':       15,
-            'images':         10,
-            'links':           5,
-            'technical':      13,
-            'resources':       5,
-            'social':         12,
-            'structured_data': 7,
-            'robots_txt':      5,
-            'sitemap':        10,
+            'url':             10,
+            'https':           10,
+            'meta':            22,
+            'content':         14,
+            'headings':        15,
+            'images':          10,
+            'links':            5,
+            'technical':       13,
+            'resources':        5,
+            'social':          12,
+            'structured_data':  7,
+            'robots_txt':       5,
+            'sitemap':         10,
         }
         total = sum(
             min(checks.get(k, {}).get('score', 0), cap)
