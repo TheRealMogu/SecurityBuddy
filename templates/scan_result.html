@@ -946,6 +946,9 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
                 {% if img.modern_formats > 0 %}
                 <p class="small text-muted">{{ img.modern_formats }} image(s) use modern format (WebP/AVIF) ✓</p>
                 {% endif %}
+                {% if img.responsive_srcset is defined and img.responsive_srcset > 0 %}
+                <p class="small text-muted">{{ img.responsive_srcset }} responsive image(s) with srcset ✓</p>
+                {% endif %}
                 {% endif %}
                 {% if img.issues %}<div class="issues-list">{% for i in img.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
                 {% if img.warnings %}<div class="seo-warnings-list">{% for w in img.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
@@ -1109,14 +1112,14 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
         <!-- ── Structured Data ── -->
         {% if seo.checks.structured_data is defined %}
         {% set sd = seo.checks.structured_data %}
-        {% set sd_status = 'warn' if sd.warnings else 'pass' %}
+        {% set sd_status = 'fail' if sd.issues else ('warn' if sd.warnings else 'pass') %}
         <details class="check-item check-{{ sd_status }}">
             <summary>
-                <i data-lucide="{% if sd_status == 'pass' %}check-circle{% else %}alert-triangle{% endif %}"
+                <i data-lucide="{% if sd_status == 'pass' %}check-circle{% elif sd_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
                    class="check-status-icon icon-{{ sd_status }}" style="width:18px;height:18px;"></i>
                 <span class="check-name">Structured Data</span>
                 <span class="check-summary-text">
-                    {% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% elif sd.has_rdfa %}RDFa{% else %}None{% endif %}
+                    {% if sd.json_ld_count > 0 %}{{ sd.valid_ld_count }}/{{ sd.json_ld_count }} valid JSON-LD{% elif sd.has_microdata %}Microdata{% elif sd.has_rdfa %}RDFa{% else %}None{% endif %}
                     {% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}
                 </span>
                 <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
@@ -1124,7 +1127,12 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
             <div class="check-body">
                 {% if sd.schema_types %}
                 <div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.75rem;">
-                    {% for t in sd.schema_types %}<span class="badge badge-neutral">{{ t }}</span>{% endfor %}
+                    {% for t in sd.schema_types %}
+                    <span class="badge {% if t in ['FAQPage','Course','CourseInstance','ClaimReview','LearningResource','SpecialAnnouncement','VehicleListing','EstimatedSalary'] %}badge-danger{% else %}badge-neutral{% endif %}"
+                          {% if t in ['FAQPage','Course','CourseInstance','ClaimReview','LearningResource','SpecialAnnouncement','VehicleListing','EstimatedSalary'] %}title="Deprecated — no longer produces rich results"{% endif %}>
+                        {{ t }}{% if t in ['FAQPage','Course','CourseInstance','ClaimReview','LearningResource','SpecialAnnouncement','VehicleListing','EstimatedSalary'] %} ⚠{% endif %}
+                    </span>
+                    {% endfor %}
                 </div>
                 {% elif sd.json_ld_count > 0 %}
                 <p class="small text-muted">{{ sd.json_ld_count }} JSON-LD block(s) — no @type detected</p>
