@@ -1,4 +1,5 @@
 import re
+import os
 import json
 import time
 import requests
@@ -8,6 +9,8 @@ from urllib.parse import urlparse, urljoin
 from html.parser import HTMLParser
 
 _TEXT_SKIP = {'script', 'style', 'noscript', 'nav', 'footer', 'aside', 'header'}
+
+_PSI_ENDPOINT = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed'
 
 # Schema.org types deprecated by Google (no longer produce rich results as of 2026)
 _DEPRECATED_SCHEMA = frozenset({
@@ -390,6 +393,7 @@ class SEOAnalyzer:
             result['checks']['structured_data'] = self._check_structured_data(parser)
             result['checks']['robots_txt']      = self._check_robots_txt(base_url)
             result['checks']['sitemap']         = self._check_sitemap(base_url)
+            result['checks']['pagespeed']       = self._check_pagespeed(response.url)
 
             result['score']  = self._calculate_score(result['checks'])
             result['rating'] = self._rating(result['score'])
@@ -1401,6 +1405,154 @@ class SEOAnalyzer:
 
     # ── Score aggregation ──────────────────────────────────────────────
 
+    # ── Check: PageSpeed Insights (real Lighthouse) ────────────────────
+
+    def _check_pagespeed(self, url: str) -> dict:
+        r = {
+            'performance_score': None,
+            'fcp_ms':            None,
+            'lcp_ms':            None,
+            'tbt_ms':            None,
+            'cls':               None,
+            'speed_index_ms':    None,
+            'tti_ms':            None,
+            'field_lcp_ms':      None,
+            'field_fcp_ms':      None,
+            'field_lcp_category': None,
+            'score': 0, 'issues': [], 'warnings': [], 'passed': [],
+        }
+
+        params = {'url': url, 'strategy': 'mobile', 'category': 'performance'}
+        api_key = os.environ.get('GOOGLE_PSI_API_KEY')
+        if api_key:
+            params['key'] = api_key
+
+        try:
+            resp = requests.get(_PSI_ENDPOINT, params=params, timeout=50)
+            if resp.status_code == 429:
+                r['warnings'].append(
+                    'PageSpeed Insights API rate-limited — set GOOGLE_PSI_API_KEY env var for higher quota'
+                )
+                return r
+            if resp.status_code != 200:
+                r['warnings'].append(
+                    f'PageSpeed Insights API returned HTTP {resp.status_code} — performance data unavailable'
+                )
+                return r
+
+            data  = resp.json()
+            lhr   = data.get('lighthouseResult', {})
+            audits = lhr.get('audits', {})
+
+            perf_score = lhr.get('categories', {}).get('performance', {}).get('score')
+            if perf_score is not None:
+                r['performance_score'] = round(perf_score * 100)
+
+            def _ms(key):
+                v = audits.get(key, {}).get('numericValue')
+                return round(v) if v is not None else None
+
+            r['fcp_ms']         = _ms('first-contentful-paint')
+            r['lcp_ms']         = _ms('largest-contentful-paint')
+            r['tbt_ms']         = _ms('total-blocking-time')
+            r['speed_index_ms'] = _ms('speed-index')
+            r['tti_ms']         = _ms('interactive')
+            cls_val = audits.get('cumulative-layout-shift', {}).get('numericValue')
+            r['cls'] = round(cls_val, 3) if cls_val is not None else None
+
+            # Field data (real-user CrUX, if available for this origin)
+            le = data.get('loadingExperience', {}).get('metrics', {})
+            r['field_lcp_ms']       = le.get('LARGEST_CONTENTFUL_PAINT_MS', {}).get('percentile')
+            r['field_fcp_ms']       = le.get('FIRST_CONTENTFUL_PAINT_MS', {}).get('percentile')
+            r['field_lcp_category'] = le.get('LARGEST_CONTENTFUL_PAINT_MS', {}).get('category')
+
+            # ── Score Core Web Vitals ──────────────────────────────────
+            lcp = r['lcp_ms']
+            if lcp is not None:
+                if lcp <= 2500:
+                    r['passed'].append(f'LCP {lcp/1000:.2f}s — Good (≤ 2.5 s)')
+                    r['score'] += 4
+                elif lcp <= 4000:
+                    r['warnings'].append(
+                        f'LCP {lcp/1000:.2f}s — Needs Improvement (target ≤ 2.5 s); '
+                        'Largest Contentful Paint is a Core Web Vitals ranking factor'
+                    )
+                    r['score'] += 2
+                else:
+                    r['issues'].append(
+                        f'LCP {lcp/1000:.2f}s — Poor (target ≤ 2.5 s); '
+                        'slow LCP is a direct Google ranking signal via Core Web Vitals'
+                    )
+
+            cls = r['cls']
+            if cls is not None:
+                if cls <= 0.1:
+                    r['passed'].append(f'CLS {cls:.3f} — Good (≤ 0.10)')
+                    r['score'] += 3
+                elif cls <= 0.25:
+                    r['warnings'].append(
+                        f'CLS {cls:.3f} — Needs Improvement (target ≤ 0.10); '
+                        'Cumulative Layout Shift affects visual stability and rankings'
+                    )
+                    r['score'] += 1
+                else:
+                    r['issues'].append(
+                        f'CLS {cls:.3f} — Poor (target ≤ 0.10); '
+                        'significant layout shifts hurt UX and Core Web Vitals score'
+                    )
+
+            tbt = r['tbt_ms']
+            if tbt is not None:
+                if tbt <= 200:
+                    r['passed'].append(f'TBT {tbt} ms — Good (≤ 200 ms; proxy for INP)')
+                    r['score'] += 3
+                elif tbt <= 600:
+                    r['warnings'].append(
+                        f'TBT {tbt} ms — Needs Improvement (target ≤ 200 ms); '
+                        'high Total Blocking Time degrades interactivity (INP)'
+                    )
+                    r['score'] += 1
+                else:
+                    r['issues'].append(
+                        f'TBT {tbt} ms — Poor (target ≤ 200 ms); '
+                        'heavy JavaScript is blocking the main thread; '
+                        'split and defer non-critical scripts'
+                    )
+
+            # FCP informational
+            fcp = r['fcp_ms']
+            if fcp is not None:
+                if fcp <= 1800:
+                    r['passed'].append(f'FCP {fcp/1000:.2f}s — Good (≤ 1.8 s)')
+                elif fcp <= 3000:
+                    r['warnings'].append(f'FCP {fcp/1000:.2f}s — Needs Improvement (target ≤ 1.8 s)')
+                else:
+                    r['warnings'].append(
+                        f'FCP {fcp/1000:.2f}s — Poor (target ≤ 1.8 s); '
+                        'slow First Contentful Paint hurts perceived performance'
+                    )
+
+            if r['performance_score'] is not None:
+                s = r['performance_score']
+                if s >= 90:
+                    r['passed'].append(f'Lighthouse performance score: {s}/100')
+                elif s >= 50:
+                    r['warnings'].append(f'Lighthouse performance score: {s}/100 — room for improvement')
+                else:
+                    r['issues'].append(f'Lighthouse performance score: {s}/100 — poor; prioritise Core Web Vitals fixes')
+
+        except requests.exceptions.Timeout:
+            r['warnings'].append(
+                'PageSpeed Insights API timed out (> 50 s) — '
+                'performance data unavailable for this scan'
+            )
+        except Exception:
+            r['warnings'].append('PageSpeed Insights API unavailable — performance data skipped')
+
+        return r
+
+    # ── Score ──────────────────────────────────────────────────────────
+
     def _calculate_score(self, checks: dict) -> int:
         caps = {
             'url':             10,
@@ -1416,6 +1568,7 @@ class SEOAnalyzer:
             'structured_data':  7,
             'robots_txt':       5,
             'sitemap':         10,
+            'pagespeed':       10,
         }
         total = sum(
             min(checks.get(k, {}).get('score', 0), cap)

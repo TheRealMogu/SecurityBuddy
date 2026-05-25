@@ -1211,6 +1211,90 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
         </details>
         {% endif %}
 
+        <!-- ── Performance / PageSpeed Insights ── -->
+        {% if seo.checks.pagespeed is defined %}
+        {% set ps = seo.checks.pagespeed %}
+        {% set ps_status = 'fail' if ps.issues else ('warn' if ps.warnings else ('pass' if ps.passed else 'warn')) %}
+        <details class="check-item check-{{ ps_status }}">
+            <summary>
+                <i data-lucide="{% if ps_status == 'pass' %}check-circle{% elif ps_status == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon icon-{{ ps_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">Performance (Lighthouse)</span>
+                <span class="check-summary-text">
+                    {%- if ps.performance_score is not none -%}
+                        Score {{ ps.performance_score }}/100
+                        {%- if ps.lcp_ms is not none %} · LCP {{ "%.1f"|format(ps.lcp_ms/1000) }}s{% endif %}
+                        {%- if ps.cls is not none %} · CLS {{ ps.cls }}{% endif %}
+                    {%- else -%}Unavailable{%- endif -%}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if ps.performance_score is not none %}
+                <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:1rem;">
+                    <div style="text-align:center;">
+                        <div style="font-size:2.5rem;font-weight:700;line-height:1;
+                            color:{% if ps.performance_score >= 90 %}var(--color-success){% elif ps.performance_score >= 50 %}var(--color-warning){% else %}var(--color-danger){% endif %}">
+                            {{ ps.performance_score }}
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--color-text-muted);margin-top:0.2rem;">LIGHTHOUSE</div>
+                    </div>
+                    <div style="flex:1;">
+                        <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);">
+                            <div class="ssl-info-item">
+                                <div class="ssl-info-label">LCP</div>
+                                <div class="ssl-info-value {% if ps.lcp_ms is not none %}{% if ps.lcp_ms <= 2500 %}good{% elif ps.lcp_ms <= 4000 %}warn{% else %}bad{% endif %}{% endif %}">
+                                    {{ "%.2f"|format(ps.lcp_ms/1000) ~ 's' if ps.lcp_ms is not none else '—' }}
+                                </div>
+                            </div>
+                            <div class="ssl-info-item">
+                                <div class="ssl-info-label">CLS</div>
+                                <div class="ssl-info-value {% if ps.cls is not none %}{% if ps.cls <= 0.1 %}good{% elif ps.cls <= 0.25 %}warn{% else %}bad{% endif %}{% endif %}">
+                                    {{ ps.cls if ps.cls is not none else '—' }}
+                                </div>
+                            </div>
+                            <div class="ssl-info-item">
+                                <div class="ssl-info-label">TBT</div>
+                                <div class="ssl-info-value {% if ps.tbt_ms is not none %}{% if ps.tbt_ms <= 200 %}good{% elif ps.tbt_ms <= 600 %}warn{% else %}bad{% endif %}{% endif %}">
+                                    {{ ps.tbt_ms ~ ' ms' if ps.tbt_ms is not none else '—' }}
+                                </div>
+                            </div>
+                            <div class="ssl-info-item">
+                                <div class="ssl-info-label">FCP</div>
+                                <div class="ssl-info-value {% if ps.fcp_ms is not none %}{% if ps.fcp_ms <= 1800 %}good{% elif ps.fcp_ms <= 3000 %}warn{% else %}bad{% endif %}{% endif %}">
+                                    {{ "%.2f"|format(ps.fcp_ms/1000) ~ 's' if ps.fcp_ms is not none else '—' }}
+                                </div>
+                            </div>
+                            <div class="ssl-info-item">
+                                <div class="ssl-info-label">Speed Index</div>
+                                <div class="ssl-info-value">{{ "%.2f"|format(ps.speed_index_ms/1000) ~ 's' if ps.speed_index_ms is not none else '—' }}</div>
+                            </div>
+                            <div class="ssl-info-item">
+                                <div class="ssl-info-label">TTI</div>
+                                <div class="ssl-info-value">{{ "%.2f"|format(ps.tti_ms/1000) ~ 's' if ps.tti_ms is not none else '—' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% if ps.field_lcp_ms is not none %}
+                <p class="small text-muted">
+                    Real-user data (CrUX p75): LCP {{ "%.2f"|format(ps.field_lcp_ms/1000) }}s
+                    {% if ps.field_fcp_ms is not none %} · FCP {{ "%.2f"|format(ps.field_fcp_ms/1000) }}s{% endif %}
+                    {% if ps.field_lcp_category %}
+                    <span class="badge {% if ps.field_lcp_category == 'FAST' %}badge-success{% elif ps.field_lcp_category == 'AVERAGE' %}badge-warning{% else %}badge-danger{% endif %}" style="margin-left:0.3rem;">{{ ps.field_lcp_category }}</span>
+                    {% endif %}
+                </p>
+                {% endif %}
+                {% else %}
+                <p class="small text-muted">Lighthouse data unavailable for this scan.</p>
+                {% endif %}
+                {% if ps.issues %}<div class="issues-list mt-2">{% for i in ps.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if ps.warnings %}<div class="seo-warnings-list mt-2">{% for w in ps.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if ps.passed %}<div class="seo-passed-list mt-2">{% for p in ps.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
         {% endif %}{# end seo block #}
 
     </section>
