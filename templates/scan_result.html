@@ -708,6 +708,52 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
         </details>
         {% endif %}
 
+        <!-- ── HTTPS & Transport ── -->
+        {% if seo.checks.https is defined %}
+        {% set ht = seo.checks.https %}
+        {% set ht_status = 'fail' if ht.issues else ('warn' if ht.warnings else 'pass') %}
+        <details class="check-item check-{{ ht_status }}">
+            <summary>
+                <i data-lucide="{% if ht_status == 'pass' %}lock{% elif ht_status == 'warn' %}alert-triangle{% else %}unlock{% endif %}"
+                   class="check-status-icon icon-{{ ht_status }}" style="width:18px;height:18px;"></i>
+                <span class="check-name">HTTPS &amp; Transport</span>
+                <span class="check-summary-text">
+                    {% if ht.is_https %}HTTPS ✓{% else %}HTTP ✗{% endif %}
+                    {% if ht.hsts %} · HSTS ✓{% else %} · No HSTS{% endif %}
+                    {% if ht.mixed_content_count > 0 %} · {{ ht.mixed_content_count }} mixed{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Protocol</div>
+                        <div class="ssl-info-value {% if ht.is_https %}good{% else %}bad{% endif %}">
+                            {% if ht.is_https %}HTTPS (secure){% else %}HTTP (insecure){% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">HSTS</div>
+                        <div class="ssl-info-value {% if ht.hsts %}good{% else %}bad{% endif %}">
+                            {% if ht.hsts %}{{ ht.hsts[:55] }}{% if ht.hsts|length > 55 %}…{% endif %}{% else %}Not set{% endif %}
+                        </div>
+                    </div>
+                    {% if ht.is_https %}
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Mixed content</div>
+                        <div class="ssl-info-value {% if ht.mixed_content_count == 0 %}good{% else %}bad{% endif %}">
+                            {{ ht.mixed_content_count }} resource(s)
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if ht.issues %}<div class="issues-list">{% for i in ht.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if ht.warnings %}<div class="seo-warnings-list mt-1">{% for w in ht.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if ht.passed %}<div class="seo-passed-list mt-1">{% for p in ht.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+
         <!-- ── Meta Tags ── -->
         {% if seo.checks.meta is defined %}
         {% set m = seo.checks.meta %}
@@ -798,23 +844,31 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
                 <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin:0.75rem 0;">
                     <div class="ssl-info-item">
                         <div class="ssl-info-label">Language</div>
-                        <div class="ssl-info-value {% if cq.language %}good{% else %}bad{% endif %}">
-                            {{ cq.language if cq.language else 'Not set' }}
-                        </div>
+                        <div class="ssl-info-value {% if cq.language %}good{% else %}bad{% endif %}">{{ cq.language if cq.language else 'Not set' }}</div>
                     </div>
                     <div class="ssl-info-item">
                         <div class="ssl-info-label">Charset</div>
-                        <div class="ssl-info-value {% if cq.charset %}good{% else %}bad{% endif %}">
-                            {{ cq.charset if cq.charset else 'Not declared' }}
-                        </div>
+                        <div class="ssl-info-value {% if cq.charset %}good{% else %}bad{% endif %}">{{ cq.charset if cq.charset else 'Not declared' }}</div>
                     </div>
                     <div class="ssl-info-item">
                         <div class="ssl-info-label">SPA / JS render</div>
-                        <div class="ssl-info-value {% if cq.is_spa %}bad{% else %}good{% endif %}">
-                            {{ 'Detected' if cq.is_spa else 'No' }}
-                        </div>
+                        <div class="ssl-info-value {% if cq.is_spa %}bad{% else %}good{% endif %}">{{ 'Detected' if cq.is_spa else 'No' }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Paragraphs</div>
+                        <div class="ssl-info-value {% if cq.paragraph_count >= 3 %}good{% elif cq.paragraph_count > 0 %}{% else %}bad{% endif %}">{{ cq.paragraph_count }}</div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">Text/HTML ratio</div>
+                        <div class="ssl-info-value {% if cq.text_html_ratio >= 25 %}good{% elif cq.text_html_ratio >= 10 %}{% else %}bad{% endif %}">{{ cq.text_html_ratio }}%</div>
                     </div>
                 </div>
+                {% if cq.top_keywords %}
+                <div style="margin-bottom:0.5rem;">
+                    <div class="ssl-info-label" style="margin-bottom:0.3rem;">Top keywords</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">{% for kw in cq.top_keywords %}<span class="badge badge-neutral">{{ kw }}</span>{% endfor %}</div>
+                </div>
+                {% endif %}
                 {% if cq.issues %}<div class="issues-list">{% for i in cq.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
                 {% if cq.warnings %}<div class="seo-warnings-list">{% for w in cq.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
                 {% if cq.passed %}<div class="seo-passed-list">{% for p in cq.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
@@ -914,17 +968,16 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
             </summary>
             <div class="check-body">
                 <div class="seo-link-stats">
+                    <div class="seo-link-stat"><span class="seo-link-count">{{ lk.internal }}</span><span class="seo-link-label">Internal</span></div>
+                    <div class="seo-link-stat"><span class="seo-link-count">{{ lk.external }}</span><span class="seo-link-label">External</span></div>
+                    <div class="seo-link-stat"><span class="seo-link-count">{{ lk.nofollow }}</span><span class="seo-link-label">Nofollow</span></div>
                     <div class="seo-link-stat">
-                        <span class="seo-link-count">{{ lk.internal }}</span>
-                        <span class="seo-link-label">Internal</span>
+                        <span class="seo-link-count {% if lk.generic_anchors > 0 %}text-warning{% else %}text-success{% endif %}">{{ lk.generic_anchors }}</span>
+                        <span class="seo-link-label">Generic anchors</span>
                     </div>
                     <div class="seo-link-stat">
-                        <span class="seo-link-count">{{ lk.external }}</span>
-                        <span class="seo-link-label">External</span>
-                    </div>
-                    <div class="seo-link-stat">
-                        <span class="seo-link-count">{{ lk.nofollow }}</span>
-                        <span class="seo-link-label">Nofollow</span>
+                        <span class="seo-link-count {% if lk.empty_anchors > 0 %}text-danger{% else %}text-success{% endif %}">{{ lk.empty_anchors }}</span>
+                        <span class="seo-link-label">Empty anchors</span>
                     </div>
                 </div>
                 {% if lk.warnings %}<div class="seo-warnings-list mt-2">{% for w in lk.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
@@ -1063,7 +1116,7 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
                    class="check-status-icon icon-{{ sd_status }}" style="width:18px;height:18px;"></i>
                 <span class="check-name">Structured Data</span>
                 <span class="check-summary-text">
-                    {% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% else %}None{% endif %}
+                    {% if sd.json_ld_count > 0 %}{{ sd.json_ld_count }} JSON-LD{% elif sd.has_microdata %}Microdata{% elif sd.has_rdfa %}RDFa{% else %}None{% endif %}
                     {% if sd.hreflang_count > 0 %} · {{ sd.hreflang_count }} hreflang{% endif %}
                 </span>
                 <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
@@ -1077,8 +1130,10 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
                 <p class="small text-muted">{{ sd.json_ld_count }} JSON-LD block(s) — no @type detected</p>
                 {% elif sd.has_microdata %}
                 <p class="small text-muted">Microdata (itemscope/itemtype) detected in HTML</p>
+                {% elif sd.has_rdfa %}
+                <p class="small text-muted">RDFa markup (vocab/typeof) detected</p>
                 {% else %}
-                <p class="small text-muted">No JSON-LD or Microdata found on this page.</p>
+                <p class="small text-muted">No JSON-LD, Microdata, or RDFa found on this page.</p>
                 {% endif %}
                 {% if sd.hreflang_count > 0 %}
                 <p class="small text-muted mt-1">{{ sd.hreflang_count }} hreflang tag(s) — international SEO configured</p>
