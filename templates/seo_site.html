@@ -17,7 +17,14 @@
                 <i data-lucide="globe" style="width:20px;height:20px;color:var(--color-primary);vertical-align:-2px;margin-right:6px;"></i>
                 {{ crawl.target }}
             </h1>
-            <div style="font-size:0.85rem;color:var(--color-text-muted);">{{ crawl.pages_crawled }} pages crawled and analysed</div>
+            <div style="font-size:0.85rem;color:var(--color-text-muted);">
+                {{ crawl.pages_crawled }} pages crawled and analysed
+                {% if crawl.sitemap_seeds_used %}
+                <span style="margin-left:0.4rem;padding:0.1rem 0.45rem;background:var(--color-bg-secondary,#f1f5f9);border-radius:4px;font-size:0.75rem;">
+                    {{ crawl.sitemap_seeds_used }} URLs seeded from sitemap
+                </span>
+                {% endif %}
+            </div>
         </div>
         <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
             <a href="{{ url_for('seo_scan') }}?target={{ crawl.target }}" class="btn btn-secondary" style="font-size:0.83rem;">
