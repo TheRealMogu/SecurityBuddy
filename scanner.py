@@ -40,6 +40,33 @@ RISKY_PORTS = {
     9200:  'Elasticsearch — often unauthenticated, high-severity exposure',
 }
 
+COMMON_DIRS = [
+    '/images/', '/img/', '/uploads/', '/static/', '/assets/',
+    '/files/', '/backup/', '/media/', '/data/', '/js/', '/css/',
+]
+
+DANGLING_CNAME_SIGNATURES = {
+    'github.io':          ["There isn't a GitHub Pages site here", "404 There is no GitHub Pages"],
+    '.herokudns.com':     ['No such app', 'herokucdn.com/error-pages/no-such-app'],
+    'amazonaws.com':      ['NoSuchBucket', '<Code>NoSuchKey</Code>'],
+    'shopify.com':        ['Sorry, this shop is currently unavailable'],
+    'fastly.net':         ['Fastly error: unknown domain'],
+    'zendesk.com':        ['Help Center Closed'],
+    'ghost.io':           ["The thing you were looking for is no longer here"],
+    'surge.sh':           ['project not found'],
+    'bitbucket.io':       ['Repository not found'],
+    'netlify.app':        ['Not Found - Request ID:'],
+    'azurewebsites.net':  ['Error 404 - Web app not found'],
+    'cloudfront.net':     ['The request could not be satisfied'],
+}
+
+OPEN_REDIRECT_PARAMS = [
+    'redirect', 'url', 'next', 'return', 'returnUrl',
+    'goto', 'dest', 'redir', 'continue',
+]
+
+_REDIRECT_CANARY = 'https://redirect-test.securitybuddy.invalid'
+
 
 class SecurityScanner:
     def __init__(self):
@@ -87,8 +114,16 @@ class SecurityScanner:
                 hostname = urlparse(target_url).hostname or target.split('/')[0]
                 results['checks']['dns_security'] = self._check_dns_security(hostname)
 
-            results['checks']['robots_txt']    = self._check_robots_txt(target_url)
-            results['checks']['mixed_content'] = self._check_mixed_content(target_url)
+            results['checks']['robots_txt']        = self._check_robots_txt(target_url)
+            results['checks']['mixed_content']     = self._check_mixed_content(target_url)
+            results['checks']['directory_listing'] = self._check_directory_listing(target_url, baseline)
+            results['checks']['html_comments']     = self._check_html_comments(target_url)
+            results['checks']['open_redirect']     = self._check_open_redirect(target_url)
+            if not is_ip:
+                hostname = urlparse(target_url).hostname or target.split('/')[0]
+                results['checks']['hsts_quality']        = self._check_hsts_quality(target_url)
+                results['checks']['subdomain_takeover']  = self._check_subdomain_takeover(hostname)
+                results['checks']['http2']               = self._check_http2_support(hostname)
 
             results['overall_score'] = self._calculate_score(results['checks'])
             results['risk_level']    = self._determine_risk_level(results['overall_score'])
@@ -677,6 +712,225 @@ class SecurityScanner:
             results['issues'].append(f'Mixed content check failed: {str(e)}')
         return results
 
+    def _check_hsts_quality(self, target_url):
+        results = {
+            'present': False,
+            'max_age': None,
+            'includes_subdomains': False,
+            'preload': False,
+            'score': 0,
+            'issues': [],
+        }
+        if not target_url.startswith('https://'):
+            results['issues'].append('HSTS only applies to HTTPS — site is HTTP only')
+            return results
+        try:
+            resp = self.session.get(target_url, timeout=self.timeout, allow_redirects=True)
+            hsts = resp.headers.get('Strict-Transport-Security', '')
+            if not hsts:
+                results['issues'].append('HSTS header missing — browsers will not enforce HTTPS-only')
+                return results
+
+            results['present'] = True
+            results['score'] += 2
+
+            ma = re.search(r'max-age=(\d+)', hsts, re.IGNORECASE)
+            if ma:
+                max_age = int(ma.group(1))
+                results['max_age'] = max_age
+                if max_age >= 31_536_000:
+                    results['score'] += 2
+                elif max_age >= 2_592_000:
+                    results['score'] += 1
+                    results['issues'].append(
+                        f'HSTS max-age {max_age}s is short — set to ≥31536000 (1 year)'
+                    )
+                else:
+                    results['issues'].append(
+                        f'HSTS max-age {max_age}s is too short — minimum 31536000 (1 year)'
+                    )
+
+            if 'includesubdomains' in hsts.lower():
+                results['includes_subdomains'] = True
+                results['score'] += 1
+            else:
+                results['issues'].append('HSTS missing includeSubDomains — subdomains are unprotected')
+
+            if 'preload' in hsts.lower():
+                results['preload'] = True
+                results['score'] += 1
+            else:
+                results['issues'].append('HSTS missing preload directive — not eligible for browser preload list')
+        except Exception as e:
+            results['issues'].append(f'HSTS quality check failed: {str(e)}')
+        results['score'] = max(0, results['score'])
+        return results
+
+    def _check_subdomain_takeover(self, domain):
+        results = {
+            'vulnerable': False,
+            'cname_chain': [],
+            'at_risk_service': None,
+            'score': 5,
+            'issues': [],
+        }
+        try:
+            import dns.resolver
+            try:
+                for rdata in dns.resolver.resolve(domain, 'CNAME'):
+                    cname_target = str(rdata.target).rstrip('.')
+                    results['cname_chain'].append(cname_target)
+
+                    for pattern, fingerprints in DANGLING_CNAME_SIGNATURES.items():
+                        if pattern in cname_target:
+                            try:
+                                resp = self.session.get(
+                                    f'https://{cname_target}',
+                                    timeout=self.timeout,
+                                    allow_redirects=True,
+                                )
+                                body = resp.text
+                                if any(fp.lower() in body.lower() for fp in fingerprints):
+                                    results['vulnerable'] = True
+                                    results['at_risk_service'] = pattern
+                                    results['score'] = 0
+                                    results['issues'].append(
+                                        f'Subdomain takeover risk: CNAME {cname_target} '
+                                        f'points to unclaimed resource on {pattern}'
+                                    )
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+        except ImportError:
+            results['issues'].append('Subdomain check unavailable (dnspython not installed)')
+        except Exception as e:
+            results['issues'].append(f'Subdomain takeover check failed: {str(e)}')
+        results['score'] = max(0, results['score'])
+        return results
+
+    def _check_directory_listing(self, target_url, baseline):
+        results = {
+            'exposed_dirs': [],
+            'score': 5,
+            'issues': [],
+        }
+        if baseline['is_spa']:
+            return results
+
+        base = target_url.rstrip('/')
+        listing_markers = [
+            'Index of /', '<title>Index of', 'Directory listing for',
+            'Parent Directory', '[To Parent Directory]',
+        ]
+        for path in COMMON_DIRS:
+            url = f'{base}{path}'
+            try:
+                resp = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                if resp.status_code != 200:
+                    continue
+                if self._is_false_positive(resp, baseline):
+                    continue
+                if any(m in resp.text for m in listing_markers):
+                    results['exposed_dirs'].append({'path': path, 'url': url})
+                    results['score'] -= 2
+                    results['issues'].append(f'Directory listing enabled at {path}')
+            except Exception:
+                pass
+        results['score'] = max(0, results['score'])
+        return results
+
+    def _check_http2_support(self, hostname):
+        results = {
+            'http2_supported': False,
+            'negotiated_protocol': None,
+            'issues': [],
+        }
+        try:
+            ctx = ssl.create_default_context()
+            ctx.set_alpn_protocols(['h2', 'http/1.1'])
+            with socket.create_connection((hostname, 443), timeout=self.timeout) as sock:
+                with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                    proto = ssock.selected_alpn_protocol()
+                    results['negotiated_protocol'] = proto
+                    if proto == 'h2':
+                        results['http2_supported'] = True
+        except Exception as e:
+            results['issues'].append(f'HTTP/2 check failed: {str(e)}')
+        return results
+
+    def _check_html_comments(self, target_url):
+        results = {
+            'generator_meta': None,
+            'suspicious_comments': [],
+            'version_disclosed': False,
+            'score': 3,
+            'issues': [],
+        }
+        try:
+            resp = self.session.get(target_url, timeout=self.timeout)
+            text = resp.text
+
+            gen = re.search(
+                r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']([^"\']+)["\']'
+                r'|<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']generator["\']',
+                text, re.IGNORECASE,
+            )
+            if gen:
+                val = gen.group(1) or gen.group(2)
+                results['generator_meta'] = val
+                results['version_disclosed'] = True
+                results['score'] -= 2
+                results['issues'].append(
+                    f'<meta name="generator"> reveals: {val}'
+                )
+
+            comments = re.findall(r'<!--(.*?)-->', text, re.DOTALL)
+            ver_pattern = re.compile(
+                r'(?:version|ver\.?\s*\d|v\d+\.\d+|powered by|generated by|built with)',
+                re.IGNORECASE,
+            )
+            found = []
+            for c in comments[:60]:
+                c = c.strip()
+                if 3 <= len(c) <= 300 and ver_pattern.search(c):
+                    found.append(c[:120])
+            if found:
+                results['suspicious_comments'] = found[:5]
+                results['version_disclosed'] = True
+                results['score'] -= 1
+                results['issues'].append(
+                    f'{len(found)} HTML comment(s) may disclose version or stack info'
+                )
+        except Exception as e:
+            results['issues'].append(f'HTML comment check failed: {str(e)}')
+        results['score'] = max(0, results['score'])
+        return results
+
+    def _check_open_redirect(self, target_url):
+        results = {
+            'vulnerable_params': [],
+            'score': 5,
+            'issues': [],
+        }
+        base = target_url.rstrip('/')
+        for param in OPEN_REDIRECT_PARAMS:
+            test_url = f'{base}/?{param}={_REDIRECT_CANARY}'
+            try:
+                resp = self.session.get(test_url, timeout=self.timeout, allow_redirects=False)
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    loc = resp.headers.get('Location', '')
+                    if 'securitybuddy.invalid' in loc or _REDIRECT_CANARY in loc:
+                        results['vulnerable_params'].append(param)
+                        results['score'] = 0
+                        results['issues'].append(
+                            f'Open redirect via ?{param}= — attacker can send users to arbitrary URLs'
+                        )
+                        break
+            except Exception:
+                pass
+        return results
+
     def _get_domain_info(self, domain):
         results = {
             'domain': domain,
@@ -766,6 +1020,26 @@ class SecurityScanner:
         mixed = checks.get('mixed_content', {})
         if mixed:
             total += min(mixed.get('score', 5), 5)
+
+        # New checks
+        if checks.get('hsts_quality'):
+            total += min(checks['hsts_quality'].get('score', 0), 5)
+
+        if checks.get('subdomain_takeover'):
+            total += min(checks['subdomain_takeover'].get('score', 5), 5)
+
+        if checks.get('directory_listing'):
+            total += min(checks['directory_listing'].get('score', 5), 5)
+
+        if checks.get('html_comments'):
+            total += min(checks['html_comments'].get('score', 3), 3)
+
+        if checks.get('open_redirect'):
+            total += min(checks['open_redirect'].get('score', 5), 5)
+
+        # HTTP/2 bonus (+1 for modern protocol support)
+        if checks.get('http2', {}).get('http2_supported'):
+            total += 1
 
         return min(max(total, 0), 100)
 

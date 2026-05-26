@@ -733,6 +733,250 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
         {% endif %}
         {% endif %}
 
+        <!-- ── HSTS Quality ── -->
+        {% if results.checks.hsts_quality is defined %}
+        {% set hq = results.checks.hsts_quality %}
+        {% set hq_ok = hq.present and hq.max_age and hq.max_age >= 31536000 and hq.includes_subdomains %}
+        <details class="check-item {% if hq_ok %}check-pass{% elif hq.present %}check-warn{% else %}check-fail{% endif %}">
+            <summary>
+                <i data-lucide="{% if hq_ok %}shield-check{% elif hq.present %}alert-triangle{% else %}shield-alert{% endif %}"
+                   class="check-status-icon {% if hq_ok %}icon-pass{% elif hq.present %}icon-warn{% else %}icon-fail{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">HSTS Quality</span>
+                <span class="check-summary-text">
+                    {% if not hq.present %}Missing
+                    {% else %}max-age={{ hq.max_age }}{% if hq.includes_subdomains %} · includeSubDomains{% endif %}{% if hq.preload %} · preload{% endif %}
+                    {% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">max-age</div>
+                        <div class="ssl-info-value {% if hq.max_age and hq.max_age >= 31536000 %}good{% elif hq.max_age %}{% else %}bad{% endif %}">
+                            {% if hq.max_age %}{{ hq.max_age }}s{% else %}—{% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">includeSubDomains</div>
+                        <div class="ssl-info-value {% if hq.includes_subdomains %}good{% else %}bad{% endif %}">
+                            {% if hq.includes_subdomains %}✓ Yes{% else %}✗ No{% endif %}
+                        </div>
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">preload</div>
+                        <div class="ssl-info-value {% if hq.preload %}good{% else %}{% endif %}">
+                            {% if hq.preload %}✓ Yes{% else %}No{% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if hq.issues %}
+                <div class="issues-list">
+                    {% for issue in hq.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Optimal HSTS header</span>
+                        <button class="btn-copy-code" data-copy-code="Strict-Transport-Security: max-age=31536000; includeSubDomains; preload">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</code></pre>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Subdomain Takeover ── -->
+        {% if results.checks.subdomain_takeover is defined %}
+        {% set st = results.checks.subdomain_takeover %}
+        <details class="check-item {% if st.vulnerable %}check-fail{% elif st.cname_chain %}check-pass{% else %}check-pass{% endif %}">
+            <summary>
+                <i data-lucide="{% if st.vulnerable %}x-circle{% else %}check-circle{% endif %}"
+                   class="check-status-icon {% if st.vulnerable %}icon-fail{% else %}icon-pass{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Subdomain Takeover</span>
+                <span class="check-summary-text">
+                    {% if st.vulnerable %}At risk — {{ st.at_risk_service }}
+                    {% elif st.cname_chain %}CNAME checked — OK
+                    {% else %}No CNAME records{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if st.cname_chain %}
+                <div style="margin-bottom:0.5rem;">
+                    <div class="small text-muted mb-1">CNAME chain:</div>
+                    {% for cname in st.cname_chain %}
+                    <div style="font-size:0.82rem;padding:0.2rem 0;">→ <code>{{ cname }}</code></div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if st.vulnerable %}
+                <p class="text-danger"><strong>🚨 CNAME points to an unclaimed resource</strong></p>
+                {% else %}
+                <p>✓ No dangling CNAME pointers detected.</p>
+                {% endif %}
+                {% if st.issues %}
+                <div class="issues-list mt-2">
+                    {% for issue in st.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Directory Listing ── -->
+        {% if results.checks.directory_listing is defined %}
+        {% set dl = results.checks.directory_listing %}
+        <details class="check-item {% if dl.exposed_dirs | length > 0 %}check-warn{% else %}check-pass{% endif %}">
+            <summary>
+                <i data-lucide="{% if dl.exposed_dirs | length > 0 %}alert-triangle{% else %}check-circle{% endif %}"
+                   class="check-status-icon {% if dl.exposed_dirs | length > 0 %}icon-warn{% else %}icon-pass{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">Directory Listing</span>
+                <span class="check-summary-text">
+                    {% if dl.exposed_dirs | length > 0 %}{{ dl.exposed_dirs | length }} directory(ies) exposed{% else %}None found{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if dl.exposed_dirs | length == 0 %}
+                <p>✓ No directory listings detected.</p>
+                {% else %}
+                <div class="port-risk-list">
+                    {% for d in dl.exposed_dirs %}
+                    <div class="port-item">
+                        <span class="port-number">{{ d.path }}</span>
+                        <span class="port-service">Directory contents are publicly browsable</span>
+                        <span class="badge badge-warning">Exposed</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>Nginx — disable directory listing</span>
+                        <button class="btn-copy-code" data-copy-code="autoindex off;">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>autoindex off;          # Nginx
+Options -Indexes       # Apache (.htaccess)</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── HTTP/2 Support ── -->
+        {% if results.checks.http2 is defined %}
+        {% set h2 = results.checks.http2 %}
+        <details class="check-item check-info">
+            <summary>
+                <i data-lucide="zap" class="check-status-icon icon-info" style="width:18px;height:18px;"></i>
+                <span class="check-name">HTTP/2 Support</span>
+                <span class="check-summary-text">
+                    {% if h2.http2_supported %}HTTP/2 (h2)
+                    {% elif h2.negotiated_protocol %}{{ h2.negotiated_protocol }}
+                    {% else %}Not supported{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if h2.http2_supported %}
+                <p>✓ Server negotiates <strong>HTTP/2</strong> — multiplexed connections, header compression, faster page loads.</p>
+                {% else %}
+                <p>Server is using <strong>{{ h2.negotiated_protocol or 'HTTP/1.1' }}</strong>. HTTP/2 is not a security requirement but improves performance and is supported by all modern CDNs.</p>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── HTML Comment Disclosure ── -->
+        {% if results.checks.html_comments is defined %}
+        {% set hc = results.checks.html_comments %}
+        <details class="check-item {% if hc.version_disclosed %}check-warn{% else %}check-pass{% endif %}">
+            <summary>
+                <i data-lucide="{% if hc.version_disclosed %}alert-triangle{% else %}check-circle{% endif %}"
+                   class="check-status-icon {% if hc.version_disclosed %}icon-warn{% else %}icon-pass{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">HTML Comment / Generator</span>
+                <span class="check-summary-text">
+                    {% if hc.generator_meta %}Generator: {{ hc.generator_meta[:40] }}{% if hc.generator_meta|length > 40 %}…{% endif %}
+                    {% elif hc.suspicious_comments %}{{ hc.suspicious_comments | length }} suspicious comment(s)
+                    {% else %}Nothing disclosed{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if hc.generator_meta %}
+                <div class="why-box mb-2">
+                    <strong>Generator meta:</strong> {{ hc.generator_meta }}
+                </div>
+                {% endif %}
+                {% if hc.suspicious_comments %}
+                <div style="margin-bottom:0.5rem;">
+                    <div class="small text-muted mb-1">Suspicious comments:</div>
+                    {% for c in hc.suspicious_comments %}
+                    <div style="font-size:0.8rem;padding:0.25rem 0.4rem;background:var(--color-bg-alt);border-radius:4px;margin-bottom:0.3rem;font-family:monospace;word-break:break-word;">{{ c }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if not hc.version_disclosed %}
+                <p>✓ No version or generator information found in HTML source.</p>
+                {% endif %}
+                {% if hc.issues %}
+                <div class="issues-list mt-1">
+                    {% for issue in hc.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Open Redirect ── -->
+        {% if results.checks.open_redirect is defined %}
+        {% set or_ = results.checks.open_redirect %}
+        {% if or_.vulnerable_params | length > 0 %}
+        <details class="check-item check-fail">
+            <summary>
+                <i data-lucide="x-circle" class="check-status-icon icon-fail" style="width:18px;height:18px;"></i>
+                <span class="check-name">Open Redirect</span>
+                <span class="check-summary-text">Vulnerable — ?{{ or_.vulnerable_params | join(', ?') }}</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <p class="text-danger"><strong>🚨 Open redirect detected</strong> — the following parameter(s) redirect to any URL:</p>
+                <div class="port-risk-list mt-2">
+                    {% for p in or_.vulnerable_params %}
+                    <div class="port-item">
+                        <span class="port-number">?{{ p }}=</span>
+                        <span class="port-service">Attacker can redirect users to phishing pages</span>
+                        <span class="badge badge-danger">Critical</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if or_.issues %}
+                <div class="issues-list mt-2">
+                    {% for issue in or_.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header"><span>Validate redirect destination — Python example</span></div>
+                    <pre><code>from urllib.parse import urlparse
+ALLOWED = {'example.com'}
+def safe_redirect(url):
+    if urlparse(url).netloc not in ALLOWED:
+        raise ValueError("Redirect blocked")
+    return redirect(url)</code></pre>
+                </div>
+            </div>
+        </details>
+        {% endif %}
+        {% endif %}
+
         <!-- ══ SEO Analysis ══════════════════════════════════════════════ -->
         {% if results.seo is defined and results.seo and not results.seo.get('error') %}
         {% set seo = results.seo %}
