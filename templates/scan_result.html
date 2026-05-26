@@ -109,16 +109,6 @@
                 <i data-lucide="search" style="width:15px;height:15px;"></i>Scan Another Target
             </a>
 
-            {% if current_user.is_authenticated and current_user.is_premium %}
-            <a href="{{ url_for('download_pdf', scan_id=scan_id) }}" class="btn btn-secondary w-100">
-                <i data-lucide="download" style="width:15px;height:15px;"></i>Download PDF
-            </a>
-            {% else %}
-            <a href="{{ url_for('premium') }}" class="btn btn-secondary w-100">
-                <i data-lucide="star" style="width:15px;height:15px;"></i>PDF Report
-                <span class="badge badge-warning ms-1">Pro</span>
-            </a>
-            {% endif %}
         </div>
     </aside>
 
@@ -603,6 +593,144 @@ ufw allow from 10.0.0.0/8 to any port {% if ports.open_ports %}{{ ports.open_por
                 {% endif %}
             </div>
         </details>
+        {% endif %}
+
+        <!-- ── DNS Security ── -->
+        {% if results.checks.dns_security is defined %}
+        {% set dns = results.checks.dns_security %}
+        {% set dns_ok = dns.spf_valid and dns.dmarc_valid %}
+        {% set dns_partial = dns.spf_valid or dns.dmarc_valid %}
+        <details class="check-item {% if dns_ok %}check-pass{% elif dns_partial %}check-warn{% else %}check-fail{% endif %}">
+            <summary>
+                <i data-lucide="{% if dns_ok %}check-circle{% elif dns_partial %}alert-triangle{% else %}x-circle{% endif %}"
+                   class="check-status-icon {% if dns_ok %}icon-pass{% elif dns_partial %}icon-warn{% else %}icon-fail{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">DNS Security</span>
+                <span class="check-summary-text">
+                    SPF {% if dns.spf_valid %}✓{% else %}✗{% endif %} ·
+                    DMARC {% if dns.dmarc_valid %}✓{% else %}✗{% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <div class="ssl-info-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:0.75rem;">
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">SPF Record</div>
+                        <div class="ssl-info-value {% if dns.spf_valid %}good{% else %}bad{% endif %}">
+                            {% if dns.spf_valid %}✓ Present{% else %}✗ Missing{% endif %}
+                        </div>
+                        {% if dns.spf_record %}
+                        <div class="small text-muted mt-1" style="font-size:0.72rem;word-break:break-all;">{{ dns.spf_record[:80] }}{% if dns.spf_record|length > 80 %}…{% endif %}</div>
+                        {% endif %}
+                    </div>
+                    <div class="ssl-info-item">
+                        <div class="ssl-info-label">DMARC Record</div>
+                        <div class="ssl-info-value {% if dns.dmarc_valid %}good{% else %}bad{% endif %}">
+                            {% if dns.dmarc_valid %}✓ Present{% else %}✗ Missing{% endif %}
+                        </div>
+                        {% if dns.dmarc_record %}
+                        <div class="small text-muted mt-1" style="font-size:0.72rem;word-break:break-all;">{{ dns.dmarc_record[:80] }}{% if dns.dmarc_record|length > 80 %}…{% endif %}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if dns.issues %}
+                <div class="issues-list">
+                    {% for issue in dns.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+                {% if not dns.spf_valid %}
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>DNS — add SPF record</span>
+                        <button class="btn-copy-code" data-copy-code="{{ results.target }} TXT &quot;v=spf1 include:_spf.google.com ~all&quot;">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>{{ results.target }} TXT "v=spf1 include:_spf.google.com ~all"</code></pre>
+                </div>
+                {% endif %}
+                {% if not dns.dmarc_valid %}
+                <div class="fix-box mt-2">
+                    <div class="fix-box-header">
+                        <span>DNS — add DMARC record</span>
+                        <button class="btn-copy-code" data-copy-code="_dmarc.{{ results.target }} TXT &quot;v=DMARC1; p=quarantine; rua=mailto:dmarc@{{ results.target }}&quot;">
+                            <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                        </button>
+                    </div>
+                    <pre><code>_dmarc.{{ results.target }} TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@{{ results.target }}"</code></pre>
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── robots.txt ── -->
+        {% if results.checks.robots_txt is defined %}
+        {% set rb = results.checks.robots_txt %}
+        <details class="check-item {% if rb.reveals_sensitive_paths %}check-warn{% else %}check-info{% endif %}">
+            <summary>
+                <i data-lucide="{% if rb.reveals_sensitive_paths %}alert-triangle{% else %}file-text{% endif %}"
+                   class="check-status-icon {% if rb.reveals_sensitive_paths %}icon-warn{% else %}icon-info{% endif %}"
+                   style="width:18px;height:18px;"></i>
+                <span class="check-name">robots.txt</span>
+                <span class="check-summary-text">
+                    {% if not rb.found %}Not found{% elif rb.reveals_sensitive_paths %}Reveals sensitive paths{% else %}{{ rb.disallowed_paths | length }} rule(s){% endif %}
+                </span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                {% if not rb.found %}
+                <p class="text-muted">No robots.txt file found.</p>
+                {% else %}
+                {% if rb.disallowed_paths %}
+                <div style="margin-bottom:0.5rem;">
+                    <div class="small text-muted mb-1">Disallowed paths ({{ rb.disallowed_paths | length }}):</div>
+                    {% for p in rb.disallowed_paths[:10] %}
+                    <div style="font-size:0.82rem;padding:0.2rem 0;border-bottom:1px solid var(--color-border);">
+                        <code>{{ p }}</code>
+                    </div>
+                    {% endfor %}
+                    {% if rb.disallowed_paths | length > 10 %}<div class="small text-muted mt-1">…and {{ rb.disallowed_paths | length - 10 }} more</div>{% endif %}
+                </div>
+                {% endif %}
+                {% if rb.issues %}
+                <div class="issues-list">
+                    {% for issue in rb.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
+
+        <!-- ── Mixed Content ── -->
+        {% if results.checks.mixed_content is defined %}
+        {% set mc = results.checks.mixed_content %}
+        {% if mc.mixed_content_found %}
+        <details class="check-item check-warn">
+            <summary>
+                <i data-lucide="alert-triangle" class="check-status-icon icon-warn" style="width:18px;height:18px;"></i>
+                <span class="check-name">Mixed Content</span>
+                <span class="check-summary-text">{{ mc.insecure_resources | length }} insecure resource(s)</span>
+                <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+            </summary>
+            <div class="check-body">
+                <p class="text-warning"><strong>⚠ HTTP resources found on HTTPS page</strong></p>
+                <div style="margin:0.5rem 0;">
+                    {% for url in mc.insecure_resources %}
+                    <div style="font-size:0.8rem;padding:0.2rem 0;border-bottom:1px solid var(--color-border);word-break:break-all;">
+                        <code>{{ url[:100] }}{% if url|length > 100 %}…{% endif %}</code>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if mc.issues %}
+                <div class="issues-list mt-2">
+                    {% for issue in mc.issues %}<div class="issue-item">{{ issue }}</div>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </details>
+        {% endif %}
         {% endif %}
 
         <!-- ══ SEO Analysis ══════════════════════════════════════════════ -->

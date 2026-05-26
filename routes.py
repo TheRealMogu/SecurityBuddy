@@ -1,6 +1,6 @@
 import json
 from urllib.parse import urlparse
-from flask import render_template, request, redirect, url_for, flash, session, make_response, send_file, jsonify
+from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash
 from app import app, db
@@ -8,8 +8,6 @@ from models import User, ScanResult, APIKey, MonitoringConfig
 from scanner import SecurityScanner
 from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
-from pdf_generator import SecurityReportPDF
-from premium_features import PremiumAnalytics, AdvancedScanner
 from notification_system import NotificationSystem
 from api_routes import api_bp
 from background_jobs import job_manager
@@ -53,12 +51,6 @@ def scan():
             except Exception as seo_err:
                 results['seo'] = {'error': str(seo_err)}
 
-        # Advanced scanning for premium users
-        if current_user.is_authenticated and current_user.is_premium:
-            advanced_scanner = AdvancedScanner()
-            advanced_results = advanced_scanner.advanced_vulnerability_scan(f"https://{target}")
-            results['advanced_scan'] = advanced_results
-        
         # Save scan result to database
         scan_result = ScanResult(
             target=target,
@@ -69,21 +61,6 @@ def scan():
         )
         db.session.add(scan_result)
         db.session.commit()
-        
-        # Send notification for premium users if critical issues found
-        if current_user.is_authenticated and current_user.is_premium:
-            critical_issues = []
-            if results.get('overall_score', 100) < 40:
-                checks = results.get('checks', {})
-                for check_name, check_data in checks.items():
-                    if isinstance(check_data, dict) and check_data.get('issues'):
-                        critical_issues.extend(check_data['issues'])
-                
-                if critical_issues:
-                    notification_system = NotificationSystem()
-                    notification_system.send_vulnerability_alert(
-                        current_user.email, scan_result, critical_issues
-                    )
         
         return render_template('scan_result.html', results=results, scan_id=scan_result.id)
         
@@ -181,70 +158,6 @@ def view_scan(scan_id):
     
     results = json.loads(scan_result.results)
     return render_template('scan_result.html', results=results, scan_id=scan_id)
-
-@app.route('/premium')
-def premium():
-    """Premium features preview"""
-    return render_template('premium.html')
-
-@app.route('/download-pdf/<int:scan_id>')
-@login_required
-def download_pdf(scan_id):
-    """Download PDF report (Premium feature)"""
-    if not current_user.is_premium:
-        flash('PDF downloads are available for premium users only.', 'warning')
-        return redirect(url_for('premium'))
-    
-    try:
-        scan_result = ScanResult.query.get_or_404(scan_id)
-        
-        # Check ownership
-        if scan_result.user_id != current_user.id:
-            flash('You do not have access to this scan result.', 'error')
-            return redirect(url_for('dashboard'))
-        
-        # Generate PDF
-        pdf_generator = SecurityReportPDF()
-        pdf_buffer = pdf_generator.generate_report(scan_result, {
-            'organization': current_user.organization
-        })
-        
-        filename = f"security_report_{scan_result.target}_{scan_result.created_at.strftime('%Y%m%d')}.pdf"
-        
-        response = make_response(pdf_buffer.getvalue())
-        response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
-        
-        return response
-        
-    except Exception as e:
-        flash(f'Failed to generate PDF: {str(e)}', 'error')
-        return redirect(url_for('view_scan', scan_id=scan_id))
-
-@app.route('/analytics')
-@login_required
-def analytics():
-    """Premium analytics dashboard"""
-    if not current_user.is_premium:
-        flash('Analytics are available for premium users only.', 'warning')
-        return redirect(url_for('premium'))
-    
-    try:
-        analytics = PremiumAnalytics()
-        
-        # Generate charts
-        trend_chart = analytics.generate_security_trend_chart(current_user.id)
-        comparison_chart = analytics.generate_domain_comparison_chart(current_user.id)
-        vulnerability_chart = analytics.generate_vulnerability_distribution(current_user.id)
-        
-        return render_template('analytics.html', 
-                             trend_chart=trend_chart,
-                             comparison_chart=comparison_chart,
-                             vulnerability_chart=vulnerability_chart)
-        
-    except Exception as e:
-        flash(f'Failed to load analytics: {str(e)}', 'error')
-        return redirect(url_for('dashboard'))
 
 @app.route('/api-keys')
 @login_required

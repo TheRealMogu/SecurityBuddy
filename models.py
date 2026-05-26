@@ -11,7 +11,6 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(64), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
-    is_premium = db.Column(db.Boolean, default=False)
     organization = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -34,7 +33,7 @@ class User(UserMixin, db.Model):
             user_id=self.id,
             name=name,
             key_hash=key_hash,
-            rate_limit=1000 if self.is_premium else 100
+            rate_limit=200
         )
         db.session.add(api_key)
         db.session.commit()

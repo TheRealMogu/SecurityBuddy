@@ -84,6 +84,11 @@ class SecurityScanner:
             results['checks']['admin_panels']    = self._check_admin_panels(target_url, baseline)
             if not is_ip:
                 results['checks']['domain_info'] = self._get_domain_info(target)
+                hostname = urlparse(target_url).hostname or target.split('/')[0]
+                results['checks']['dns_security'] = self._check_dns_security(hostname)
+
+            results['checks']['robots_txt']    = self._check_robots_txt(target_url)
+            results['checks']['mixed_content'] = self._check_mixed_content(target_url)
 
             results['overall_score'] = self._calculate_score(results['checks'])
             results['risk_level']    = self._determine_risk_level(results['overall_score'])
@@ -196,6 +201,16 @@ class SecurityScanner:
 
                     issuer = dict(x[0] for x in cert['issuer'])
                     results['issuer'] = issuer.get('organizationName', 'Unknown')
+
+                    tls_ver = ssock.version()
+                    results['tls_version'] = tls_ver
+                    if tls_ver == 'TLSv1.3':
+                        results['score'] += 5
+                    elif tls_ver not in ('TLSv1.3', 'TLSv1.2'):
+                        results['issues'].append(
+                            f'Outdated TLS version: {tls_ver} — upgrade to TLS 1.2 minimum, TLS 1.3 recommended'
+                        )
+                        results['score'] -= 10
         except ssl.SSLError as e:
             results['issues'].append(f'SSL Error: {str(e)}')
         except Exception as e:
@@ -536,6 +551,132 @@ class SecurityScanner:
         results['score'] = max(0, results['score'])
         return results
 
+    def _check_dns_security(self, domain):
+        results = {
+            'spf_record': None,
+            'spf_valid': False,
+            'dmarc_record': None,
+            'dmarc_valid': False,
+            'score': 0,
+            'issues': [],
+        }
+        try:
+            import dns.resolver
+            try:
+                for rdata in dns.resolver.resolve(domain, 'TXT'):
+                    txt = str(rdata).strip('"')
+                    if txt.startswith('v=spf1'):
+                        results['spf_record'] = txt
+                        results['spf_valid'] = True
+                        results['score'] += 5
+                        break
+            except Exception:
+                pass
+
+            if not results['spf_valid']:
+                results['issues'].append(
+                    'No SPF record found — domain can be used to forge sender addresses'
+                )
+
+            try:
+                for rdata in dns.resolver.resolve(f'_dmarc.{domain}', 'TXT'):
+                    txt = str(rdata).strip('"')
+                    if txt.startswith('v=DMARC1'):
+                        results['dmarc_record'] = txt
+                        results['dmarc_valid'] = True
+                        results['score'] += 5
+                        if 'p=none' in txt:
+                            results['issues'].append(
+                                'DMARC policy is "none" — spoofed emails are monitored but not blocked; '
+                                'upgrade to p=quarantine or p=reject'
+                            )
+                            results['score'] -= 2
+                        break
+            except Exception:
+                pass
+
+            if not results['dmarc_valid']:
+                results['issues'].append(
+                    'No DMARC record found — email authentication policy not configured'
+                )
+        except ImportError:
+            results['issues'].append('DNS check unavailable (dnspython not installed)')
+        except Exception as e:
+            results['issues'].append(f'DNS security check failed: {str(e)}')
+
+        results['score'] = max(0, results['score'])
+        return results
+
+    def _check_robots_txt(self, target_url):
+        results = {
+            'found': False,
+            'disallowed_paths': [],
+            'reveals_sensitive_paths': False,
+            'issues': [],
+        }
+        try:
+            resp = self.session.get(
+                f"{target_url.rstrip('/')}/robots.txt",
+                timeout=self.timeout,
+                allow_redirects=True,
+            )
+            if resp.status_code == 200 and len(resp.content) < 100_000:
+                body_lower = resp.content.lower()
+                if b'user-agent' in body_lower or b'disallow' in body_lower:
+                    results['found'] = True
+                    disallowed = []
+                    for line in resp.text.splitlines():
+                        line = line.strip()
+                        if line.lower().startswith('disallow:'):
+                            path = line.split(':', 1)[1].strip()
+                            if path:
+                                disallowed.append(path)
+                    results['disallowed_paths'] = disallowed[:20]
+
+                    sensitive_kw = [
+                        'admin', 'backup', 'config', 'private', 'secret',
+                        'api', 'internal', 'login', 'password', 'credential',
+                        'database', 'db', 'env',
+                    ]
+                    sensitive = [p for p in disallowed if any(kw in p.lower() for kw in sensitive_kw)]
+                    if sensitive:
+                        results['reveals_sensitive_paths'] = True
+                        preview = ', '.join(sensitive[:3])
+                        more = f' (+{len(sensitive)-3} more)' if len(sensitive) > 3 else ''
+                        results['issues'].append(
+                            f'robots.txt reveals {len(sensitive)} sensitive path(s): {preview}{more}'
+                        )
+        except Exception as e:
+            results['issues'].append(f'robots.txt check failed: {str(e)}')
+        return results
+
+    def _check_mixed_content(self, target_url):
+        results = {
+            'mixed_content_found': False,
+            'insecure_resources': [],
+            'score': 5,
+            'issues': [],
+        }
+        if not target_url.startswith('https://'):
+            return results
+        try:
+            resp = self.session.get(target_url, timeout=self.timeout)
+            pattern = r'''(?:src|href|action|data)\s*=\s*['"]?(http://[^'">\s]+)'''
+            matches = re.findall(pattern, resp.text, re.IGNORECASE)
+            seen = set()
+            unique = [m for m in matches if not (m in seen or seen.add(m))]
+            if unique:
+                results['mixed_content_found'] = True
+                results['insecure_resources'] = unique[:10]
+                results['score'] = 0
+                results['issues'].append(
+                    f'{len(unique)} insecure HTTP resource(s) on HTTPS page — '
+                    'mixed content can be intercepted and weakens HTTPS'
+                )
+        except Exception as e:
+            results['issues'].append(f'Mixed content check failed: {str(e)}')
+        return results
+
     def _get_domain_info(self, domain):
         results = {
             'domain': domain,
@@ -615,6 +756,17 @@ class SecurityScanner:
                 total += 3
             elif csp_quality['rating'] == 'weak':
                 total -= 5
+
+        # DNS security (domain scans only)
+        dns_sec = checks.get('dns_security', {})
+        if dns_sec:
+            total += min(dns_sec.get('score', 0), 10)
+
+        # Mixed content
+        mixed = checks.get('mixed_content', {})
+        if mixed:
+            total += min(mixed.get('score', 5), 5)
+
         return min(max(total, 0), 100)
 
     def _determine_risk_level(self, score):

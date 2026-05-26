@@ -42,12 +42,11 @@
         </div>
         <div class="stat-card">
             <div class="stat-icon">
-                <i data-lucide="{% if current_user.is_premium %}star{% else %}lock{% endif %}"
-                   style="width:20px;height:20px;"></i>
+                <i data-lucide="key" style="width:20px;height:20px;"></i>
             </div>
             <div>
-                <div class="stat-number">{% if current_user.is_premium %}Pro{% else %}Free{% endif %}</div>
-                <div class="stat-label">Account</div>
+                <div class="stat-number">{{ current_user.api_keys | length }}</div>
+                <div class="stat-label">API Keys</div>
             </div>
         </div>
         <div class="stat-card">
@@ -130,22 +129,6 @@
         </div>
     </div>
 
-    <!-- Premium CTA -->
-    {% if not current_user.is_premium %}
-    <div class="card mt-4" style="border-color:var(--color-primary-glow);background:linear-gradient(135deg,var(--color-primary-dim),transparent);">
-        <div class="card-body">
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
-                <div>
-                    <h4 style="font-family:var(--font-display);font-weight:800;margin-bottom:0.25rem;">Unlock Premium Features</h4>
-                    <p class="text-muted mb-0 small">PDF reports, scheduled monitoring, email alerts and advanced scanning.</p>
-                </div>
-                <a href="{{ url_for('premium') }}" class="btn btn-primary">
-                    <i data-lucide="star" style="width:15px;height:15px;"></i>Upgrade to Premium
-                </a>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 
 </div>
 {% endblock %}

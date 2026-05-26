@@ -16,9 +16,6 @@ from models import User, ScanResult, APIKey
 from app import db
 from scanner import SecurityScanner
 from validators import AdvancedValidator, clean_target
-from premium_features import AdvancedScanner
-
-
 def _is_safe_webhook_url(url):
     """Validate webhook URL to prevent SSRF: must be http/https and not target private IPs."""
     try:
@@ -127,12 +124,6 @@ def api_scan():
         scanner = SecurityScanner()
         results = scanner.scan_target(target)
         
-        # Advanced scanning for premium users
-        if advanced and request.api_user.is_premium:
-            advanced_scanner = AdvancedScanner()
-            advanced_results = advanced_scanner.advanced_vulnerability_scan(f"https://{target}")
-            results['advanced_scan'] = advanced_results
-        
         # Save scan result
         scan_result = ScanResult(
             target=target,
@@ -152,10 +143,6 @@ def api_scan():
             'scan_time': results.get('scan_time'),
             'results': results
         }
-        
-        # Add PDF link for premium users
-        if include_pdf and request.api_user.is_premium:
-            response_data['pdf_download_url'] = f"/api/v1/scan/{scan_result.id}/pdf"
         
         return jsonify(response_data), 200
         
@@ -237,49 +224,6 @@ def api_list_scans():
         return jsonify({
             'error': 'Failed to retrieve scans',
             'message': 'An error occurred while retrieving scan history'
-        }), 500
-
-@api_bp.route('/scan/<int:scan_id>/pdf', methods=['GET'])
-@require_api_key
-def api_download_pdf(scan_id):
-    """Download PDF report (Premium feature)"""
-    if not request.api_user.is_premium:
-        return jsonify({
-            'error': 'Premium feature',
-            'message': 'PDF downloads require a premium subscription'
-        }), 403
-    
-    try:
-        scan_result = ScanResult.query.get_or_404(scan_id)
-        
-        # Check ownership
-        if scan_result.user_id != request.api_user.id:
-            return jsonify({
-                'error': 'Access denied',
-                'message': 'You do not have access to this scan result'
-            }), 403
-        
-        # Generate PDF
-        from pdf_generator import SecurityReportPDF
-        pdf_generator = SecurityReportPDF()
-        pdf_buffer = pdf_generator.generate_report(scan_result)
-        
-        # Return PDF as base64 for API consumption
-        import base64
-        pdf_data = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
-        
-        return jsonify({
-            'scan_id': scan_id,
-            'target': scan_result.target,
-            'pdf_data': pdf_data,
-            'filename': f"security_report_{scan_result.target}_{datetime.now().strftime('%Y%m%d')}.pdf"
-        }), 200
-        
-    except Exception as e:
-        current_app.logger.error(f"API PDF generation error: {str(e)}")
-        return jsonify({
-            'error': 'PDF generation failed',
-            'message': 'An error occurred while generating the PDF report'
         }), 500
 
 @api_bp.route('/webhook', methods=['POST'])
@@ -414,7 +358,6 @@ def api_status():
             'user': {
                 'id': user.id,
                 'username': user.username,
-                'is_premium': user.is_premium,
                 'created_at': user.created_at.isoformat()
             },
             'api_key': {
@@ -425,10 +368,7 @@ def api_status():
             },
             'features': {
                 'basic_scanning': True,
-                'advanced_scanning': user.is_premium,
-                'pdf_reports': user.is_premium,
-                'webhook_integration': True,
-                'email_notifications': user.is_premium
+                'webhook_integration': True
             }
         }), 200
         
