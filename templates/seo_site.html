@@ -4,234 +4,398 @@
 {% block content %}
 {% set s = crawl.summary %}
 
-{# ── Header ── #}
-<div class="container" style="padding-top:2rem;padding-bottom:0.5rem;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
-        <div>
-            <div style="font-size:0.8rem;color:var(--color-text-muted);margin-bottom:0.25rem;">
-                <a href="{{ url_for('seo_scan') }}" style="color:var(--color-text-muted);text-decoration:none;">SEO Analyser</a>
-                <i data-lucide="chevron-right" style="width:12px;height:12px;vertical-align:-1px;margin:0 2px;"></i>
-                Site Report
-            </div>
-            <h1 style="font-size:1.55rem;font-weight:700;margin:0 0 0.2rem;">
-                <i data-lucide="globe" style="width:20px;height:20px;color:var(--color-primary);vertical-align:-2px;margin-right:6px;"></i>
-                {{ crawl.target }}
-            </h1>
-            <div style="font-size:0.85rem;color:var(--color-text-muted);">
-                {{ crawl.pages_crawled }} pages crawled and analysed
-                {% if crawl.sitemap_seeds_used %}
-                <span style="margin-left:0.4rem;padding:0.1rem 0.45rem;background:var(--color-bg-secondary,#f1f5f9);border-radius:4px;font-size:0.75rem;">
-                    {{ crawl.sitemap_seeds_used }} URLs seeded from sitemap
-                </span>
-                {% endif %}
-            </div>
+{# ── Top bar ── #}
+<div class="seo-topbar">
+    <div class="seo-topbar-inner">
+        <div class="seo-url-display">
+            <i data-lucide="globe" style="width:13px;height:13px;flex-shrink:0;"></i>
+            <span>{{ crawl.target }}</span>
         </div>
-        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-            <a href="{{ url_for('seo_scan') }}?target={{ crawl.target }}" class="btn btn-secondary" style="font-size:0.83rem;">
-                <i data-lucide="search" style="width:13px;height:13px;"></i> Analyse single page
+        <nav class="seo-tabs-nav" role="tablist">
+            <button class="seo-tab-btn active" data-tab="overview"  role="tab">Overview</button>
+            <button class="seo-tab-btn"         data-tab="issues"   role="tab">Issues</button>
+            <button class="seo-tab-btn"         data-tab="pages"    role="tab">Pages</button>
+            <button class="seo-tab-btn"         data-tab="site"     role="tab">Site checks</button>
+        </nav>
+        <div class="seo-topbar-action" style="display:flex;gap:0.5rem;">
+            <a href="{{ url_for('seo_scan') }}" class="btn btn-secondary" style="padding:0.35rem 0.9rem;font-size:0.82rem;">
+                <i data-lucide="search" style="width:13px;height:13px;"></i> Single page
             </a>
-            <a href="{{ url_for('seo_scan') }}" class="btn btn-primary" style="font-size:0.83rem;">
+            <a href="{{ url_for('seo_scan') }}" class="btn btn-primary" style="padding:0.35rem 0.9rem;font-size:0.82rem;">
                 <i data-lucide="refresh-cw" style="width:13px;height:13px;"></i> New crawl
             </a>
         </div>
     </div>
 </div>
 
-{# ── Summary cards ── #}
-<div class="container" style="margin-bottom:1.5rem;">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.8rem;">
-        {% set rc = 'risk-color-low' if crawl.site_rating == 'excellent' else ('risk-color-medium' if crawl.site_rating == 'good' else 'risk-color-high') %}
-        <div class="score-card {{ rc }}" style="padding:1rem;text-align:center;min-height:auto;">
-            <div style="font-size:2.4rem;font-weight:800;line-height:1;">{{ crawl.site_score }}</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Avg. SEO score</div>
-            <div class="seo-score-badge seo-rating-{{ crawl.site_rating }}" style="margin:0.4rem auto 0;display:inline-block;">
-                {{ crawl.site_rating | replace('_',' ') | title }}
+<div class="container seo-tab-content">
+
+{# ══════════════════════════════════
+   OVERVIEW TAB
+   ══════════════════════════════════ #}
+<div class="seo-tab-pane active" id="tab-overview" role="tabpanel">
+
+    {# 3-card top row #}
+    <div class="seo-overview-grid" style="grid-template-columns:240px 1fr 240px;">
+
+        {# Score card #}
+        {% set rating = crawl.site_rating %}
+        {% set score  = crawl.site_score %}
+        {% set rating_label = 'Excellent' if rating == 'excellent' else ('Good' if rating == 'good' else ('Needs work' if rating == 'needs_work' else 'Poor')) %}
+        <div class="seo-v2-card" style="display:flex;flex-direction:column;align-items:center;text-align:center;">
+            <div class="seo-v2-card-title">Avg. SEO Score</div>
+            <div class="seo-score-center">
+                <div id="siteScoreRing" data-score="{{ score }}">
+                    <svg viewBox="0 0 120 120" width="140" height="140" aria-label="Avg SEO score {{ score }}">
+                        <circle class="score-ring-bg" cx="60" cy="60" r="51"/>
+                        <circle class="score-ring-fill" cx="60" cy="60" r="51" id="siteScoreRingFill"/>
+                        <text class="score-number-text" x="60" y="55" dominant-baseline="central" text-anchor="middle" id="siteScoreNum">0</text>
+                        <text class="score-label-text"  x="60" y="76" dominant-baseline="central" text-anchor="middle">/100</text>
+                    </svg>
+                </div>
+                <div class="seo-score-badge seo-rating-{{ rating }}" style="font-size:0.95rem;">{{ rating_label }}</div>
+                <p class="seo-score-desc">{{ crawl.pages_crawled }} pages crawled{% if crawl.sitemap_seeds_used %} · {{ crawl.sitemap_seeds_used }} from sitemap{% endif %}</p>
             </div>
         </div>
-        <div class="score-card" style="padding:1rem;text-align:center;min-height:auto;">
-            <div style="font-size:2.4rem;font-weight:800;line-height:1;">{{ s.total_pages }}</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Pages analysed</div>
-        </div>
-        <div class="score-card" style="padding:1rem;text-align:center;min-height:auto;">
-            <div style="font-size:2.4rem;font-weight:800;line-height:1;color:var(--color-danger,#dc3545);">{{ s.total_issues }}</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Total issues</div>
-        </div>
-        <div class="score-card" style="padding:1rem;text-align:center;min-height:auto;">
-            <div style="font-size:2.4rem;font-weight:800;line-height:1;color:var(--color-warning,#f59e0b);">{{ s.total_warnings }}</div>
-            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.2rem;">Total warnings</div>
-        </div>
-        <div class="score-card" style="padding:1rem;min-height:auto;">
-            <div style="font-size:0.75rem;color:var(--color-text-muted);margin-bottom:0.5rem;">Score distribution</div>
-            {% set distr = [
-                (s.pages_good,     'Good ≥80',    '#22c55e'),
-                (s.pages_ok,       'OK 60–79',    '#f59e0b'),
-                (s.pages_poor,     'Poor 40–59',  '#f97316'),
-                (s.pages_critical, 'Critical <40','#ef4444'),
+
+        {# Score distribution card #}
+        <div class="seo-v2-card">
+            <div class="seo-v2-card-title">Score Distribution</div>
+            {% set dist = [
+                (s.pages_good,     'Good (≥80)',     '#22c55e', 80),
+                (s.pages_ok,       'OK (60–79)',      '#f59e0b', 60),
+                (s.pages_poor,     'Poor (40–59)',    '#f97316', 40),
+                (s.pages_critical, 'Critical (<40)', '#ef4444', 0),
             ] %}
-            {% for count, label, color in distr %}
-            {% if count %}
-            <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;margin-bottom:0.2rem;">
-                <span style="width:10px;height:10px;border-radius:50%;background:{{ color }};flex-shrink:0;display:inline-block;"></span>
-                <span style="flex:1;">{{ label }}</span>
-                <strong>{{ count }}</strong>
+            <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                {% for count, label, color, threshold in dist %}
+                {% set pct = ((count / s.total_pages) * 100)|round|int if s.total_pages > 0 else 0 %}
+                <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">
+                        <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;">
+                            <span style="width:9px;height:9px;border-radius:50%;background:{{ color }};flex-shrink:0;display:inline-block;"></span>
+                            {{ label }}
+                        </div>
+                        <span style="font-size:0.82rem;font-weight:600;">{{ count }}</span>
+                    </div>
+                    <div class="seo-bar-track">
+                        <div class="seo-bar-fill" style="width:{{ pct }}%;background:{{ color }};"></div>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
-            {% endif %}
+        </div>
+
+        {# Stats card #}
+        <div class="seo-v2-card" style="display:flex;flex-direction:column;gap:0.9rem;">
+            <div class="seo-v2-card-title">Summary</div>
+            {% macro stat_row(icon, label, val, cls='') %}
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+                <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;color:var(--color-text-muted);">
+                    <i data-lucide="{{ icon }}" style="width:14px;height:14px;"></i>{{ label }}
+                </div>
+                <span style="font-family:var(--font-display);font-weight:700;font-size:1.05rem;{% if cls %}color:{{ cls }};{% endif %}">{{ val }}</span>
+            </div>
+            {% endmacro %}
+            {{ stat_row('file-text', 'Pages analysed', s.total_pages) }}
+            {{ stat_row('x-circle', 'Total issues', s.total_issues, 'var(--color-danger)') }}
+            {{ stat_row('alert-triangle', 'Total warnings', s.total_warnings, 'var(--color-warning)') }}
+            {{ stat_row('check-circle', 'Pages scoring ≥ 80', s.pages_good, 'var(--color-success)') }}
+            <div style="border-top:1px solid var(--color-border);padding-top:0.75rem;margin-top:0.1rem;">
+                <button class="seo-score-issues-link" onclick="switchSiteTab('issues')" type="button">
+                    View all issues <i data-lucide="arrow-right" style="width:12px;height:12px;"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {# Top issues preview (first 5 common issues) #}
+    {% if crawl.common_issues %}
+    <div class="seo-metrics-section">
+        <div class="seo-metrics-header">
+            <div class="seo-metrics-title">
+                <i data-lucide="alert-triangle" style="width:17px;height:17px;color:var(--color-warning);"></i>
+                Top Issues Across Pages
+            </div>
+            <button class="seo-score-issues-link" onclick="switchSiteTab('issues')" type="button">
+                See all <i data-lucide="arrow-right" style="width:12px;height:12px;"></i>
+            </button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.6rem;">
+            {% for row in crawl.common_issues[:5] %}
+            <div style="display:flex;align-items:center;gap:1rem;padding:0.7rem 1rem;background:var(--color-surface-2);border-radius:var(--radius-md);border:1px solid var(--color-border);">
+                <span class="seo-nav-dot {% if row.severity == 'issue' %}fail{% else %}warn{% endif %}" style="width:8px;height:8px;flex-shrink:0;"></span>
+                <span style="flex:1;font-size:0.85rem;font-weight:600;">{{ row.check }}</span>
+                <span style="font-size:0.78rem;color:var(--color-text-muted);">{{ row.affected }}/{{ crawl.pages_crawled }} pages ({{ row.pct }}%)</span>
+                {% if row.example %}
+                <span style="font-size:0.75rem;color:var(--color-text-faint);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.example[:80] }}</span>
+                {% endif %}
+            </div>
             {% endfor %}
         </div>
     </div>
-</div>
+    {% endif %}
 
-{# ── Site-level checks (robots + sitemap) ── #}
-{% if crawl.root_robots or crawl.root_sitemap %}
-<div class="container" style="margin-bottom:1.5rem;">
-    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">
-        <i data-lucide="settings" style="width:16px;height:16px;color:var(--color-primary);vertical-align:-2px;margin-right:5px;"></i>
-        Site-level checks
-    </h2>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.75rem;">
-        {% for check_name, check_data in [('robots.txt', crawl.root_robots), ('XML Sitemap', crawl.root_sitemap)] %}
-        {% if check_data %}
-        {% set cs = 'fail' if check_data.issues else ('warn' if check_data.warnings else 'pass') %}
-        <div class="check-item check-{{ cs }}" style="padding:0.85rem 1rem;">
-            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
-                <i data-lucide="{% if cs == 'pass' %}check-circle{% elif cs == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
-                   class="icon-{{ cs }}" style="width:16px;height:16px;"></i>
-                <strong style="font-size:0.9rem;">{{ check_name }}</strong>
+    {# Bottom pages preview (worst 5) #}
+    <div class="seo-metrics-section">
+        <div class="seo-metrics-header">
+            <div class="seo-metrics-title">
+                <i data-lucide="trending-down" style="width:17px;height:17px;color:var(--color-danger);"></i>
+                Pages Needing Most Attention
             </div>
-            {% if check_data.issues %}<div class="issues-list" style="margin:0;">{% for i in check_data.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
-            {% if check_data.warnings %}<div class="seo-warnings-list" style="margin:0;">{% for w in check_data.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
-            {% if check_data.passed %}<div class="seo-passed-list" style="margin:0;">{% for p in check_data.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            <button class="seo-score-issues-link" onclick="switchSiteTab('pages')" type="button">
+                All pages <i data-lucide="arrow-right" style="width:12px;height:12px;"></i>
+            </button>
         </div>
-        {% endif %}
-        {% endfor %}
+        <div style="display:flex;flex-direction:column;gap:0.4rem;">
+            {% for page in (crawl.pages | sort(attribute='score'))[:5] %}
+            {% set pr = 'poor' if page.score < 40 else ('needs_work' if page.score < 60 else ('good' if page.score < 80 else 'excellent')) %}
+            <div style="display:flex;align-items:center;gap:0.75rem;padding:0.55rem 0.75rem;background:var(--color-surface-2);border-radius:var(--radius-md);border:1px solid var(--color-border);">
+                <span class="seo-score-badge seo-rating-{{ pr }}" style="min-width:38px;text-align:center;font-size:0.75rem;padding:0.15rem 0.4rem;flex-shrink:0;">{{ page.score }}</span>
+                <span style="flex:1;font-size:0.8rem;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-muted);">{{ page.url }}</span>
+            </div>
+            {% endfor %}
+        </div>
     </div>
-</div>
-{% endif %}
 
-{# ── Common issues across pages ── #}
-{% if crawl.common_issues %}
-<div class="container" style="margin-bottom:1.5rem;">
-    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;">
-        <i data-lucide="alert-triangle" style="width:16px;height:16px;color:var(--color-warning,#f59e0b);vertical-align:-2px;margin-right:5px;"></i>
-        Common issues across pages
-    </h2>
-    <div style="overflow-x:auto;">
-    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-        <thead>
-            <tr style="border-bottom:2px solid var(--color-border,#e2e8f0);">
-                <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;">Check</th>
-                <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600;">Pages affected</th>
-                <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600;">%</th>
-                <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;">Severity</th>
-                <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;min-width:200px;">Example</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for row in crawl.common_issues %}
-        <tr style="border-bottom:1px solid var(--color-border,#e2e8f0);">
-            <td style="padding:0.55rem 0.75rem;font-weight:500;">{{ row.check }}</td>
-            <td style="padding:0.55rem 0.75rem;text-align:center;">
-                <strong>{{ row.affected }}</strong> / {{ row.total_pages if row.total_pages is defined else crawl.pages_crawled }}
-            </td>
-            <td style="padding:0.55rem 0.75rem;text-align:center;">
-                <div style="background:var(--color-bg-secondary,#f1f5f9);border-radius:4px;overflow:hidden;width:60px;height:14px;margin:0 auto;position:relative;">
-                    <div style="height:100%;width:{{ row.pct }}%;background:{% if row.severity == 'issue' %}var(--color-danger,#ef4444){% else %}var(--color-warning,#f59e0b){% endif %};"></div>
-                </div>
-                <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:1px;">{{ row.pct }}%</div>
-            </td>
-            <td style="padding:0.55rem 0.75rem;">
-                <span class="{% if row.severity == 'issue' %}badge-danger{% else %}badge-warning{% endif %}"
-                      style="font-size:0.72rem;padding:0.15rem 0.5rem;border-radius:4px;font-weight:600;
-                             background:{% if row.severity == 'issue' %}#fee2e2{% else %}#fef3c7{% endif %};
-                             color:{% if row.severity == 'issue' %}#dc2626{% else %}#d97706{% endif %};">
-                    {{ row.severity | title }}
-                </span>
-            </td>
-            <td style="padding:0.55rem 0.75rem;color:var(--color-text-muted);font-size:0.8rem;max-width:320px;">
-                {% if row.example %}{{ row.example[:110] }}{% if row.example|length > 110 %}…{% endif %}{% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+</div>{# /overview #}
+
+
+{# ══════════════════════════════════
+   ISSUES TAB
+   ══════════════════════════════════ #}
+<div class="seo-tab-pane" id="tab-issues" role="tabpanel">
+    {% if crawl.common_issues %}
+    <div class="seo-v2-card">
+        <div class="seo-v2-card-title" style="text-align:left;margin-bottom:1rem;">Common Issues Across Pages</div>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--color-border);">
+                        <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;color:var(--color-text-muted);">Check</th>
+                        <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600;color:var(--color-text-muted);">Pages</th>
+                        <th style="text-align:center;padding:0.5rem 0.75rem;font-weight:600;color:var(--color-text-muted);">Coverage</th>
+                        <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;color:var(--color-text-muted);">Severity</th>
+                        <th style="text-align:left;padding:0.5rem 0.75rem;font-weight:600;color:var(--color-text-muted);min-width:200px;">Example</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in crawl.common_issues %}
+                <tr style="border-bottom:1px solid var(--color-border);">
+                    <td style="padding:0.6rem 0.75rem;font-weight:500;">{{ row.check }}</td>
+                    <td style="padding:0.6rem 0.75rem;text-align:center;">
+                        <strong>{{ row.affected }}</strong>
+                        <span style="color:var(--color-text-faint);font-size:0.78rem;"> / {{ crawl.pages_crawled }}</span>
+                    </td>
+                    <td style="padding:0.6rem 0.75rem;text-align:center;">
+                        <div style="background:var(--color-surface-3);border-radius:4px;overflow:hidden;width:70px;height:8px;margin:0 auto 3px;">
+                            <div style="height:100%;width:{{ row.pct }}%;background:{% if row.severity == 'issue' %}var(--color-danger){% else %}var(--color-warning){% endif %};"></div>
+                        </div>
+                        <span style="font-size:0.72rem;color:var(--color-text-faint);">{{ row.pct }}%</span>
+                    </td>
+                    <td style="padding:0.6rem 0.75rem;">
+                        <span style="font-size:0.72rem;padding:0.2rem 0.55rem;border-radius:var(--radius-full);font-weight:600;
+                              background:{% if row.severity == 'issue' %}var(--color-danger-dim){% else %}var(--color-warning-dim){% endif %};
+                              color:{% if row.severity == 'issue' %}var(--color-danger){% else %}var(--color-warning){% endif %};">
+                            {{ row.severity | title }}
+                        </span>
+                    </td>
+                    <td style="padding:0.6rem 0.75rem;color:var(--color-text-muted);font-size:0.78rem;max-width:300px;">
+                        {% if row.example %}{{ row.example[:120] }}{% if row.example|length > 120 %}…{% endif %}{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-</div>
-{% endif %}
+    {% else %}
+    <div class="seo-v2-card" style="text-align:center;padding:3rem;">
+        <i data-lucide="check-circle" style="width:40px;height:40px;color:var(--color-success);opacity:0.6;margin:0 auto 1rem;"></i>
+        <p class="text-muted">No common issues found across pages.</p>
+    </div>
+    {% endif %}
+</div>{# /issues #}
 
-{# ── Per-page results ── #}
-<div class="container" style="margin-bottom:3rem;">
+
+{# ══════════════════════════════════
+   PAGES TAB
+   ══════════════════════════════════ #}
+<div class="seo-tab-pane" id="tab-pages" role="tabpanel">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
-        <h2 style="font-size:1.1rem;font-weight:700;margin:0;">
-            <i data-lucide="list" style="width:16px;height:16px;color:var(--color-primary);vertical-align:-2px;margin-right:5px;"></i>
-            All pages
-        </h2>
-        <div style="font-size:0.78rem;color:var(--color-text-muted);">
-            Click a page to expand detailed check results
+        <p class="small text-muted">{{ crawl.pages_crawled }} pages · sorted by score (lowest first) · click to expand checks</p>
+        <div style="display:flex;gap:0.4rem;align-items:center;">
+            <input type="search" id="pageSearch" placeholder="Filter pages…"
+                   style="font-size:0.82rem;padding:0.3rem 0.75rem;border:1px solid var(--color-border);border-radius:var(--radius-full);background:var(--color-surface);color:var(--color-text);outline:none;width:200px;">
         </div>
     </div>
 
+    <div id="pagesList">
     {% for page in crawl.pages | sort(attribute='score') %}
-    {% set ps = 'fail' if page.score < 40 else ('warn' if page.score < 70 else 'pass') %}
-    {% set pr = 'poor' if page.score < 40 else ('needs_work' if page.score < 60 else ('good' if page.score < 80 else 'excellent')) %}
-    {% set pi_count = namespace(n=0) %}
-    {% set pw_count = namespace(n=0) %}
+    {% set ps2 = 'fail' if page.score < 40 else ('warn' if page.score < 70 else 'pass') %}
+    {% set pr2 = 'poor' if page.score < 40 else ('needs_work' if page.score < 60 else ('good' if page.score < 80 else 'excellent')) %}
+    {% set pi = namespace(n=0) %}
+    {% set pw = namespace(n=0) %}
     {% for k, v in page.checks.items() %}
       {% if v is mapping %}
-        {% set pi_count.n = pi_count.n + (v.get('issues', []) | length) %}
-        {% set pw_count.n = pw_count.n + (v.get('warnings', []) | length) %}
+        {% set pi.n = pi.n + (v.get('issues', []) | length) %}
+        {% set pw.n = pw.n + (v.get('warnings', []) | length) %}
       {% endif %}
     {% endfor %}
 
-    <details class="check-item check-{{ ps }}" style="margin-bottom:0.4rem;">
-        <summary style="display:flex;align-items:center;gap:0.6rem;padding:0.7rem 1rem;cursor:pointer;user-select:none;list-style:none;">
-            <span class="seo-score-badge seo-rating-{{ pr }}" style="min-width:42px;text-align:center;font-size:0.78rem;padding:0.2rem 0.45rem;flex-shrink:0;">
-                {{ page.score }}
+    <details class="seo-audit-item" style="margin-bottom:0.4rem;" data-url="{{ page.url|lower }}">
+        <summary style="display:flex;align-items:center;gap:0.7rem;padding:0.75rem 1.25rem;cursor:pointer;list-style:none;user-select:none;">
+            <summary::-webkit-details-marker { display:none; }
+            <span class="seo-score-badge seo-rating-{{ pr2 }}" style="min-width:38px;text-align:center;font-size:0.75rem;padding:0.18rem 0.4rem;flex-shrink:0;">{{ page.score }}</span>
+            <span style="flex:1;font-size:0.8rem;font-family:monospace;word-break:break-all;color:var(--color-text-muted);">{{ page.url }}</span>
+            <span style="flex-shrink:0;font-size:0.75rem;white-space:nowrap;display:flex;gap:0.5rem;">
+                {% if pi.n %}<span style="color:var(--color-danger);">{{ pi.n }} issue{{ 's' if pi.n != 1 }}</span>{% endif %}
+                {% if pw.n %}<span style="color:var(--color-warning);">{{ pw.n }} warn{{ 's' if pw.n != 1 }}</span>{% endif %}
             </span>
-            <span style="flex:1;font-size:0.83rem;word-break:break-all;font-family:var(--font-mono,monospace);">{{ page.url }}</span>
-            <span style="flex-shrink:0;font-size:0.75rem;color:var(--color-text-muted);white-space:nowrap;">
-                {% if pi_count.n %}<span style="color:var(--color-danger,#dc3545);">{{ pi_count.n }} issue{{ 's' if pi_count.n != 1 }}</span>{% endif %}
-                {% if pi_count.n and pw_count.n %} · {% endif %}
-                {% if pw_count.n %}<span style="color:var(--color-warning,#d97706);">{{ pw_count.n }} warn{{ 's' if pw_count.n != 1 }}</span>{% endif %}
-            </span>
-            <i data-lucide="chevron-down" class="check-chevron" style="width:15px;height:15px;flex-shrink:0;"></i>
+            <i data-lucide="chevron-down" style="width:14px;height:14px;flex-shrink:0;transition:transform 0.2s;" class="chevron-icon"></i>
         </summary>
 
-        <div class="check-body" style="padding:0.75rem 1rem 1rem;">
+        <div style="padding:0.75rem 1.25rem 1rem;border-top:1px solid var(--color-border);">
             {% if page.error %}
-                <div class="issue-item">Error: {{ page.error }}</div>
+            <div class="issue-item">Error: {{ page.error }}</div>
             {% else %}
-                {% for check_key, check_data in page.checks.items() %}
-                {% if check_data is mapping %}
-                {% set ck_s = 'fail' if check_data.issues else ('warn' if check_data.warnings else 'pass') %}
-                {% set ck_labels = {
-                    'url': 'URL & Redirect',
-                    'https': 'HTTPS',
-                    'meta': 'Meta Tags',
-                    'content': 'Content',
-                    'headings': 'Headings',
-                    'images': 'Images',
-                    'links': 'Links',
-                    'technical': 'Technical',
-                    'resources': 'Resources',
-                    'social': 'Open Graph',
-                    'structured_data': 'Structured Data',
-                } %}
-                <div style="margin-bottom:0.6rem;">
-                    <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;font-weight:600;color:var(--color-text-muted);margin-bottom:0.3rem;">
-                        <i data-lucide="{% if ck_s == 'pass' %}check-circle{% elif ck_s == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
-                           class="icon-{{ ck_s }}" style="width:13px;height:13px;"></i>
-                        {{ ck_labels.get(check_key, check_key | replace('_',' ') | title) }}
-                    </div>
-                    {% if check_data.issues %}<div class="issues-list" style="margin:0 0 0.3rem;">{% for i in check_data.issues %}<div class="issue-item" style="font-size:0.78rem;">{{ i }}</div>{% endfor %}</div>{% endif %}
-                    {% if check_data.warnings %}<div class="seo-warnings-list" style="margin:0 0 0.3rem;">{% for w in check_data.warnings %}<div class="seo-warning-item" style="font-size:0.78rem;">{{ w }}</div>{% endfor %}</div>{% endif %}
-                    {% if check_data.passed and ck_s == 'pass' %}<div class="seo-passed-list" style="margin:0;">{% for p in check_data.passed[:2] %}<div class="seo-passed-item" style="font-size:0.78rem;">{{ p }}</div>{% endfor %}</div>{% endif %}
+            {% set ck_labels = {
+                'url': 'URL & Redirect', 'https': 'HTTPS', 'meta': 'Meta Tags',
+                'content': 'Content', 'headings': 'Headings', 'images': 'Images',
+                'links': 'Links', 'technical': 'Technical', 'resources': 'Resources',
+                'social': 'Open Graph', 'structured_data': 'Structured Data',
+            } %}
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.6rem;">
+            {% for ck, cd in page.checks.items() %}
+            {% if cd is mapping %}
+            {% set cks = 'fail' if cd.issues else ('warn' if cd.warnings else 'pass') %}
+            <div style="background:var(--color-surface-2);border-radius:var(--radius-md);padding:0.6rem 0.75rem;border:1px solid var(--color-border);">
+                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem;">
+                    <i data-lucide="{% if cks == 'pass' %}check-circle{% elif cks == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                       class="icon-{{ cks }}" style="width:13px;height:13px;flex-shrink:0;"></i>
+                    <span style="font-size:0.78rem;font-weight:600;color:var(--color-text-muted);">{{ ck_labels.get(ck, ck|replace('_',' ')|title) }}</span>
                 </div>
+                {% if cd.issues %}<div class="issues-list" style="margin:0;">{% for i in cd.issues[:2] %}<div class="issue-item" style="font-size:0.75rem;">{{ i[:100] }}{% if i|length > 100 %}…{% endif %}</div>{% endfor %}</div>
+                {% elif cd.warnings %}<div class="seo-warnings-list" style="margin:0;">{% for w in cd.warnings[:1] %}<div class="seo-warning-item" style="font-size:0.75rem;">{{ w[:100] }}{% if w|length > 100 %}…{% endif %}</div>{% endfor %}</div>
+                {% elif cd.passed %}<div class="seo-passed-list" style="margin:0;">{% for p in cd.passed[:1] %}<div class="seo-passed-item" style="font-size:0.75rem;">{{ p[:80] }}</div>{% endfor %}</div>
                 {% endif %}
-                {% endfor %}
+            </div>
+            {% endif %}
+            {% endfor %}
+            </div>
             {% endif %}
         </div>
     </details>
     {% endfor %}
-</div>
+    </div>
+</div>{# /pages #}
 
+
+{# ══════════════════════════════════
+   SITE CHECKS TAB
+   ══════════════════════════════════ #}
+<div class="seo-tab-pane" id="tab-site" role="tabpanel">
+    <div class="seo-audit-items">
+    {% for check_name, check_data in [('robots.txt', crawl.root_robots), ('XML Sitemap', crawl.root_sitemap)] %}
+    {% if check_data %}
+    {% set cks = 'fail' if check_data.issues else ('warn' if check_data.warnings else 'pass') %}
+    {% set sc_val = 0 if check_data.issues else (60 if check_data.warnings else 100) %}
+    <div class="seo-audit-item">
+        <div class="seo-audit-body">
+            <div class="seo-audit-score-col {{ cks }}">
+                <span class="seo-audit-score-num">{{ sc_val }}</span>
+                <span class="seo-audit-score-den">/100</span>
+            </div>
+            <div class="seo-audit-divider"></div>
+            <div class="seo-audit-main">
+                <div class="seo-audit-name">{{ check_name }}</div>
+                <div class="seo-audit-msg {{ cks }}">
+                    <i data-lucide="{% if cks == 'pass' %}check-circle{% elif cks == 'warn' %}alert-triangle{% else %}x-circle{% endif %}"
+                       style="width:15px;height:15px;flex-shrink:0;margin-top:1px;"></i>
+                    <span>{% if check_data.issues %}{{ check_data.issues[0][:150] }}{% elif check_data.warnings %}{{ check_data.warnings[0][:150] }}{% elif check_data.passed %}{{ check_data.passed[0][:150] }}{% endif %}</span>
+                </div>
+            </div>
+        </div>
+        {% if check_data.issues or check_data.warnings or check_data.passed %}
+        <details class="seo-audit-expand">
+            <summary>
+                <span><i data-lucide="lightbulb" style="width:13px;height:13px;vertical-align:-2px;margin-right:4px;"></i>Details</span>
+                <i data-lucide="chevron-down" style="width:14px;height:14px;" class="chevron-icon"></i>
+            </summary>
+            <div class="seo-audit-expand-body">
+                {% if check_data.issues %}<div class="issues-list">{% for i in check_data.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+                {% if check_data.warnings %}<div class="seo-warnings-list">{% for w in check_data.warnings %}<div class="seo-warning-item">{{ w }}</div>{% endfor %}</div>{% endif %}
+                {% if check_data.passed %}<div class="seo-passed-list">{% for p in check_data.passed %}<div class="seo-passed-item">{{ p }}</div>{% endfor %}</div>{% endif %}
+            </div>
+        </details>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% if not crawl.root_robots and not crawl.root_sitemap %}
+    <div class="seo-v2-card" style="text-align:center;padding:2.5rem;">
+        <p class="text-muted">No site-level checks available.</p>
+    </div>
+    {% endif %}
+    </div>
+</div>{# /site #}
+
+</div>{# /seo-tab-content #}
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Score ring ── */
+(function() {
+    const wrapper = document.getElementById('siteScoreRing');
+    if (!wrapper) return;
+    const score = parseInt(wrapper.dataset.score, 10) || 0;
+    const fill  = document.getElementById('siteScoreRingFill');
+    const numEl = document.getElementById('siteScoreNum');
+    if (!fill || !numEl) return;
+    const r = 51, C = 2 * Math.PI * r;
+    fill.style.strokeDasharray  = C;
+    fill.style.strokeDashoffset = C;
+    requestAnimationFrame(() => setTimeout(() => { fill.style.strokeDashoffset = C * (1 - score / 100); }, 120));
+    const dur = 900, start = performance.now();
+    function tick(now) {
+        const t = Math.min((now - start) / dur, 1);
+        const e = 1 - Math.pow(1 - t, 3);
+        numEl.textContent = Math.round(e * score);
+        if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+})();
+
+/* ── Tab switching ── */
+function switchSiteTab(name) {
+    document.querySelectorAll('.seo-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.seo-tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+document.querySelectorAll('.seo-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchSiteTab(btn.dataset.tab));
+});
+
+/* ── Chevron rotate ── */
+document.querySelectorAll('.seo-audit-item details, details[data-url]').forEach(det => {
+    det.addEventListener('toggle', function() {
+        const icon = this.querySelector('.chevron-icon');
+        if (icon) icon.style.transform = this.open ? 'rotate(180deg)' : '';
+    });
+});
+
+/* ── Page search filter ── */
+const pageSearch = document.getElementById('pageSearch');
+if (pageSearch) {
+    pageSearch.addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        document.querySelectorAll('#pagesList details[data-url]').forEach(el => {
+            el.style.display = el.dataset.url.includes(q) ? '' : 'none';
+        });
+    });
+}
+
+lucide.createIcons();
+</script>
 {% endblock %}

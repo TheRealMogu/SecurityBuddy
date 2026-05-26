@@ -237,8 +237,10 @@
 {% endfor %}
 
 {# Pagespeed data shortcuts #}
-{% set ps = results.checks.pagespeed if results.checks.pagespeed is defined else {} %}
-{% set has_ps = ps and ps.performance_score is not none %}
+{% set ps     = results.checks.pagespeed         if results.checks.pagespeed         is defined else {} %}
+{% set ps_dsk = results.checks.pagespeed_desktop if results.checks.pagespeed_desktop is defined else {} %}
+{% set has_ps     = ps     and ps.performance_score     is not none %}
+{% set has_ps_dsk = ps_dsk and ps_dsk.performance_score is not none %}
 
 {# Content data shortcuts #}
 {% set cq = results.checks.content if results.checks.content is defined else {} %}
@@ -373,34 +375,39 @@
                 UX &amp; Performance Metrics
             </div>
             <div class="seo-perf-mobile-toggle">
-                <button class="seo-perf-toggle-btn active" type="button">Mobile</button>
-                <button class="seo-perf-toggle-btn" type="button" style="opacity:0.5;" title="Desktop data not available in this plan">Desktop</button>
+                <button class="seo-perf-toggle-btn active" data-strategy="mobile" type="button">Mobile</button>
+                <button class="seo-perf-toggle-btn {% if not has_ps_dsk %}seo-perf-toggle-disabled{% endif %}" data-strategy="desktop" type="button"
+                    {% if not has_ps_dsk %}title="Desktop data not available — set GOOGLE_PSI_API_KEY" disabled{% endif %}>Desktop</button>
             </div>
         </div>
-        <div class="seo-perf-grid">
-            {% macro perf_item(label, value, cls) %}
-            <div class="seo-perf-item">
-                <div class="seo-perf-item-left">
-                    <div class="seo-perf-bullet {{ cls }}"></div>
-                    <span class="seo-perf-label">{{ label }}</span>
-                </div>
-                <span class="seo-perf-value {{ cls }}">{{ value }}</span>
+        {% macro perf_item(label, value, cls) %}
+        <div class="seo-perf-item">
+            <div class="seo-perf-item-left">
+                <div class="seo-perf-bullet {{ cls }}"></div>
+                <span class="seo-perf-label">{{ label }}</span>
             </div>
-            {% endmacro %}
-
-            {% set fcp_cls = 'good' if ps.fcp_ms is not none and ps.fcp_ms <= 1800 else ('warn' if ps.fcp_ms is not none and ps.fcp_ms <= 3000 else 'bad') %}
-            {% set tti_cls = 'good' if ps.tti_ms is not none and ps.tti_ms <= 3800 else ('warn' if ps.tti_ms is not none and ps.tti_ms <= 7300 else 'bad') %}
-            {% set si_cls  = 'good' if ps.speed_index_ms is not none and ps.speed_index_ms <= 3400 else ('warn' if ps.speed_index_ms is not none and ps.speed_index_ms <= 5800 else 'bad') %}
-            {% set tbt_cls = 'good' if ps.tbt_ms is not none and ps.tbt_ms <= 200 else ('warn' if ps.tbt_ms is not none and ps.tbt_ms <= 600 else 'bad') %}
-            {% set lcp_cls = 'good' if ps.lcp_ms is not none and ps.lcp_ms <= 2500 else ('warn' if ps.lcp_ms is not none and ps.lcp_ms <= 4000 else 'bad') %}
-            {% set cls_cls = 'good' if ps.cls is not none and ps.cls <= 0.1 else ('warn' if ps.cls is not none and ps.cls <= 0.25 else 'bad') %}
-
-            {{ perf_item('First Contentful Paint', '%.1fs'|format(ps.fcp_ms/1000) if ps.fcp_ms is not none else '—', fcp_cls) }}
-            {{ perf_item('Time to Interactive',    '%.1fs'|format(ps.tti_ms/1000) if ps.tti_ms is not none else '—',  tti_cls) }}
-            {{ perf_item('Speed Index',             '%.1fs'|format(ps.speed_index_ms/1000) if ps.speed_index_ms is not none else '—', si_cls) }}
-            {{ perf_item('Total Blocking Time',     '%dms'|format(ps.tbt_ms) if ps.tbt_ms is not none else '—',  tbt_cls) }}
-            {{ perf_item('Largest Contentful Paint','%.1fs'|format(ps.lcp_ms/1000) if ps.lcp_ms is not none else '—', lcp_cls) }}
-            {{ perf_item('Cumulative Layout Shift', ps.cls|string if ps.cls is not none else '—',  cls_cls) }}
+            <span class="seo-perf-value {{ cls }}">{{ value }}</span>
+        </div>
+        {% endmacro %}
+        {% macro perf_grid(p) %}
+        {% set fcp_cls = 'good' if p.fcp_ms is not none and p.fcp_ms <= 1800 else ('warn' if p.fcp_ms is not none and p.fcp_ms <= 3000 else 'bad') %}
+        {% set tti_cls = 'good' if p.tti_ms is not none and p.tti_ms <= 3800 else ('warn' if p.tti_ms is not none and p.tti_ms <= 7300 else 'bad') %}
+        {% set si_cls  = 'good' if p.speed_index_ms is not none and p.speed_index_ms <= 3400 else ('warn' if p.speed_index_ms is not none and p.speed_index_ms <= 5800 else 'bad') %}
+        {% set tbt_cls = 'good' if p.tbt_ms is not none and p.tbt_ms <= 200 else ('warn' if p.tbt_ms is not none and p.tbt_ms <= 600 else 'bad') %}
+        {% set lcp_cls = 'good' if p.lcp_ms is not none and p.lcp_ms <= 2500 else ('warn' if p.lcp_ms is not none and p.lcp_ms <= 4000 else 'bad') %}
+        {% set cls_cls = 'good' if p.cls is not none and p.cls <= 0.1 else ('warn' if p.cls is not none and p.cls <= 0.25 else 'bad') %}
+        <div class="seo-perf-grid">
+            {{ perf_item('First Contentful Paint', '%.1fs'|format(p.fcp_ms/1000) if p.fcp_ms is not none else '—', fcp_cls) }}
+            {{ perf_item('Time to Interactive',    '%.1fs'|format(p.tti_ms/1000) if p.tti_ms is not none else '—', tti_cls) }}
+            {{ perf_item('Speed Index',            '%.1fs'|format(p.speed_index_ms/1000) if p.speed_index_ms is not none else '—', si_cls) }}
+            {{ perf_item('Total Blocking Time',    '%dms'|format(p.tbt_ms) if p.tbt_ms is not none else '—', tbt_cls) }}
+            {{ perf_item('Largest Contentful Paint','%.1fs'|format(p.lcp_ms/1000) if p.lcp_ms is not none else '—', lcp_cls) }}
+            {{ perf_item('Cumulative Layout Shift', p.cls|string if p.cls is not none else '—', cls_cls) }}
+        </div>
+        {% endmacro %}
+        <div class="perf-panel active" data-strategy="mobile">{{ perf_grid(ps) }}</div>
+        <div class="perf-panel" data-strategy="desktop">
+            {% if has_ps_dsk %}{{ perf_grid(ps_dsk) }}{% else %}<p class="small text-muted" style="padding:0.5rem 0;">Desktop data not available.</p>{% endif %}
         </div>
     </div>
     {% endif %}
@@ -954,121 +961,87 @@
    PERFORMANCE TAB
    ══════════════════════════════════ #}
 <div class="seo-tab-pane" id="tab-performance" role="tabpanel">
-    {% if has_ps %}
-    {# Big score header #}
-    <div class="seo-perf-tab-header">
-        <div class="seo-perf-big-score">
-            <div class="seo-perf-big-num {% if ps.performance_score >= 90 %}good{% elif ps.performance_score >= 50 %}warn{% else %}bad{% endif %}">
-                {{ ps.performance_score }}
-            </div>
-            <div class="seo-perf-big-label">Lighthouse Score</div>
-        </div>
-        <div style="flex:1;">
-            <p class="small text-muted" style="margin-bottom:0.75rem;">
-                Data generated from tests done on your website with a mobile device.
-            </p>
-            <div class="seo-perf-grid">
-                {% macro ph(label, val, cls) %}
-                <div class="seo-perf-item">
-                    <div class="seo-perf-item-left">
-                        <div class="seo-perf-bullet {{ cls }}"></div>
-                        <span class="seo-perf-label">{{ label }}</span>
-                    </div>
-                    <span class="seo-perf-value {{ cls }}">{{ val }}</span>
-                </div>
-                {% endmacro %}
-                {% set fcp_cls = 'good' if ps.fcp_ms is not none and ps.fcp_ms <= 1800 else ('warn' if ps.fcp_ms is not none and ps.fcp_ms <= 3000 else 'bad') %}
-                {% set tti_cls = 'good' if ps.tti_ms is not none and ps.tti_ms <= 3800 else ('warn' if ps.tti_ms is not none and ps.tti_ms <= 7300 else 'bad') %}
-                {% set si_cls  = 'good' if ps.speed_index_ms is not none and ps.speed_index_ms <= 3400 else ('warn' if ps.speed_index_ms is not none and ps.speed_index_ms <= 5800 else 'bad') %}
-                {% set tbt_cls = 'good' if ps.tbt_ms is not none and ps.tbt_ms <= 200 else ('warn' if ps.tbt_ms is not none and ps.tbt_ms <= 600 else 'bad') %}
-                {% set lcp_cls = 'good' if ps.lcp_ms is not none and ps.lcp_ms <= 2500 else ('warn' if ps.lcp_ms is not none and ps.lcp_ms <= 4000 else 'bad') %}
-                {% set cls_cls = 'good' if ps.cls is not none and ps.cls <= 0.1 else ('warn' if ps.cls is not none and ps.cls <= 0.25 else 'bad') %}
-                {{ ph('First Contentful Paint', '%.1fs'|format(ps.fcp_ms/1000) if ps.fcp_ms is not none else '—', fcp_cls) }}
-                {{ ph('Time to Interactive', '%.1fs'|format(ps.tti_ms/1000) if ps.tti_ms is not none else '—', tti_cls) }}
-                {{ ph('Speed Index', '%.1fs'|format(ps.speed_index_ms/1000) if ps.speed_index_ms is not none else '—', si_cls) }}
-                {{ ph('Total Blocking Time', '%dms'|format(ps.tbt_ms) if ps.tbt_ms is not none else '—', tbt_cls) }}
-                {{ ph('Largest Contentful Paint', '%.1fs'|format(ps.lcp_ms/1000) if ps.lcp_ms is not none else '—', lcp_cls) }}
-                {{ ph('Cumulative Layout Shift', ps.cls|string if ps.cls is not none else '—', cls_cls) }}
-            </div>
+    {% if has_ps or has_ps_dsk %}
+
+    {# Strategy selector #}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+        <div class="seo-perf-mobile-toggle" id="perfTabToggle">
+            <button class="seo-perf-toggle-btn active" data-strategy="mobile" type="button">Mobile</button>
+            <button class="seo-perf-toggle-btn {% if not has_ps_dsk %}seo-perf-toggle-disabled{% endif %}" data-strategy="desktop" type="button"
+                {% if not has_ps_dsk %}disabled title="Set GOOGLE_PSI_API_KEY to enable desktop data"{% endif %}>Desktop</button>
         </div>
     </div>
 
-    {# Detail items per metric #}
+    {# ── Macro: full strategy panel ── #}
+    {% macro perf_tab_panel(p, label) %}
+    {% if p and p.performance_score is not none %}
+    {# Big score header #}
+    <div class="seo-perf-tab-header">
+        <div class="seo-perf-big-score">
+            <div class="seo-perf-big-num {% if p.performance_score >= 90 %}good{% elif p.performance_score >= 50 %}warn{% else %}bad{% endif %}">
+                {{ p.performance_score }}
+            </div>
+            <div class="seo-perf-big-label">Lighthouse · {{ label }}</div>
+        </div>
+        <div style="flex:1;">
+            <p class="small text-muted" style="margin-bottom:0.75rem;">
+                Real-time metrics from a {{ label|lower }} device via PageSpeed Insights.
+            </p>
+            {% set fcp_cls = 'good' if p.fcp_ms is not none and p.fcp_ms <= 1800 else ('warn' if p.fcp_ms is not none and p.fcp_ms <= 3000 else 'bad') %}
+            {% set tti_cls = 'good' if p.tti_ms is not none and p.tti_ms <= 3800 else ('warn' if p.tti_ms is not none and p.tti_ms <= 7300 else 'bad') %}
+            {% set si_cls  = 'good' if p.speed_index_ms is not none and p.speed_index_ms <= 3400 else ('warn' if p.speed_index_ms is not none and p.speed_index_ms <= 5800 else 'bad') %}
+            {% set tbt_cls = 'good' if p.tbt_ms is not none and p.tbt_ms <= 200 else ('warn' if p.tbt_ms is not none and p.tbt_ms <= 600 else 'bad') %}
+            {% set lcp_cls = 'good' if p.lcp_ms is not none and p.lcp_ms <= 2500 else ('warn' if p.lcp_ms is not none and p.lcp_ms <= 4000 else 'bad') %}
+            {% set cls_cls = 'good' if p.cls is not none and p.cls <= 0.1 else ('warn' if p.cls is not none and p.cls <= 0.25 else 'bad') %}
+            <div class="seo-perf-grid">
+                {% macro ph(lbl, val, cls) %}<div class="seo-perf-item"><div class="seo-perf-item-left"><div class="seo-perf-bullet {{ cls }}"></div><span class="seo-perf-label">{{ lbl }}</span></div><span class="seo-perf-value {{ cls }}">{{ val }}</span></div>{% endmacro %}
+                {{ ph('First Contentful Paint', '%.1fs'|format(p.fcp_ms/1000) if p.fcp_ms is not none else '—', fcp_cls) }}
+                {{ ph('Time to Interactive', '%.1fs'|format(p.tti_ms/1000) if p.tti_ms is not none else '—', tti_cls) }}
+                {{ ph('Speed Index', '%.1fs'|format(p.speed_index_ms/1000) if p.speed_index_ms is not none else '—', si_cls) }}
+                {{ ph('Total Blocking Time', '%dms'|format(p.tbt_ms) if p.tbt_ms is not none else '—', tbt_cls) }}
+                {{ ph('Largest Contentful Paint', '%.1fs'|format(p.lcp_ms/1000) if p.lcp_ms is not none else '—', lcp_cls) }}
+                {{ ph('Cumulative Layout Shift', p.cls|string if p.cls is not none else '—', cls_cls) }}
+            </div>
+        </div>
+    </div>
+    {# Detail cards #}
     <div class="seo-perf-detail-items">
-
-        {% macro perf_detail(name, val_str, cls, desc, is_cwv=False) %}
+        {% macro pd(name, val_str, cls, desc, cwv=False) %}
         <div class="seo-perf-detail-item">
             <div class="seo-perf-detail-header">
-                <div>
-                    <span class="seo-perf-detail-name {{ cls }}">{{ name }}</span>
-                    {% if is_cwv %}<span class="badge badge-neutral" style="font-size:0.68rem;margin-left:0.4rem;">Core Web Vital</span>{% endif %}
-                </div>
-                <div class="seo-perf-detail-val">
-                    <span>{{ val_str }}</span>
-                    <span class="seo-perf-score-pill {{ cls }}">{{ '✓ Good' if cls == 'good' else ('⚠ Improve' if cls == 'warn' else '✗ Poor') }}</span>
-                </div>
+                <div><span class="seo-perf-detail-name {{ cls }}">{{ name }}</span>{% if cwv %}<span class="badge badge-neutral" style="font-size:0.68rem;margin-left:0.4rem;">Core Web Vital</span>{% endif %}</div>
+                <div class="seo-perf-detail-val"><span>{{ val_str }}</span><span class="seo-perf-score-pill {{ cls }}">{{ '✓ Good' if cls == 'good' else ('⚠ Improve' if cls == 'warn' else '✗ Poor') }}</span></div>
             </div>
             <p class="seo-perf-detail-desc">{{ desc }}</p>
         </div>
         {% endmacro %}
-
-        {% if ps.fcp_ms is not none %}
-        {{ perf_detail('First Contentful Paint',
-            '%.1fs'|format(ps.fcp_ms/1000),
-            'good' if ps.fcp_ms <= 1800 else ('warn' if ps.fcp_ms <= 3000 else 'bad'),
-            'First Contentful Paint marks the time at which the first text or image is painted.') }}
-        {% endif %}
-
-        {% if ps.tti_ms is not none %}
-        {{ perf_detail('Time to Interactive',
-            '%.1fs'|format(ps.tti_ms/1000),
-            'good' if ps.tti_ms <= 3800 else ('warn' if ps.tti_ms <= 7300 else 'bad'),
-            'Time to Interactive is the amount of time it takes for the page to become fully interactive.') }}
-        {% endif %}
-
-        {% if ps.speed_index_ms is not none %}
-        {{ perf_detail('Speed Index',
-            '%.1fs'|format(ps.speed_index_ms/1000),
-            'good' if ps.speed_index_ms <= 3400 else ('warn' if ps.speed_index_ms <= 5800 else 'bad'),
-            'Speed Index shows how quickly the contents of a page are visually populated.') }}
-        {% endif %}
-
-        {% if ps.tbt_ms is not none %}
-        {{ perf_detail('Total Blocking Time',
-            '%dms'|format(ps.tbt_ms),
-            'good' if ps.tbt_ms <= 200 else ('warn' if ps.tbt_ms <= 600 else 'bad'),
-            'Sum of all time periods between FCP and Time to Interactive where task length exceeded 50ms.') }}
-        {% endif %}
-
-        {% if ps.lcp_ms is not none %}
-        {{ perf_detail('Largest Contentful Paint',
-            '%.1fs'|format(ps.lcp_ms/1000),
-            'good' if ps.lcp_ms <= 2500 else ('warn' if ps.lcp_ms <= 4000 else 'bad'),
-            'Largest Contentful Paint marks the time at which the largest text or image is painted.',
-            True) }}
-        {% endif %}
-
-        {% if ps.cls is not none %}
-        {{ perf_detail('Cumulative Layout Shift',
-            ps.cls|string,
-            'good' if ps.cls <= 0.1 else ('warn' if ps.cls <= 0.25 else 'bad'),
-            'Cumulative Layout Shift measures the movement of visible elements within the viewport.',
-            True) }}
-        {% endif %}
-
-        {% if ps.field_lcp_ms is not none %}
+        {% if p.fcp_ms is not none %}{{ pd('First Contentful Paint','%.1fs'|format(p.fcp_ms/1000),'good' if p.fcp_ms<=1800 else ('warn' if p.fcp_ms<=3000 else 'bad'),'First Contentful Paint marks the time at which the first text or image is painted.') }}{% endif %}
+        {% if p.tti_ms is not none %}{{ pd('Time to Interactive','%.1fs'|format(p.tti_ms/1000),'good' if p.tti_ms<=3800 else ('warn' if p.tti_ms<=7300 else 'bad'),'Time to Interactive is the amount of time it takes for the page to become fully interactive.') }}{% endif %}
+        {% if p.speed_index_ms is not none %}{{ pd('Speed Index','%.1fs'|format(p.speed_index_ms/1000),'good' if p.speed_index_ms<=3400 else ('warn' if p.speed_index_ms<=5800 else 'bad'),'Speed Index shows how quickly the contents of a page are visually populated.') }}{% endif %}
+        {% if p.tbt_ms is not none %}{{ pd('Total Blocking Time','%dms'|format(p.tbt_ms),'good' if p.tbt_ms<=200 else ('warn' if p.tbt_ms<=600 else 'bad'),'Sum of all time periods between FCP and Time to Interactive where task length exceeded 50ms.') }}{% endif %}
+        {% if p.lcp_ms is not none %}{{ pd('Largest Contentful Paint','%.1fs'|format(p.lcp_ms/1000),'good' if p.lcp_ms<=2500 else ('warn' if p.lcp_ms<=4000 else 'bad'),'Largest Contentful Paint marks the time at which the largest text or image is painted.',True) }}{% endif %}
+        {% if p.cls is not none %}{{ pd('Cumulative Layout Shift',p.cls|string,'good' if p.cls<=0.1 else ('warn' if p.cls<=0.25 else 'bad'),'Cumulative Layout Shift measures the movement of visible elements within the viewport.',True) }}{% endif %}
+        {% if p.field_lcp_ms is not none %}
         <div class="seo-perf-detail-item">
             <p class="seo-perf-detail-desc" style="color:var(--color-text-muted);">
                 <strong>Real-user data (CrUX 75th percentile):</strong>
-                LCP {{ '%.2f'|format(ps.field_lcp_ms/1000) }}s
-                {% if ps.field_fcp_ms is not none %} · FCP {{ '%.2f'|format(ps.field_fcp_ms/1000) }}s{% endif %}
-                {% if ps.field_lcp_category %}
-                <span class="badge {% if ps.field_lcp_category == 'FAST' %}badge-success{% elif ps.field_lcp_category == 'AVERAGE' %}badge-warning{% else %}badge-danger{% endif %}" style="margin-left:0.3rem;">{{ ps.field_lcp_category }}</span>
-                {% endif %}
+                LCP {{ '%.2f'|format(p.field_lcp_ms/1000) }}s
+                {% if p.field_fcp_ms is not none %} · FCP {{ '%.2f'|format(p.field_fcp_ms/1000) }}s{% endif %}
+                {% if p.field_lcp_category %}<span class="badge {% if p.field_lcp_category == 'FAST' %}badge-success{% elif p.field_lcp_category == 'AVERAGE' %}badge-warning{% else %}badge-danger{% endif %}" style="margin-left:0.3rem;">{{ p.field_lcp_category }}</span>{% endif %}
             </p>
         </div>
         {% endif %}
     </div>
+    {% else %}
+    <div class="seo-v2-card" style="text-align:center;padding:2.5rem;">
+        <i data-lucide="zap-off" style="width:36px;height:36px;opacity:0.3;margin:0 auto 0.75rem;"></i>
+        <p class="text-muted">{{ label }} data not available.</p>
+    </div>
+    {% endif %}
+    {% endmacro %}
+
+    <div class="perf-panel active" data-strategy="mobile">{{ perf_tab_panel(ps, 'Mobile') }}</div>
+    <div class="perf-panel" data-strategy="desktop">{{ perf_tab_panel(ps_dsk, 'Desktop') }}</div>
 
     {% else %}
     <div class="seo-v2-card" style="text-align:center;padding:3rem;">
@@ -1297,6 +1270,19 @@ function switchTab(name) {
 }
 document.querySelectorAll('.seo-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+/* ── Mobile / Desktop strategy toggle ── */
+function switchStrategy(strategy) {
+    document.querySelectorAll('.seo-perf-toggle-btn[data-strategy]').forEach(b => {
+        b.classList.toggle('active', b.dataset.strategy === strategy);
+    });
+    document.querySelectorAll('.perf-panel[data-strategy]').forEach(p => {
+        p.classList.toggle('active', p.dataset.strategy === strategy);
+    });
+}
+document.querySelectorAll('.seo-perf-toggle-btn[data-strategy]').forEach(btn => {
+    if (!btn.disabled) btn.addEventListener('click', () => switchStrategy(btn.dataset.strategy));
 });
 
 /* ── Audit nav scroll-to ── */

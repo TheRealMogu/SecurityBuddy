@@ -2375,6 +2375,12 @@ button { cursor: pointer; font-family: inherit; }
   color: var(--color-text);
   box-shadow: var(--shadow-sm);
 }
+.seo-perf-toggle-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.perf-panel { display: none; }
+.perf-panel.active { display: block; }
 
 /* ── Content metrics section ────────────────── */
 .seo-content-metrics-grid {

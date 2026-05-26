@@ -5,6 +5,7 @@ import time
 import requests
 import urllib.robotparser
 from collections import Counter, deque
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, urljoin
 from html.parser import HTMLParser
 
@@ -486,7 +487,11 @@ class SEOAnalyzer:
             result['checks']['structured_data'] = self._check_structured_data(parser)
             result['checks']['robots_txt']      = self._check_robots_txt(base_url)
             result['checks']['sitemap']         = self._check_sitemap(base_url)
-            result['checks']['pagespeed']       = self._check_pagespeed(response.url)
+            with ThreadPoolExecutor(max_workers=2) as _ex:
+                _mob = _ex.submit(self._check_pagespeed, response.url, 'mobile')
+                _dsk = _ex.submit(self._check_pagespeed, response.url, 'desktop')
+                result['checks']['pagespeed']         = _mob.result()
+                result['checks']['pagespeed_desktop'] = _dsk.result()
 
             result['score']  = self._calculate_score(result['checks'])
             result['rating'] = self._rating(result['score'])
@@ -1515,7 +1520,7 @@ class SEOAnalyzer:
 
     # ── Check: PageSpeed Insights (real Lighthouse) ────────────────────
 
-    def _check_pagespeed(self, url: str) -> dict:
+    def _check_pagespeed(self, url: str, strategy: str = 'mobile') -> dict:
         r = {
             'performance_score': None,
             'fcp_ms':            None,
@@ -1531,7 +1536,7 @@ class SEOAnalyzer:
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
-        params = {'url': url, 'strategy': 'mobile', 'category': 'performance'}
+        params = {'url': url, 'strategy': strategy, 'category': 'performance'}
         api_key = os.environ.get('GOOGLE_PSI_API_KEY')
         if api_key:
             params['key'] = api_key
