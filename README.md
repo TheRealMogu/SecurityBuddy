@@ -1,57 +1,96 @@
 # Security Buddy
 
-A comprehensive web security scanning platform that provides instant security analysis for websites and domains.
+A comprehensive web security and SEO scanning platform. Instant analysis for any domain or IP — no account required.
 
 ## Features
 
-- **Real-time Security Scanning**: Check HTTPS, SSL certificates, and security headers
-- **User-friendly Interface**: Simple design accessible to non-technical users
-- **Premium Analytics**: Advanced reporting and monitoring (for registered users)
-- **REST API**: Programmatic access for CI/CD integration
-- **PDF Reports**: Professional security reports (premium feature)
+- **Security Scanner** — 18 checks: HTTPS, SSL/TLS, headers, cookies, CORS, DNS (SPF/DMARC), open ports, mixed content, HSTS quality, subdomain takeover, directory listing, open redirect, and more
+- **SEO Analyser** — meta tags, content quality, PageSpeed Insights (mobile + desktop), Open Graph, structured data
+- **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown
+- **REST API** — programmatic access with API keys, batch scanning and webhook callbacks
+- **Dashboard** — scan history for registered users
+- **No premium gates** — all features are free
 
 ## Quick Deploy to Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/security-buddy)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/therealmogu/securitybuddy)
 
 ### Environment Variables
 
-Set these environment variables in your Vercel dashboard:
-
-- `DATABASE_URL`: PostgreSQL connection string (required)
-- `SESSION_SECRET`: Secret key for sessions (required)
-- `SENDGRID_API_KEY`: For email notifications (optional)
-- `TWILIO_ACCOUNT_SID`: For SMS alerts (optional)
-- `TWILIO_AUTH_TOKEN`: For SMS alerts (optional)
-- `TWILIO_PHONE_NUMBER`: For SMS alerts (optional)
+| Variable | Required | Description |
+|---|---|---|
+| `SESSION_SECRET` | ✅ | Flask session secret key |
+| `DATABASE_URL` | ✅ (prod) | PostgreSQL connection string — SQLite used locally |
+| `FLASK_DEBUG` | — | Set to `1` to enable debug mode |
+| `SENDGRID_API_KEY` | — | Email notifications |
+| `TWILIO_*` | — | SMS alerts |
 
 ### Database Setup
 
-1. Create a PostgreSQL database (recommend: [Neon](https://neon.tech/), [Supabase](https://supabase.com/), or [PlanetScale](https://planetscale.com/))
-2. Set the `DATABASE_URL` environment variable
-3. The app will automatically create tables on first run
+1. Create a PostgreSQL database ([Neon](https://neon.tech/) or [Supabase](https://supabase.com/) work well)
+2. Set `DATABASE_URL`
+3. Tables are created automatically on first run
 
 ## Local Development
 
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements_vercel.txt`
-3. Set environment variables (copy `.env.example` to `.env`)
-4. Run: `python main.py`
+```bash
+git clone https://github.com/therealmogu/securitybuddy
+cd securitybuddy
+
+uv pip install -e .
+SESSION_SECRET=dev python main.py
+# → http://localhost:5000
+```
+
+## Security Checks
+
+| Check | What it verifies |
+|---|---|
+| Connectivity | Reachability, HTTP status |
+| HTTPS & Redirect | HTTPS availability, HTTP→HTTPS redirect |
+| SSL Certificate | Validity, expiry, issuer, TLS version (1.2/1.3) |
+| Security Headers | HSTS, CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy, X-Content-Type-Options |
+| HSTS Quality | max-age adequacy, includeSubDomains, preload flag |
+| Cookie Security | Secure, HttpOnly, SameSite per cookie |
+| CORS Policy | Wildcard origin, credentials-with-wildcard |
+| HTTP Methods | TRACE/TRACK/DELETE/PUT exposure |
+| Technology Fingerprint | Server version disclosure in headers |
+| HTML Comment / Generator | `<meta generator>` and version-disclosing comments |
+| Open Ports | FTP, Telnet, MySQL, Redis, MongoDB, Elasticsearch… |
+| Sensitive File Exposure | `.env`, `.git/config`, `wp-config.php`, `database.yml`… |
+| Admin Panel Discovery | `/admin`, `/phpmyadmin`, `/wp-admin`… |
+| DNS Security | SPF record, DMARC policy |
+| Subdomain Takeover | Dangling CNAME → unclaimed GitHub Pages, Heroku, Netlify, Azure… |
+| Directory Listing | Apache/Nginx index pages on common paths |
+| Mixed Content | HTTP resources on HTTPS pages |
+| Open Redirect | Common redirect parameters (`?redirect=`, `?url=`, `?next=`…) |
+| HTTP/2 Support | ALPN negotiation (informational) |
 
 ## API Usage
 
 ```bash
-# Basic scan
-curl -X POST https://your-app.vercel.app/api/v1/scan \
-  -H "Content-Type: application/json" \
-  -d '{"target": "example.com"}'
-
-# With API key for premium features
+# Scan without authentication
 curl -X POST https://your-app.vercel.app/api/v1/scan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-api-key" \
-  -d '{"target": "example.com", "advanced": true}'
+  -d '{"target": "example.com"}'
+
+# Batch scan with webhook callback
+curl -X POST https://your-app.vercel.app/api/v1/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "targets": ["example.com", "example.org"],
+    "fail_threshold": 70,
+    "webhook_url": "https://your-ci.example/hook"
+  }'
+
+# API key status
+curl https://your-app.vercel.app/api/v1/status \
+  -H "X-API-Key: your-api-key"
 ```
+
+Rate limit: **200 requests/hour** per API key.
 
 ## License
 
