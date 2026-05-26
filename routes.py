@@ -9,6 +9,7 @@ from scanner import SecurityScanner
 from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
 from notification_system import NotificationSystem
+from email_analyzer import EmailAnalyzer
 from api_routes import api_bp
 from background_jobs import job_manager
 
@@ -308,6 +309,33 @@ def seo_crawl_report(job_id):
     return render_template('seo_site.html',
                            crawl=status['result'],
                            job_id=job_id)
+
+
+@app.route('/email', methods=['GET', 'POST'])
+def email_scan():
+    """Email security analysis page."""
+    if request.method == 'GET':
+        return render_template('email.html')
+
+    target = request.form.get('target', '').strip()
+    if not target:
+        flash('Please enter a domain to analyse.', 'warning')
+        return redirect(url_for('email_scan'))
+
+    target = clean_target(target)
+    validator = AdvancedValidator()
+    is_valid, error_msg = validator.validate_target(target)
+    if not is_valid:
+        flash(f'Invalid target: {error_msg}', 'error')
+        return redirect(url_for('email_scan'))
+
+    try:
+        analyzer = EmailAnalyzer()
+        results = analyzer.analyze(target)
+        return render_template('email.html', results=results, target=target)
+    except Exception as e:
+        flash(f'Email analysis failed: {str(e)}', 'error')
+        return redirect(url_for('email_scan'))
 
 
 @app.errorhandler(404)

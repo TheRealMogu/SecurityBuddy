@@ -49,6 +49,10 @@
                             <a class="nav-link{% if request.endpoint == 'seo_scan' %} nav-link-active{% endif %}"
                                href="{{ url_for('seo_scan') }}">SEO</a>
                         </li>
+                        <li>
+                            <a class="nav-link{% if request.endpoint == 'email_scan' %} nav-link-active{% endif %}"
+                               href="{{ url_for('email_scan') }}">Email</a>
+                        </li>
                         {% if current_user.is_authenticated %}
                         <li>
                             <a class="nav-link{% if request.endpoint == 'dashboard' %} nav-link-active{% endif %}"

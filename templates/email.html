@@ -1,0 +1,587 @@
+{% extends "base.html" %}
+{% block title %}Email Security{% if target %} — {{ target }}{% endif %} — Security Buddy{% endblock %}
+
+{% block content %}
+
+{% if not results %}
+{# ── Form ── #}
+<section class="hero-section">
+    <div class="container">
+        <div class="text-center">
+            <h1 class="hero-headline">Email Security</h1>
+            <p class="hero-subtext">
+                MX records, SPF, DMARC, DKIM, blacklist checks (7 DNSBLs),
+                PTR / reverse DNS and STARTTLS support — all in one scan.
+            </p>
+
+            <div class="trust-badges">
+                <span class="trust-badge"><i data-lucide="mail" style="width:13px;height:13px;color:var(--color-primary);"></i>MX Records</span>
+                <span class="trust-badge"><i data-lucide="shield-check" style="width:13px;height:13px;color:var(--color-primary);"></i>SPF / DMARC / DKIM</span>
+                <span class="trust-badge"><i data-lucide="ban" style="width:13px;height:13px;color:var(--color-primary);"></i>7 Blacklists</span>
+                <span class="trust-badge"><i data-lucide="lock" style="width:13px;height:13px;color:var(--color-primary);"></i>STARTTLS</span>
+                <span class="trust-badge"><i data-lucide="zap" style="width:13px;height:13px;color:var(--color-primary);"></i>Instant results</span>
+            </div>
+
+            <div class="scan-form-wrap">
+                <form method="POST" action="{{ url_for('email_scan') }}" id="emailForm">
+                    <div class="scan-input-group">
+                        <input type="text" class="scan-input" name="target" id="targetInput"
+                               placeholder="Enter domain (e.g. example.com)"
+                               autocomplete="off" spellcheck="false" required>
+                        <button class="scan-btn" type="submit" id="scanBtn">
+                            <i data-lucide="search" style="width:16px;height:16px;"></i>
+                            Analyse
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</section>
+
+{% else %}
+{# ── Results ── #}
+
+{% set r = results %}
+{% set score = r.score %}
+{% set risk = 'low' if score >= 80 else 'medium' if score >= 60 else 'high' if score >= 40 else 'critical' %}
+
+{% set mx    = r.checks.mx %}
+{% set spf   = r.checks.spf %}
+{% set dmarc = r.checks.dmarc %}
+{% set dkim  = r.checks.dkim %}
+{% set bl    = r.checks.blacklists %}
+{% set ptr   = r.checks.ptr %}
+{% set smtp  = r.checks.smtp %}
+
+{# -- helpers -- #}
+{% macro ok(v) %}{% if v %}<span class="text-success">✓</span>{% else %}<span class="text-danger">✗</span>{% endif %}{% endmacro %}
+{% macro pill(v, good_val) %}<span class="badge {% if v == good_val %}badge-success{% else %}badge-warning{% endif %}">{{ v or '—' }}</span>{% endmacro %}
+
+{# ── Top bar ── #}
+<div class="seo-topbar">
+    <div class="container">
+        <div class="seo-topbar-inner">
+            <div class="seo-topbar-url">
+                <i data-lucide="mail" style="width:14px;height:14px;color:var(--color-primary);flex-shrink:0;"></i>
+                <span>{{ r.domain }}</span>
+            </div>
+            <div class="seo-tabs-nav" role="tablist">
+                <button class="seo-tab-btn active" data-tab="overview"      role="tab">Overview</button>
+                <button class="seo-tab-btn"         data-tab="records"       role="tab">Records</button>
+                <button class="seo-tab-btn"         data-tab="deliverability" role="tab">Deliverability</button>
+                <button class="seo-tab-btn"         data-tab="servers"       role="tab">Mail Servers</button>
+            </div>
+            <a href="{{ url_for('email_scan') }}" class="btn btn-sm btn-outline-secondary" style="font-size:0.78rem;padding:0.3rem 0.75rem;white-space:nowrap;">
+                <i data-lucide="rotate-ccw" style="width:12px;height:12px;"></i> New analysis
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="container seo-results-container">
+
+{# ═══════════════════════════════════════ OVERVIEW ═══════════════════════════════════════ #}
+<div class="seo-tab-pane active" id="tab-overview">
+    <div class="seo-overview-grid" style="grid-template-columns:auto 1fr;">
+
+        {# Score ring #}
+        <div class="seo-v2-card" style="display:flex;align-items:center;justify-content:center;min-width:170px;">
+            <div style="text-align:center;">
+                <svg class="seo-score-ring" viewBox="0 0 120 120" width="120" height="120"
+                     data-score="{{ score }}">
+                    <circle cx="60" cy="60" r="50" fill="none"
+                            stroke="var(--color-border)" stroke-width="10"/>
+                    <circle cx="60" cy="60" r="50" fill="none"
+                            stroke="{% if score>=80 %}var(--color-success){% elif score>=60 %}var(--color-warning){% else %}var(--color-danger){% endif %}"
+                            stroke-width="10" stroke-linecap="round"
+                            stroke-dasharray="314" stroke-dashoffset="314"
+                            transform="rotate(-90 60 60)" class="ring-arc"/>
+                    <text x="60" y="56" text-anchor="middle"
+                          font-size="26" font-weight="700" fill="var(--color-text)"
+                          font-family="var(--font-display)">{{ score }}</text>
+                    <text x="60" y="72" text-anchor="middle"
+                          font-size="10" fill="var(--color-text-muted)"
+                          font-family="var(--font-body)">/100</text>
+                </svg>
+                <div class="risk-badge risk-{{ risk }}" style="margin-top:0.5rem;">
+                    {{ risk | title }} Risk
+                </div>
+            </div>
+        </div>
+
+        {# Status grid #}
+        <div class="seo-v2-card">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.75rem;">
+
+                {# MX #}
+                <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.75rem;text-align:center;">
+                    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin-bottom:0.35rem;">MX Records</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:{% if mx.count >= 2 %}var(--color-success){% elif mx.count == 1 %}var(--color-warning){% else %}var(--color-danger){% endif %};">{{ mx.count }}</div>
+                    <div style="font-size:0.75rem;color:var(--color-text-muted);">server{{ 's' if mx.count != 1 }}</div>
+                </div>
+
+                {# SPF #}
+                <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.75rem;text-align:center;">
+                    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin-bottom:0.35rem;">SPF</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:{% if spf.valid and spf.policy == 'hardfail' %}var(--color-success){% elif spf.valid %}var(--color-warning){% else %}var(--color-danger){% endif %};">
+                        {% if spf.valid %}{{ spf.policy or 'set' }}{% else %}Missing{% endif %}
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--color-text-muted);">{{ 'hardfail' if spf.policy == 'hardfail' else spf.policy or '—' }}</div>
+                </div>
+
+                {# DMARC #}
+                <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.75rem;text-align:center;">
+                    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin-bottom:0.35rem;">DMARC</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:{% if dmarc.policy == 'reject' %}var(--color-success){% elif dmarc.valid %}var(--color-warning){% else %}var(--color-danger){% endif %};">
+                        {% if dmarc.valid %}p={{ dmarc.policy }}{% else %}Missing{% endif %}
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--color-text-muted);">pct={{ dmarc.pct }}%</div>
+                </div>
+
+                {# DKIM #}
+                <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.75rem;text-align:center;">
+                    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin-bottom:0.35rem;">DKIM</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:{% if dkim.valid %}var(--color-success){% else %}var(--color-warning){% endif %};">
+                        {% if dkim.valid %}{{ dkim.selectors_found | length }} key{{ 's' if dkim.selectors_found | length != 1 }}{% else %}Not found{% endif %}
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--color-text-muted);">
+                        {% if dkim.valid %}{{ dkim.selectors_found | map(attribute='selector') | join(', ') | truncate(24, True) }}{% else %}common selectors{% endif %}
+                    </div>
+                </div>
+
+                {# Blacklists #}
+                <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.75rem;text-align:center;">
+                    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin-bottom:0.35rem;">Blacklists</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:{% if bl.listed_count == 0 and not bl.domain_results %}var(--color-success){% else %}var(--color-danger){% endif %};">
+                        {{ bl.listed_count + (bl.domain_results | length) }}
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--color-text-muted);">listing{{ 's' if (bl.listed_count + bl.domain_results | length) != 1 }}</div>
+                </div>
+
+                {# PTR #}
+                <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.75rem;text-align:center;">
+                    <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin-bottom:0.35rem;">PTR / rDNS</div>
+                    <div style="font-size:1.4rem;font-weight:700;color:{% if not ptr.missing %}var(--color-success){% else %}var(--color-warning){% endif %};">
+                        {{ ptr.records | length - ptr.missing | length }}/{{ ptr.records | length }}
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--color-text-muted);">servers with PTR</div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    {# Issue list #}
+    {% set all_issues = [] %}
+    {% for check in [mx, spf, dmarc, dkim, bl, ptr] %}
+        {% for i in check.get('issues', []) %}{% if all_issues.append(i) %}{% endif %}{% endfor %}
+    {% endfor %}
+    {% for host, sv in (smtp or {}).items() %}
+        {% for i in sv.get('issues', []) %}{% if all_issues.append(i) %}{% endif %}{% endfor %}
+    {% endfor %}
+
+    {% if all_issues %}
+    <div class="seo-v2-card" style="margin-top:1rem;">
+        <div style="font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-muted);margin-bottom:0.75rem;">
+            Issues ({{ all_issues | length }})
+        </div>
+        <div class="issues-list">
+            {% for i in all_issues %}
+            <div class="issue-item">{{ i }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{# ═══════════════════════════════════════ RECORDS ════════════════════════════════════════ #}
+<div class="seo-tab-pane" id="tab-records">
+
+    {# MX Records #}
+    <div class="seo-v2-card" style="margin-bottom:1rem;">
+        <div class="seo-card-title">
+            <i data-lucide="server" style="width:15px;height:15px;color:var(--color-primary);"></i>
+            MX Records
+        </div>
+        {% if mx.records %}
+        <div class="table-wrapper" style="margin-top:0.75rem;">
+            <table class="table">
+                <thead>
+                    <tr><th>Priority</th><th>Mail Server</th><th>IP</th></tr>
+                </thead>
+                <tbody>
+                    {% for rec in mx.records %}
+                    {% set ip = r.checks.ptr.records.get(rec.host, {}).get('ip', '—') %}
+                    <tr>
+                        <td><span class="badge badge-neutral">{{ rec.priority }}</span></td>
+                        <td><strong>{{ rec.host }}</strong></td>
+                        <td class="text-muted small">{{ ip }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted small" style="margin-top:0.5rem;">No MX records found.</p>
+        {% endif %}
+        {% if mx.issues %}
+        <div class="issues-list mt-2">{% for i in mx.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>
+        {% endif %}
+    </div>
+
+    {# SPF #}
+    <details class="check-item {% if spf.valid and spf.policy == 'hardfail' %}check-pass{% elif spf.valid %}check-warn{% else %}check-fail{% endif %}" open>
+        <summary>
+            <i data-lucide="{% if spf.valid and spf.policy == 'hardfail' %}check-circle{% elif spf.valid %}alert-triangle{% else %}x-circle{% endif %}"
+               class="check-status-icon {% if spf.valid and spf.policy == 'hardfail' %}icon-pass{% elif spf.valid %}icon-warn{% else %}icon-fail{% endif %}"
+               style="width:18px;height:18px;"></i>
+            <span class="check-name">SPF Record</span>
+            <span class="check-summary-text">
+                {% if spf.valid %}
+                    {{ spf.policy or 'set' }}
+                    {% if spf.lookup_count %} · {{ spf.lookup_count }} DNS lookups{% endif %}
+                {% else %}Missing{% endif %}
+            </span>
+            <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+        </summary>
+        <div class="check-body">
+            {% if spf.record %}
+            <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.6rem 0.8rem;font-family:monospace;font-size:0.8rem;word-break:break-all;margin-bottom:0.75rem;">{{ spf.record }}</div>
+            {% endif %}
+            <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0.75rem;">
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Policy</div>
+                    <div class="ssl-info-value {% if spf.policy == 'hardfail' %}good{% elif spf.policy %}{% else %}bad{% endif %}">{{ spf.policy or 'none' }}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">DNS lookups</div>
+                    <div class="ssl-info-value {% if spf.lookup_count and spf.lookup_count > 8 %}bad{% endif %}">{{ spf.lookup_count or 0 }} / 10</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Valid</div>
+                    <div class="ssl-info-value {% if spf.valid %}good{% else %}bad{% endif %}">{% if spf.valid %}✓ Yes{% else %}✗ No{% endif %}</div>
+                </div>
+            </div>
+            {% if spf.issues %}<div class="issues-list">{% for i in spf.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+            {% if not spf.valid %}
+            <div class="fix-box mt-2">
+                <div class="fix-box-header">
+                    <span>DNS — add SPF record</span>
+                    <button class="btn-copy-code" data-copy-code="{{ r.domain }} TXT &quot;v=spf1 include:_spf.google.com -all&quot;">
+                        <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                    </button>
+                </div>
+                <pre><code>{{ r.domain }} IN TXT "v=spf1 include:_spf.google.com -all"</code></pre>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    {# DMARC #}
+    <details class="check-item {% if dmarc.policy == 'reject' %}check-pass{% elif dmarc.valid %}check-warn{% else %}check-fail{% endif %}" open>
+        <summary>
+            <i data-lucide="{% if dmarc.policy == 'reject' %}shield-check{% elif dmarc.valid %}alert-triangle{% else %}shield-alert{% endif %}"
+               class="check-status-icon {% if dmarc.policy == 'reject' %}icon-pass{% elif dmarc.valid %}icon-warn{% else %}icon-fail{% endif %}"
+               style="width:18px;height:18px;"></i>
+            <span class="check-name">DMARC Record</span>
+            <span class="check-summary-text">
+                {% if dmarc.valid %}p={{ dmarc.policy }} · pct={{ dmarc.pct }}%{% else %}Missing{% endif %}
+            </span>
+            <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+        </summary>
+        <div class="check-body">
+            {% if dmarc.record %}
+            <div style="background:var(--color-bg-alt);border-radius:var(--radius-sm);padding:0.6rem 0.8rem;font-family:monospace;font-size:0.8rem;word-break:break-all;margin-bottom:0.75rem;">{{ dmarc.record }}</div>
+            {% endif %}
+            {% if dmarc.valid %}
+            <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0.75rem;">
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Policy (p=)</div>
+                    <div class="ssl-info-value {% if dmarc.policy == 'reject' %}good{% elif dmarc.policy == 'quarantine' %}{% else %}bad{% endif %}">{{ dmarc.policy or '—' }}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Subdomain (sp=)</div>
+                    <div class="ssl-info-value">{{ dmarc.subdomain_policy or 'inherits p=' }}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Enforcement %</div>
+                    <div class="ssl-info-value {% if dmarc.pct == 100 %}good{% else %}bad{% endif %}">{{ dmarc.pct }}%</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">DKIM alignment</div>
+                    <div class="ssl-info-value">{{ dmarc.adkim or 'relaxed' }}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">SPF alignment</div>
+                    <div class="ssl-info-value">{{ dmarc.aspf or 'relaxed' }}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Aggregate reports</div>
+                    <div class="ssl-info-value {% if dmarc.rua %}good{% else %}bad{% endif %}">
+                        {% if dmarc.rua %}{{ dmarc.rua[:30] }}{% if dmarc.rua|length > 30 %}…{% endif %}{% else %}None (rua=){% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if dmarc.issues %}<div class="issues-list">{% for i in dmarc.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+            {% if not dmarc.valid %}
+            <div class="fix-box mt-2">
+                <div class="fix-box-header">
+                    <span>DNS — add DMARC record</span>
+                    <button class="btn-copy-code" data-copy-code="_dmarc.{{ r.domain }} TXT &quot;v=DMARC1; p=quarantine; pct=100; rua=mailto:dmarc@{{ r.domain }}&quot;">
+                        <i data-lucide="copy" style="width:11px;height:11px;"></i>Copy
+                    </button>
+                </div>
+                <pre><code>_dmarc.{{ r.domain }} IN TXT "v=DMARC1; p=quarantine; pct=100; rua=mailto:dmarc@{{ r.domain }}"</code></pre>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    {# DKIM #}
+    <details class="check-item {% if dkim.valid %}check-pass{% else %}check-warn{% endif %}" open>
+        <summary>
+            <i data-lucide="{% if dkim.valid %}check-circle{% else %}alert-triangle{% endif %}"
+               class="check-status-icon {% if dkim.valid %}icon-pass{% else %}icon-warn{% endif %}"
+               style="width:18px;height:18px;"></i>
+            <span class="check-name">DKIM Keys</span>
+            <span class="check-summary-text">
+                {% if dkim.valid %}{{ dkim.selectors_found | length }} selector(s) found{% else %}Not found{% endif %}
+            </span>
+            <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+        </summary>
+        <div class="check-body">
+            {% if dkim.selectors_found %}
+            <div class="table-wrapper" style="margin-bottom:0.75rem;">
+                <table class="table">
+                    <thead><tr><th>Selector</th><th>Key strength</th></tr></thead>
+                    <tbody>
+                        {% for s in dkim.selectors_found %}
+                        <tr>
+                            <td><code>{{ s.selector }}._domainkey.{{ r.domain }}</code></td>
+                            <td>
+                                {% if s.key_bits %}
+                                <span class="badge {% if s.key_bits >= 2048 %}badge-success{% elif s.key_bits >= 1024 %}badge-warning{% else %}badge-danger{% endif %}">{{ s.key_bits }} bits</span>
+                                {% else %}
+                                <span class="text-muted small">unknown</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% if dkim.issues %}<div class="issues-list">{% for i in dkim.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+            {% if not dkim.valid %}
+            <p class="text-muted small">Checked {{ 18 }} common selectors (default, google, mail, selector1/2, k1, smtp, mta…). If DKIM is configured with a custom selector it will not appear here.</p>
+            {% endif %}
+        </div>
+    </details>
+
+</div>
+
+{# ═══════════════════════════════════════ DELIVERABILITY ═══════════════════════════════════ #}
+<div class="seo-tab-pane" id="tab-deliverability">
+
+    {% set total_listings = bl.listed_count + (bl.domain_results | length) %}
+    <div class="seo-v2-card" style="margin-bottom:1rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+            <div class="seo-card-title" style="margin-bottom:0;">
+                <i data-lucide="ban" style="width:15px;height:15px;color:var(--color-primary);"></i>
+                Blacklist Status
+            </div>
+            <span class="badge {% if total_listings == 0 %}badge-success{% else %}badge-danger{% endif %}" style="font-size:0.82rem;">
+                {% if total_listings == 0 %}Clean{% else %}{{ total_listings }} listing{{ 's' if total_listings != 1 }}{% endif %}
+            </span>
+        </div>
+
+        {% if total_listings == 0 %}
+        <p style="color:var(--color-success);font-size:0.9rem;">✓ None of your mail servers or domain are listed on the checked blacklists.</p>
+        {% endif %}
+
+        {# Per-IP results #}
+        {% for host, info in bl.ip_results.items() %}
+        <div style="margin-bottom:1rem;">
+            <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.4rem;">
+                {{ host }} <span class="text-muted">({{ info.ip }})</span>
+            </div>
+            {% if info.listed %}
+            <div class="issues-list" style="margin-bottom:0.4rem;">
+                {% for name in info.listed %}
+                <div class="issue-item"><span class="badge badge-danger" style="margin-right:0.4rem;">Listed</span>{{ name }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
+                {% for name in info.clean %}
+                <span class="badge badge-neutral" style="font-size:0.72rem;">✓ {{ name }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {# Domain blacklists #}
+        {% if bl.domain_results %}
+        <div style="margin-top:0.75rem;">
+            <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.4rem;">Domain blacklists</div>
+            <div class="issues-list">
+                {% for name in bl.domain_results %}
+                <div class="issue-item"><span class="badge badge-danger" style="margin-right:0.4rem;">Listed</span>{{ name }}</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# Removal hints #}
+    {% if total_listings > 0 %}
+    <div class="seo-v2-card">
+        <div class="seo-card-title">
+            <i data-lucide="info" style="width:15px;height:15px;color:var(--color-primary);"></i>
+            How to remove a listing
+        </div>
+        <div style="font-size:0.85rem;color:var(--color-text-muted);margin-top:0.5rem;line-height:1.6;">
+            <p>1. Fix the root cause (open relay, compromised account, spam originating from this IP).</p>
+            <p>2. Visit the blacklist's delisting page and submit a removal request — each list has its own process.</p>
+            <p>3. Re-scan after 24–48 h to confirm removal.</p>
+            <p style="margin-top:0.5rem;"><strong>Spamhaus:</strong> <code>https://check.spamhaus.org/</code> &nbsp; <strong>SpamCop:</strong> <code>https://www.spamcop.net/bl.shtml</code></p>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{# ═══════════════════════════════════════ MAIL SERVERS ════════════════════════════════════ #}
+<div class="seo-tab-pane" id="tab-servers">
+
+    {# PTR / rDNS #}
+    <div class="seo-v2-card" style="margin-bottom:1rem;">
+        <div class="seo-card-title">
+            <i data-lucide="arrow-left-right" style="width:15px;height:15px;color:var(--color-primary);"></i>
+            PTR / Reverse DNS
+        </div>
+        {% if ptr.records %}
+        <div class="table-wrapper" style="margin-top:0.75rem;">
+            <table class="table">
+                <thead><tr><th>MX Host</th><th>IP</th><th>PTR Record</th></tr></thead>
+                <tbody>
+                    {% for host, info in ptr.records.items() %}
+                    <tr>
+                        <td>{{ host }}</td>
+                        <td class="text-muted small">{{ info.ip }}</td>
+                        <td>
+                            {% if info.ptr %}
+                            <span class="text-success">✓</span> <code style="font-size:0.82rem;">{{ info.ptr }}</code>
+                            {% else %}
+                            <span class="text-danger">✗ Missing</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted small" style="margin-top:0.5rem;">Could not resolve MX server IPs.</p>
+        {% endif %}
+        {% if ptr.issues %}<div class="issues-list mt-2">{% for i in ptr.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+    </div>
+
+    {# SMTP / STARTTLS per server #}
+    {% if smtp %}
+    {% for host, sv in smtp.items() %}
+    <details class="check-item {% if sv.reachable and sv.starttls %}check-pass{% elif sv.reachable %}check-warn{% else %}check-fail{% endif %}" open>
+        <summary>
+            <i data-lucide="{% if sv.reachable and sv.starttls %}lock{% elif sv.reachable %}alert-triangle{% else %}x-circle{% endif %}"
+               class="check-status-icon {% if sv.reachable and sv.starttls %}icon-pass{% elif sv.reachable %}icon-warn{% else %}icon-fail{% endif %}"
+               style="width:18px;height:18px;"></i>
+            <span class="check-name">{{ host }}</span>
+            <span class="check-summary-text">
+                {% if not sv.reachable %}Port 25 unreachable
+                {% elif sv.starttls %}Reachable · STARTTLS ✓
+                {% else %}Reachable · No STARTTLS{% endif %}
+            </span>
+            <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
+        </summary>
+        <div class="check-body">
+            <div class="ssl-info-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0.75rem;">
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Port 25</div>
+                    <div class="ssl-info-value {% if sv.reachable %}good{% else %}bad{% endif %}">{% if sv.reachable %}✓ Open{% else %}✗ Blocked{% endif %}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">STARTTLS</div>
+                    <div class="ssl-info-value {% if sv.starttls %}good{% elif sv.reachable %}bad{% endif %}">{% if sv.starttls %}✓ Supported{% elif sv.reachable %}✗ Not advertised{% else %}—{% endif %}</div>
+                </div>
+                <div class="ssl-info-item">
+                    <div class="ssl-info-label">Banner</div>
+                    <div class="ssl-info-value" style="font-size:0.75rem;font-family:monospace;word-break:break-all;">
+                        {% if sv.banner %}{{ sv.banner[:60] }}{% if sv.banner|length > 60 %}…{% endif %}{% else %}—{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% if sv.issues %}<div class="issues-list">{% for i in sv.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
+        </div>
+    </details>
+    {% endfor %}
+    {% else %}
+    <div class="seo-v2-card"><p class="text-muted">No MX servers to check (port 25 scan requires MX records).</p></div>
+    {% endif %}
+
+</div>
+
+</div>{# /container #}
+
+<script>
+(function () {
+    // tab switching
+    function switchTab(name) {
+        document.querySelectorAll('.seo-tab-btn').forEach(b =>
+            b.classList.toggle('active', b.dataset.tab === name));
+        document.querySelectorAll('.seo-tab-pane').forEach(p =>
+            p.classList.toggle('active', p.id === 'tab-' + name));
+    }
+    document.querySelectorAll('.seo-tab-btn[data-tab]').forEach(btn =>
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    // score ring animation
+    document.querySelectorAll('.seo-score-ring[data-score]').forEach(svg => {
+        const score = parseInt(svg.dataset.score, 10);
+        const arc   = svg.querySelector('.ring-arc');
+        if (!arc) return;
+        const circ  = 2 * Math.PI * 50;
+        const offset = circ * (1 - score / 100);
+        setTimeout(() => {
+            arc.style.transition = 'stroke-dashoffset 1s ease';
+            arc.style.strokeDashoffset = offset;
+        }, 100);
+    });
+
+    // chevron rotate on details toggle
+    document.querySelectorAll('details.check-item').forEach(el => {
+        el.addEventListener('toggle', () => {
+            const ch = el.querySelector('.check-chevron');
+            if (ch) ch.style.transform = el.open ? 'rotate(180deg)' : '';
+        });
+    });
+})();
+</script>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+if (document.getElementById('scanBtn')) {
+    document.getElementById('emailForm').addEventListener('submit', function () {
+        const btn = document.getElementById('scanBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader" style="width:16px;height:16px;animation:spin 1s linear infinite;"></i> Analysing…';
+        lucide.createIcons();
+    });
+}
+</script>
+{% endblock %}
