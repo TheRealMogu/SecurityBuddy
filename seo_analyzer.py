@@ -330,6 +330,18 @@ class _SEOHTMLParser(HTMLParser):
         filtered = [w for w in words if w not in _STOPWORDS]
         return [word for word, _ in Counter(filtered).most_common(n)]
 
+    def top_keywords_with_stats(self, n: int = 10) -> list:
+        words = re.findall(r'[a-zA-ZÀ-ÿ]{4,}', self.body_text.lower())
+        filtered = [w for w in words if w not in _STOPWORDS]
+        counts = Counter(filtered).most_common(n)
+        if not counts:
+            return []
+        max_count = counts[0][1]
+        return [
+            {'word': w, 'count': c, 'relevance': round(c / max_count * 100)}
+            for w, c in counts
+        ]
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # SEOAnalyzer
@@ -754,6 +766,7 @@ class SEOAnalyzer:
             'paragraph_count': parser.paragraph_count,
             'text_html_ratio': txt_ratio,
             'top_keywords':  keywords,
+            'keyword_stats': parser.top_keywords_with_stats(10),
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
@@ -1514,6 +1527,7 @@ class SEOAnalyzer:
             'field_lcp_ms':      None,
             'field_fcp_ms':      None,
             'field_lcp_category': None,
+            'screenshot':        None,
             'score': 0, 'issues': [], 'warnings': [], 'passed': [],
         }
 
@@ -1554,6 +1568,7 @@ class SEOAnalyzer:
             r['tti_ms']         = _ms('interactive')
             cls_val = audits.get('cumulative-layout-shift', {}).get('numericValue')
             r['cls'] = round(cls_val, 3) if cls_val is not None else None
+            r['screenshot'] = audits.get('final-screenshot', {}).get('details', {}).get('data')
 
             # Field data (real-user CrUX, if available for this origin)
             le = data.get('loadingExperience', {}).get('metrics', {})
