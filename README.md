@@ -5,6 +5,7 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 ## Features
 
 - **Security Scanner** — 18 checks: HTTPS, SSL/TLS, headers, cookies, CORS, DNS (SPF/DMARC), open ports, mixed content, HSTS quality, subdomain takeover, directory listing, open redirect, and more
+- **Email Security** — MX records, SPF, DMARC, DKIM, 7 IP blacklists + 2 domain blacklists, PTR/rDNS, STARTTLS per mail server
 - **SEO Analyser** — meta tags, content quality, PageSpeed Insights (mobile + desktop), Open Graph, structured data
 - **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown
 - **REST API** — programmatic access with API keys, batch scanning and webhook callbacks
@@ -65,6 +66,19 @@ SESSION_SECRET=dev python main.py
 | Mixed Content | HTTP resources on HTTPS pages |
 | Open Redirect | Common redirect parameters (`?redirect=`, `?url=`, `?next=`…) |
 | HTTP/2 Support | ALPN negotiation (informational) |
+
+## Email Security Checks
+
+| Check | What it verifies |
+|---|---|
+| MX Records | Mail server hostnames, priority, redundancy (1 vs 2+) |
+| SPF | Policy (`-all` hardfail recommended), DNS lookup count (RFC limit: 10) |
+| DMARC | Policy (`p=none/quarantine/reject`), `pct`, `rua`/`ruf` reporting addresses |
+| DKIM | 18 common selectors probed in parallel, key-bit strength (warn if < 1024) |
+| Blacklists — IP | Spamhaus ZEN, SpamCop, SORBS, Barracuda, UCEPROTECT L1, PSBL, S5H |
+| Blacklists — Domain | Spamhaus DBL, URIBL Multi |
+| PTR / rDNS | Reverse DNS for each MX server IP |
+| STARTTLS | Port 25 connectivity + STARTTLS advertisement per mail server |
 
 ## API Usage
 

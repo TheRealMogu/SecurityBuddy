@@ -2,7 +2,7 @@
 
 ## Panoramica del progetto
 
-SecurityBuddy è uno scanner di sicurezza web automatizzato con interfaccia web, API REST e CLI. Analizza domini e indirizzi IP e produce un punteggio di sicurezza da 0 a 100. Include anche un analizzatore SEO per singola pagina e un crawler SEO per siti interi (fino a 100 pagine).
+SecurityBuddy è uno scanner di sicurezza web automatizzato con interfaccia web, API REST e CLI. Analizza domini e indirizzi IP e produce un punteggio di sicurezza da 0 a 100. Include un analizzatore SEO per singola pagina, un crawler SEO per siti interi (fino a 100 pagine) e un analizzatore di email security (MX, SPF, DMARC, DKIM, blacklist, PTR, STARTTLS).
 
 **Stack:** Python 3.11+, Flask, SQLAlchemy, SQLite (dev) / PostgreSQL (prod), Vercel.
 
@@ -15,6 +15,7 @@ routes.py               # Route web (/, /scan, /dashboard, /login, /seo, …)
 api_routes.py           # Blueprint REST API (/api/v1/*)
 scanner.py              # SecurityScanner — logica di scan
 seo_analyzer.py         # SEOAnalyzer — analisi SEO singola pagina + PageSpeed
+email_analyzer.py       # EmailAnalyzer — MX, SPF, DMARC, DKIM, blacklist, PTR, STARTTLS
 validators.py           # AdvancedValidator — validazione input
 models.py               # ORM: User, ScanResult, APIKey, MonitoringConfig
 notification_system.py  # Email alert (SendGrid/Twilio)
@@ -95,6 +96,27 @@ Prima di ogni scan, `_get_404_baseline()` colpisce un path UUID casuale per fing
 
 Il crawler SEO (`background_jobs.py`) visita fino a 100 pagine del sito tramite sitemap + BFS, producendo per ogni URL un mini-risultato SEO con score, issues e warnings. Il report viene servito da `seo_site.html`.
 
+## Architettura Email Security
+
+`EmailAnalyzer.analyze(domain)` in `email_analyzer.py` esegue:
+
+| Check | Metodo | Punteggio max |
+|---|---|---|
+| MX records | `_check_mx` | 10 |
+| SPF record | `_check_spf` | 15 |
+| DMARC record | `_check_dmarc` | 20 |
+| DKIM keys | `_check_dkim` | 15 |
+| Blacklist (7 DNSBL IP + 2 domain) | `_check_blacklists` | 20 |
+| PTR / reverse DNS | `_check_ptr` | 10 |
+| STARTTLS per MX | `_check_smtp` | +10 bonus |
+
+I check DKIM (18 selector comuni) e le blacklist vengono eseguiti in parallelo con `ThreadPoolExecutor`. La porta 25 può essere bloccata in ambienti cloud — il check SMTP è sempre wrapped in try/except.
+
+**DKIM**: i selector comuni testati sono `default`, `google`, `mail`, `dkim`, `selector1`, `selector2`, `k1`, `smtp`, `mta`, `key1`, `email`, `mailjet`, `sendgrid`, `mx`, `s1`, `s2`, `sig1`, `pm`.
+
+**Blacklist IP**: Spamhaus ZEN, SpamCop, SORBS, Barracuda, UCEPROTECT L1, PSBL, S5H.  
+**Blacklist dominio**: Spamhaus DBL, URIBL Multi.
+
 ## Template Jinja2
 
 | Template | Descrizione |
@@ -107,6 +129,7 @@ Il crawler SEO (`background_jobs.py`) visita fino a 100 pagine del sito tramite 
 | `dashboard.html` | Dashboard utente con storico scan |
 | `login.html` | Login + registrazione (tab switcher) |
 | `api_keys.html` | Gestione API key |
+| `email.html` | Analisi email security — tabbed interface (Overview/Records/Deliverability/Mail Servers) |
 | `seo_crawl_waiting.html` | Pagina di attesa con polling del job SEO |
 | `404.html`, `500.html` | Pagine di errore |
 
@@ -139,6 +162,8 @@ POST /seo                  # Avvia analisi SEO
 POST /seo/crawl            # Avvia crawl SEO (background job)
 GET  /seo/crawl/<id>/status   # Polling stato crawl (JSON)
 GET  /seo/crawl/<id>/report   # Report crawl completato
+GET  /email                # Form analisi email security
+POST /email                # Avvia analisi email security
 GET  /dashboard            # Dashboard utente (login required)
 GET  /api-keys             # Gestione API key (login required)
 GET  /login                # Login / registrazione
