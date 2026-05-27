@@ -10,6 +10,7 @@ from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
 from notification_system import NotificationSystem
 from email_analyzer import EmailAnalyzer
+from threat_intel import ThreatIntelAnalyzer
 from api_routes import api_bp
 from background_jobs import job_manager
 
@@ -336,6 +337,26 @@ def email_scan():
     except Exception as e:
         flash(f'Email analysis failed: {str(e)}', 'error')
         return redirect(url_for('email_scan'))
+
+
+@app.route('/threat', methods=['GET', 'POST'])
+def threat_scan():
+    """Threat intelligence lookup — hash, domain, IP, URL."""
+    if request.method == 'GET':
+        return render_template('threat.html')
+
+    query = request.form.get('query', '').strip()
+    if not query:
+        flash('Please enter a search term.', 'warning')
+        return redirect(url_for('threat_scan'))
+
+    try:
+        analyzer = ThreatIntelAnalyzer()
+        results = analyzer.search(query)
+        return render_template('threat.html', results=results, query=query)
+    except Exception as e:
+        flash(f'Search failed: {str(e)}', 'error')
+        return redirect(url_for('threat_scan'))
 
 
 @app.errorhandler(404)

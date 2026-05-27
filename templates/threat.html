@@ -1,0 +1,454 @@
+{% extends "base.html" %}
+{% block title %}Threat Intelligence{% if results %} — {{ results.query }}{% endif %} — Security Buddy{% endblock %}
+
+{% block content %}
+
+{% if not results %}
+{# ── Form ── #}
+<section class="hero-section">
+    <div class="container">
+        <div class="text-center">
+            <h1 class="hero-headline">Threat Intelligence</h1>
+            <p class="hero-subtext">
+                Search a hash, domain, IP address or URL to check it against
+                multiple threat databases and get instant risk context.
+            </p>
+
+            <div class="trust-badges">
+                <span class="trust-badge"><i data-lucide="hash" style="width:13px;height:13px;color:var(--color-primary);"></i>MD5 / SHA1 / SHA256</span>
+                <span class="trust-badge"><i data-lucide="globe" style="width:13px;height:13px;color:var(--color-primary);"></i>Domains</span>
+                <span class="trust-badge"><i data-lucide="server" style="width:13px;height:13px;color:var(--color-primary);"></i>IP Addresses</span>
+                <span class="trust-badge"><i data-lucide="link" style="width:13px;height:13px;color:var(--color-primary);"></i>URLs</span>
+                <span class="trust-badge"><i data-lucide="database" style="width:13px;height:13px;color:var(--color-primary);"></i>abuse.ch feeds</span>
+            </div>
+
+            <div class="scan-form-wrap">
+                <form method="POST" action="{{ url_for('threat_scan') }}" id="threatForm">
+                    <div class="scan-input-group">
+                        <input type="text" class="scan-input" name="query" id="queryInput"
+                               placeholder="Search hash, domain, IP or URL…"
+                               autocomplete="off" spellcheck="false" autocapitalize="none" required>
+                        <button class="scan-btn" type="submit" id="searchBtn">
+                            <i data-lucide="search" style="width:16px;height:16px;"></i>
+                            Search
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <p style="font-size:0.8rem;color:var(--color-text-muted);margin-top:1.2rem;">
+                Powered by
+                <a href="https://urlhaus.abuse.ch" target="_blank" rel="noopener" style="color:var(--color-primary);">URLhaus</a>,
+                <a href="https://threatfox.abuse.ch" target="_blank" rel="noopener" style="color:var(--color-primary);">ThreatFox</a> &amp;
+                <a href="https://bazaar.abuse.ch" target="_blank" rel="noopener" style="color:var(--color-primary);">MalwareBazaar</a>
+                (abuse.ch). Optional: VirusTotal, AbuseIPDB via env vars.
+            </p>
+        </div>
+    </div>
+</section>
+
+{% else %}
+{# ── Results ── #}
+{% set r = results %}
+
+{# map verdict to CSS vars #}
+{% if r.verdict == 'malicious' %}
+  {% set v_color = 'var(--color-danger)' %}
+  {% set v_bg    = 'rgba(220,38,38,0.08)' %}
+  {% set v_icon  = 'alert-octagon' %}
+  {% set v_label = 'MALICIOUS' %}
+{% elif r.verdict == 'suspicious' %}
+  {% set v_color = 'var(--color-warning)' %}
+  {% set v_bg    = 'rgba(234,179,8,0.1)' %}
+  {% set v_icon  = 'alert-triangle' %}
+  {% set v_label = 'SUSPICIOUS' %}
+{% elif r.verdict == 'clean' %}
+  {% set v_color = 'var(--color-success)' %}
+  {% set v_bg    = 'rgba(22,163,74,0.08)' %}
+  {% set v_icon  = 'shield-check' %}
+  {% set v_label = 'CLEAN' %}
+{% else %}
+  {% set v_color = 'var(--color-text-muted)' %}
+  {% set v_bg    = 'var(--color-bg-alt)' %}
+  {% set v_icon  = 'help-circle' %}
+  {% set v_label = 'UNKNOWN' %}
+{% endif %}
+
+{# type icon #}
+{% if r.query_type == 'url' %}{% set type_icon = 'link' %}
+{% elif r.query_type == 'ip' %}{% set type_icon = 'server' %}
+{% elif r.query_type == 'hash' %}{% set type_icon = 'hash' %}
+{% else %}{% set type_icon = 'globe' %}{% endif %}
+
+{# ── Top bar ── #}
+<div class="seo-topbar">
+    <div class="container">
+        <div class="seo-topbar-inner">
+            <div class="seo-topbar-url" style="max-width:60%;overflow:hidden;">
+                <i data-lucide="{{ type_icon }}" style="width:14px;height:14px;color:var(--color-primary);flex-shrink:0;"></i>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.query }}">{{ r.query }}</span>
+                <span class="badge badge-neutral" style="font-size:0.7rem;flex-shrink:0;">{{ r.query_type }}</span>
+            </div>
+            <a href="{{ url_for('threat_scan') }}" class="btn btn-sm btn-outline-secondary"
+               style="font-size:0.78rem;padding:0.3rem 0.75rem;white-space:nowrap;flex-shrink:0;">
+                <i data-lucide="rotate-ccw" style="width:12px;height:12px;"></i> New search
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="container" style="padding-top:1.5rem;padding-bottom:3rem;max-width:900px;">
+
+    {% if r.error %}
+    <div class="seo-v2-card" style="border-left:4px solid var(--color-danger);padding:1rem 1.25rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;color:var(--color-danger);">
+            <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+            <strong>{{ r.error }}</strong>
+        </div>
+    </div>
+    {% else %}
+
+    {# ── Verdict card ── #}
+    <div style="background:{{ v_bg }};border:1.5px solid {{ v_color }};border-radius:var(--radius-md);padding:1.5rem 2rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
+        <div style="flex-shrink:0;text-align:center;">
+            <i data-lucide="{{ v_icon }}" style="width:48px;height:48px;color:{{ v_color }};display:block;margin:0 auto 0.3rem;"></i>
+            <div style="font-size:1.1rem;font-weight:800;letter-spacing:.08em;color:{{ v_color }};">{{ v_label }}</div>
+        </div>
+        <div style="flex:1;min-width:180px;">
+            {% if r.total_sources > 0 %}
+            <div style="font-size:1.6rem;font-weight:700;color:var(--color-text);line-height:1.1;">
+                {{ r.detection_count }}<span style="font-size:1rem;font-weight:400;color:var(--color-text-muted);"> / {{ r.total_sources }}</span>
+            </div>
+            <div style="font-size:0.85rem;color:var(--color-text-muted);margin-bottom:0.6rem;">
+                source{{ 's' if r.total_sources != 1 }} flagged this
+            </div>
+            <div style="height:6px;background:var(--color-border);border-radius:3px;overflow:hidden;max-width:200px;">
+                {% if r.total_sources > 0 %}
+                <div style="height:100%;width:{{ (r.detection_count / r.total_sources * 100) | int }}%;background:{{ v_color }};border-radius:3px;transition:width .8s ease;"></div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div style="font-size:0.95rem;color:var(--color-text-muted);">No data returned from sources.</div>
+            {% endif %}
+
+            {% if r.tags %}
+            <div style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.75rem;">
+                {% for tag in r.tags[:10] %}
+                <span style="font-size:0.72rem;background:{{ v_color }};color:#fff;border-radius:3px;padding:0.15rem 0.45rem;opacity:0.9;">{{ tag }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        {% if r.first_seen or r.last_seen %}
+        <div style="font-size:0.78rem;color:var(--color-text-muted);text-align:right;min-width:130px;">
+            {% if r.first_seen %}
+            <div><span style="font-weight:600;">First seen</span><br>{{ r.first_seen[:10] if r.first_seen else '—' }}</div>
+            {% endif %}
+            {% if r.last_seen and r.last_seen != r.first_seen %}
+            <div style="margin-top:0.4rem;"><span style="font-weight:600;">Last seen</span><br>{{ r.last_seen[:10] if r.last_seen else '—' }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    {# ── Source cards ── #}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-bottom:1.5rem;">
+        {% for src in r.sources %}
+        {% if src.status == 'malicious' %}{% set sc = 'var(--color-danger)' %}{% set sb = 'badge-danger' %}{% set si = 'alert-octagon' %}
+        {% elif src.status == 'suspicious' %}{% set sc = 'var(--color-warning)' %}{% set sb = 'badge-warning' %}{% set si = 'alert-triangle' %}
+        {% elif src.status == 'clean' %}{% set sc = 'var(--color-success)' %}{% set sb = 'badge-success' %}{% set si = 'check-circle' %}
+        {% elif src.status == 'error' %}{% set sc = 'var(--color-text-muted)' %}{% set sb = 'badge-neutral' %}{% set si = 'x-circle' %}
+        {% else %}{% set sc = 'var(--color-text-muted)' %}{% set sb = 'badge-neutral' %}{% set si = 'minus-circle' %}{% endif %}
+
+        <div class="seo-v2-card" style="border-top:3px solid {{ sc }};">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+                <div style="font-size:0.95rem;font-weight:700;color:var(--color-text);">
+                    <i data-lucide="{{ si }}" style="width:14px;height:14px;color:{{ sc }};vertical-align:-2px;margin-right:0.3rem;"></i>
+                    {{ src.name }}
+                </div>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="badge {{ sb }}">{{ src.status }}</span>
+                    <a href="{{ src.link }}" target="_blank" rel="noopener"
+                       title="View on {{ src.name }}"
+                       style="color:var(--color-text-muted);line-height:0;">
+                        <i data-lucide="external-link" style="width:13px;height:13px;"></i>
+                    </a>
+                </div>
+            </div>
+
+            {# Source-specific detail rows #}
+            <div style="font-size:0.8rem;color:var(--color-text-muted);display:flex;flex-direction:column;gap:0.3rem;">
+
+                {% if src.name == 'VirusTotal' and src.details.get('total') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Engines</span>
+                    <span style="font-weight:600;color:var(--color-text);">
+                        {{ src.details.malicious + src.details.suspicious }} / {{ src.details.total }}
+                    </span>
+                </div>
+                {% if src.details.get('country') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Country</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.country }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('as_owner') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>ASN</span><span style="font-weight:600;color:var(--color-text);text-align:right;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ src.details.as_owner }}">{{ src.details.as_owner }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('registrar') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Registrar</span><span style="font-weight:600;color:var(--color-text);text-align:right;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ src.details.registrar }}">{{ src.details.registrar }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('file_type') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>File type</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.file_type }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('file_name') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>File name</span><span style="font-weight:600;color:var(--color-text);text-align:right;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ src.details.file_name }}">{{ src.details.file_name }}</span>
+                </div>
+                {% endif %}
+
+                {% elif src.name == 'URLhaus' %}
+                {% if src.details.get('threat') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Threat</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.threat }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('url_status') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>URL status</span><span style="font-weight:600;color:{% if src.details.url_status == 'online' %}var(--color-danger){% else %}var(--color-text){% endif %};">{{ src.details.url_status }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('urls_count') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Associated URLs</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.urls_count }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('active_urls') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Active/unknown</span><span style="font-weight:600;color:var(--color-danger);">{{ src.details.active_urls }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('date_added') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Date added</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.date_added[:10] }}</span>
+                </div>
+                {% endif %}
+
+                {% elif src.name == 'ThreatFox' %}
+                {% if src.details.get('malware') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Malware</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.malware }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('threat_type') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Threat type</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.threat_type }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('confidence') is not none %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Confidence</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.confidence }}%</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('first_seen') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>First seen</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.first_seen[:10] }}</span>
+                </div>
+                {% endif %}
+
+                {% elif src.name == 'MalwareBazaar' %}
+                {% if src.details.get('signature') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Signature</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.signature }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('file_type') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>File type</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.file_type }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('file_size') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>File size</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.file_size | filesizeformat if src.details.file_size else '—' }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('reporter') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Reporter</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.reporter }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('first_seen') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>First seen</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.first_seen[:10] }}</span>
+                </div>
+                {% endif %}
+
+                {% elif src.name == 'AbuseIPDB' %}
+                {% if src.details.get('confidence_score') is not none %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Abuse score</span>
+                    <span style="font-weight:700;color:{% if src.details.confidence_score >= 50 %}var(--color-danger){% elif src.details.confidence_score >= 15 %}var(--color-warning){% else %}var(--color-success){% endif %};">{{ src.details.confidence_score }}%</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('total_reports') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Reports (90d)</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.total_reports }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('country') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Country</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.country }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('isp') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>ISP</span><span style="font-weight:600;color:var(--color-text);text-align:right;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ src.details.isp }}">{{ src.details.isp }}</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('is_tor') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Tor exit node</span><span style="font-weight:600;color:var(--color-danger);">Yes</span>
+                </div>
+                {% endif %}
+                {% if src.details.get('last_reported') %}
+                <div style="display:flex;justify-content:space-between;">
+                    <span>Last reported</span><span style="font-weight:600;color:var(--color-text);">{{ src.details.last_reported[:10] }}</span>
+                </div>
+                {% endif %}
+
+                {% elif src.status == 'error' %}
+                <div style="color:var(--color-text-muted);font-style:italic;">
+                    {{ src.details.get('error', 'Connection failed') }}
+                </div>
+                {% elif src.status in ('clean', 'unknown') %}
+                <div style="color:var(--color-text-muted);">No malicious indicators found.</div>
+                {% endif %}
+
+                {# Tags row #}
+                {% if src.get('tags') %}
+                <div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.25rem;">
+                    {% for t in src.tags[:6] %}
+                    <span class="badge badge-neutral" style="font-size:0.68rem;">{{ t }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# ── URLhaus sample URLs (host check) ── #}
+    {% for src in r.sources %}
+    {% if src.name == 'URLhaus' and src.details.get('sample_urls') %}
+    <div class="seo-v2-card" style="margin-bottom:1rem;">
+        <div class="seo-card-title" style="margin-bottom:0.6rem;">
+            <i data-lucide="list" style="width:15px;height:15px;color:var(--color-primary);"></i>
+            Sample malicious URLs on this host
+        </div>
+        {% for u in src.details.sample_urls %}
+        <div style="font-family:monospace;font-size:0.78rem;color:var(--color-text-muted);word-break:break-all;padding:0.25rem 0;border-bottom:1px solid var(--color-border);">
+            {{ u }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {# ── Hash details card ── #}
+    {% if r.query_type == 'hash' %}
+    {% for src in r.sources %}
+    {% if src.name == 'MalwareBazaar' and src.status == 'malicious' %}
+    <div class="seo-v2-card" style="margin-bottom:1rem;">
+        <div class="seo-card-title" style="margin-bottom:0.75rem;">
+            <i data-lucide="file-warning" style="width:15px;height:15px;color:var(--color-primary);"></i>
+            File details
+        </div>
+        <div class="ssl-info-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
+            {% if src.details.get('sha256') %}
+            <div class="ssl-info-item">
+                <div class="ssl-info-label">SHA256</div>
+                <div class="ssl-info-value" style="font-family:monospace;font-size:0.72rem;word-break:break-all;">{{ src.details.sha256 }}</div>
+            </div>
+            {% endif %}
+            {% if src.details.get('md5') %}
+            <div class="ssl-info-item">
+                <div class="ssl-info-label">MD5</div>
+                <div class="ssl-info-value" style="font-family:monospace;font-size:0.72rem;">{{ src.details.md5 }}</div>
+            </div>
+            {% endif %}
+            {% if src.details.get('file_name') %}
+            <div class="ssl-info-item">
+                <div class="ssl-info-label">File name</div>
+                <div class="ssl-info-value">{{ src.details.file_name }}</div>
+            </div>
+            {% endif %}
+            {% if src.details.get('file_type') %}
+            <div class="ssl-info-item">
+                <div class="ssl-info-label">Type</div>
+                <div class="ssl-info-value">{{ src.details.file_type }}</div>
+            </div>
+            {% endif %}
+            {% if src.details.get('signature') %}
+            <div class="ssl-info-item">
+                <div class="ssl-info-label">Signature</div>
+                <div class="ssl-info-value bad">{{ src.details.signature }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+
+    {# ── Optional sources note ── #}
+    {% if not r.vt_enabled or (r.query_type == 'ip' and not r.abuseipdb_enabled) %}
+    <div style="font-size:0.78rem;color:var(--color-text-muted);text-align:center;margin-top:1rem;padding:0.75rem;background:var(--color-bg-alt);border-radius:var(--radius-sm);">
+        <i data-lucide="info" style="width:13px;height:13px;vertical-align:-1px;margin-right:0.25rem;"></i>
+        {% if not r.vt_enabled %}Set <code>VIRUSTOTAL_API_KEY</code> to also check against VirusTotal's 70+ engines.{% endif %}
+        {% if r.query_type == 'ip' and not r.abuseipdb_enabled %} Set <code>ABUSEIPDB_API_KEY</code> for crowd-sourced IP abuse reports.{% endif %}
+    </div>
+    {% endif %}
+
+    {% endif %}{# end error check #}
+
+</div>
+
+<script>
+(function() {
+    // small animation: slide detection bar in
+    var bar = document.querySelector('[style*="transition:width"]');
+    if (bar) {
+        var target = bar.style.width;
+        bar.style.width = '0';
+        setTimeout(function() { bar.style.width = target; }, 150);
+    }
+    lucide.createIcons();
+})();
+</script>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var form = document.getElementById('threatForm');
+if (form) {
+    form.addEventListener('submit', function() {
+        var btn = document.getElementById('searchBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" style="width:16px;height:16px;animation:spin 1s linear infinite;"></i> Searching…';
+            lucide.createIcons();
+        }
+    });
+}
+</script>
+{% endblock %}
