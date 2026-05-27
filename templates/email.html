@@ -24,6 +24,7 @@
 
             <div class="scan-form-wrap">
                 <form method="POST" action="{{ url_for('email_scan') }}" id="emailForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="scan-input-group">
                         <input type="text" class="scan-input" name="target" id="targetInput"
                                placeholder="Enter domain (e.g. example.com)"

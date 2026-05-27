@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import update
 from app import db
 import secrets
 import hashlib
@@ -68,10 +69,41 @@ class APIKey(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_used = db.Column(db.DateTime, nullable=True)
 
-    def increment_usage(self):
-        """Increment usage counters and update last used"""
+    def try_consume(self):
+        """
+        Atomically check the rate limit and consume one request.
+        Returns True if the request is allowed, False if rate-limited.
+        Uses a conditional UPDATE so concurrent workers cannot exceed the limit.
+        """
         now = datetime.utcnow()
-        # Initialise window on first use
+
+        # (Re)open the window atomically if it has expired or was never set.
+        db.session.execute(
+            update(APIKey)
+            .where(
+                APIKey.id == self.id,
+                (APIKey.rate_limit_reset.is_(None)) | (APIKey.rate_limit_reset <= now),
+            )
+            .values(rate_limit_reset=now + timedelta(hours=1), hourly_usage=0)
+        )
+
+        # Atomically increment only if still under the limit.
+        result = db.session.execute(
+            update(APIKey)
+            .where(APIKey.id == self.id, APIKey.hourly_usage < APIKey.rate_limit)
+            .values(
+                hourly_usage=APIKey.hourly_usage + 1,
+                usage_count=APIKey.usage_count + 1,
+                last_used=now,
+            )
+        )
+        db.session.commit()
+        db.session.refresh(self)
+        return result.rowcount > 0
+
+    def increment_usage(self):
+        """Backward-compatible: consume one request unconditionally."""
+        now = datetime.utcnow()
         if not self.rate_limit_reset:
             self.rate_limit_reset = now + timedelta(hours=1)
             self.hourly_usage = 0
@@ -83,7 +115,6 @@ class APIKey(db.Model):
     def is_rate_limited(self):
         """Check if this API key has exceeded its hourly rate limit."""
         now = datetime.utcnow()
-        # If the window has expired (or never been set), open a fresh one
         if not self.rate_limit_reset or self.rate_limit_reset <= now:
             self.rate_limit_reset = now + timedelta(hours=1)
             self.hourly_usage = 0

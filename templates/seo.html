@@ -41,6 +41,7 @@
 
             <div class="scan-form-wrap">
                 <form method="POST" action="{{ url_for('seo_scan') }}" id="seoForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="scan-input-group">
                         <input
                             type="text"
@@ -1229,7 +1230,12 @@
         bar.style.width   = '3%';
         const fd = new FormData();
         fd.append('target', domain);
-        fetch('{{ url_for("seo_crawl_start") }}', { method: 'POST', body: fd })
+        const csrf = document.querySelector('meta[name="csrf-token"]');
+        fetch('{{ url_for("seo_crawl_start") }}', {
+            method: 'POST',
+            headers: csrf ? { 'X-CSRF-Token': csrf.content } : {},
+            body: fd
+        })
             .then(r => r.json())
             .then(data => {
                 if (data.error) { alert('Error: ' + data.error); location.reload(); return; }

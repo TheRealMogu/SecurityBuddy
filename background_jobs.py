@@ -6,10 +6,9 @@ import queue
 import time
 import uuid
 from datetime import datetime
-from models import ScanResult, User
+from models import ScanResult
 from app import db
 from scanner import SecurityScanner
-from premium_features import AdvancedScanner
 from notification_system import NotificationSystem
 import json
 import logging
@@ -32,6 +31,7 @@ class BackgroundJobManager:
         self.job_queue = queue.Queue()
         self.active_jobs = {}
         self.completed_jobs = {}
+        self._lock = threading.Lock()
         self.worker_thread = None
         self.logger = logging.getLogger(__name__)
         self.running = False
@@ -54,8 +54,9 @@ class BackgroundJobManager:
         """Submit a new scan job to the queue"""
         job = BackgroundScanJob(target, user_id, advanced, notification_email)
         job_id = f"scan_{uuid.uuid4().hex}"
-        
-        self.active_jobs[job_id] = job
+
+        with self._lock:
+            self.active_jobs[job_id] = job
         self.job_queue.put((job_id, job))
         
         self.logger.info(f"Submitted scan job {job_id} for {target}")
@@ -63,8 +64,9 @@ class BackgroundJobManager:
     
     def get_job_status(self, job_id):
         """Get status of a specific job"""
-        if job_id in self.active_jobs:
-            job = self.active_jobs[job_id]
+        with self._lock:
+            job = self.active_jobs.get(job_id)
+        if job:
             return {
                 'job_id': job_id,
                 'status': job.status,
@@ -74,8 +76,9 @@ class BackgroundJobManager:
                 'created_at': job.created_at.isoformat(),
                 'error': job.error
             }
-        elif job_id in self.completed_jobs:
-            job = self.completed_jobs[job_id]
+        with self._lock:
+            job = self.completed_jobs.get(job_id)
+        if job:
             return {
                 'job_id': job_id,
                 'status': 'completed',
@@ -85,8 +88,7 @@ class BackgroundJobManager:
                 'result': job.result,
                 'error': job.error
             }
-        else:
-            return None
+        return None
     
     def _worker_loop(self):
         """Main worker loop for processing jobs"""
@@ -98,14 +100,13 @@ class BackgroundJobManager:
                 self.logger.info(f"Processing job {job_id}")
                 self._process_scan_job(job_id, job)
                 
-                # Move to completed jobs
-                self.completed_jobs[job_id] = self.active_jobs.pop(job_id)
-                
-                # Cleanup old completed jobs (keep last 100)
-                if len(self.completed_jobs) > 100:
-                    oldest_job = min(self.completed_jobs.keys(), 
-                                   key=lambda k: self.completed_jobs[k].created_at)
-                    del self.completed_jobs[oldest_job]
+                # Move to completed jobs, then trim history (atomically)
+                with self._lock:
+                    self.completed_jobs[job_id] = self.active_jobs.pop(job_id)
+                    if len(self.completed_jobs) > 100:
+                        oldest_job = min(self.completed_jobs.keys(),
+                                         key=lambda k: self.completed_jobs[k].created_at)
+                        del self.completed_jobs[oldest_job]
                 
             except queue.Empty:
                 continue
@@ -132,21 +133,10 @@ class BackgroundJobManager:
             job.progress = 20
             
             results = scanner.scan_target(job.target)
-            
+
             job.current_step = 'Analyzing HTTPS and SSL...'
             job.progress = 50
-            
-            # Advanced scan for premium users
-            if job.advanced and job.user_id:
-                user = User.query.get(job.user_id)
-                if user and user.is_premium:
-                    job.current_step = 'Running advanced vulnerability scan...'
-                    job.progress = 70
-                    
-                    advanced_scanner = AdvancedScanner()
-                    advanced_results = advanced_scanner.advanced_vulnerability_scan(f"https://{job.target}")
-                    results['advanced_scan'] = advanced_results
-            
+
             job.current_step = 'Calculating security score...'
             job.progress = 85
             
@@ -193,7 +183,8 @@ class BackgroundJobManager:
         """Start a site-wide SEO crawl in a dedicated background thread."""
         job    = SEOCrawlJob(target, max_pages)
         job_id = f"seo_{uuid.uuid4().hex}"
-        self.active_jobs[job_id] = job
+        with self._lock:
+            self.active_jobs[job_id] = job
         t = threading.Thread(
             target=self._run_seo_crawl, args=(job_id, job), daemon=True
         )
@@ -203,7 +194,8 @@ class BackgroundJobManager:
 
     def get_seo_crawl_status(self, job_id: str):
         """Return status dict for an SEO crawl job."""
-        job = self.active_jobs.get(job_id) or self.completed_jobs.get(job_id)
+        with self._lock:
+            job = self.active_jobs.get(job_id) or self.completed_jobs.get(job_id)
         if not job:
             return None
         return {
@@ -244,11 +236,12 @@ class BackgroundJobManager:
             job.current_step = f'Error: {str(e)}'
             self.logger.error(f"SEO crawl {job_id} failed: {e}")
         finally:
-            self.completed_jobs[job_id] = self.active_jobs.pop(job_id, job)
-            crawl_jobs = {k: v for k, v in self.completed_jobs.items() if k.startswith('seo_')}
-            if len(crawl_jobs) > 50:
-                oldest = min(crawl_jobs, key=lambda k: crawl_jobs[k].created_at)
-                del self.completed_jobs[oldest]
+            with self._lock:
+                self.completed_jobs[job_id] = self.active_jobs.pop(job_id, job)
+                crawl_jobs = {k: v for k, v in self.completed_jobs.items() if k.startswith('seo_')}
+                if len(crawl_jobs) > 50:
+                    oldest = min(crawl_jobs, key=lambda k: crawl_jobs[k].created_at)
+                    del self.completed_jobs[oldest]
 
 
 class SEOCrawlJob:

@@ -24,6 +24,7 @@
 
             <div class="scan-form-wrap">
                 <form method="POST" action="{{ url_for('threat_scan') }}" id="threatForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="scan-input-group">
                         <input type="text" class="scan-input" name="query" id="queryInput"
                                placeholder="Search hash, domain, IP or URL…"

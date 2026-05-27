@@ -8,6 +8,42 @@ from urllib.parse import urlparse
 import dns.resolver
 import logging
 
+def is_public_ip(ip_str):
+    """Return True if the IP string is a routable public address."""
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    return not (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_reserved
+        or ip_obj.is_multicast
+        or ip_obj.is_unspecified
+    )
+
+
+def resolve_host_is_public(host):
+    """
+    Resolve a hostname (all A/AAAA records) and verify every address is public.
+    Returns (ok, error_message). If the host does not resolve at all we allow it
+    (the downstream request will simply fail) — we only block resolutions that
+    point at private/internal ranges, which is the SSRF risk.
+    """
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError, socket.error):
+        return True, None  # cannot resolve — not an SSRF vector
+    for info in infos:
+        ip = info[4][0]
+        # strip IPv6 zone id if present
+        ip = ip.split('%')[0]
+        if not is_public_ip(ip):
+            return False, "Target resolves to a private or reserved IP address"
+    return True, None
+
+
 class AdvancedValidator:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -114,7 +150,12 @@ class AdvancedValidator:
         invalid_domains = ['localhost', 'test', 'example', 'invalid']
         if domain in invalid_domains:
             return False, f"'{domain}' is not a valid public domain"
-        
+
+        # SSRF guard: reject domains that resolve to private/internal IPs
+        ok, err = resolve_host_is_public(domain)
+        if not ok:
+            return False, err
+
         return True, None
     
     def check_dns_resolution(self, domain):

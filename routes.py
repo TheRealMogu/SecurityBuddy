@@ -1,9 +1,11 @@
 import json
+import html
+import ipaddress
 from urllib.parse import urlparse
 from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
-from werkzeug.security import generate_password_hash
-from app import app, db
+from werkzeug.security import generate_password_hash, check_password_hash
+from app import app, db, rate_limit
 from models import User, ScanResult, APIKey, MonitoringConfig
 from scanner import SecurityScanner
 from seo_analyzer import SEOAnalyzer
@@ -17,12 +19,34 @@ from background_jobs import job_manager
 # Register API blueprint
 app.register_blueprint(api_bp)
 
+# Pre-computed dummy hash so login timing is constant whether or not the user exists
+_DUMMY_PASSWORD_HASH = generate_password_hash('dummy-password-for-timing-equalization')
+
+
+def _is_safe_next(target):
+    """Allow only relative, same-site redirect targets (no //, no scheme/netloc)."""
+    if not target:
+        return False
+    if target.startswith('//') or target.startswith('/\\') or '\\' in target:
+        return False
+    parsed = urlparse(target)
+    return not parsed.scheme and not parsed.netloc and target.startswith('/')
+
+
+def _remember_guest_scan(scan_id):
+    """Track guest scan IDs in the session so only the creator can view them."""
+    ids = session.get('guest_scans', [])
+    ids.append(scan_id)
+    session['guest_scans'] = ids[-50:]
+
+
 @app.route('/')
 def index():
     """Homepage with scan form"""
     return render_template('index.html')
 
 @app.route('/scan', methods=['POST'])
+@rate_limit(max_calls=10, window_seconds=60)
 def scan():
     """Process scan request"""
     target = request.form.get('target', '').strip()
@@ -63,9 +87,12 @@ def scan():
         )
         db.session.add(scan_result)
         db.session.commit()
-        
+
+        if not current_user.is_authenticated:
+            _remember_guest_scan(scan_result.id)
+
         return render_template('scan_result.html', results=results, scan_id=scan_result.id)
-        
+
     except Exception as e:
         flash(f'Scan failed: {str(e)}', 'error')
         return redirect(url_for('index'))
@@ -82,12 +109,19 @@ def login():
             return render_template('login.html')
         
         user = User.query.filter_by(username=username).first()
-        
-        if user and user.check_password(password):
+
+        # Always run a password hash comparison to equalize timing and avoid
+        # leaking whether a username exists.
+        if user:
+            password_ok = user.check_password(password)
+        else:
+            check_password_hash(_DUMMY_PASSWORD_HASH, password)
+            password_ok = False
+
+        if user and password_ok:
             login_user(user)
             next_page = request.args.get('next')
-            # Validate next_page to prevent open redirect
-            if next_page and urlparse(next_page).netloc != '':
+            if not _is_safe_next(next_page):
                 next_page = None
             flash(f'Welcome back, {user.username}!', 'success')
             return redirect(next_page or url_for('dashboard'))
@@ -107,16 +141,22 @@ def register():
         if not all([username, email, password]):
             flash('Please fill in all fields.', 'warning')
             return render_template('login.html')
-        
-        # Check if user exists
-        if User.query.filter_by(username=username).first():
-            flash('Username already exists.', 'error')
+
+        # Enforce a minimum password policy
+        if len(password) < 12:
+            flash('Password must be at least 12 characters long.', 'error')
             return render_template('login.html')
-            
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered.', 'error')
+
+        # Use a generic message for both duplicate username and email to avoid
+        # account enumeration.
+        existing = (
+            User.query.filter_by(username=username).first()
+            or User.query.filter_by(email=email).first()
+        )
+        if existing:
+            flash('Registration failed — please check your details and try again.', 'error')
             return render_template('login.html')
-        
+
         # Create new user
         user = User(username=username, email=email)
         user.set_password(password)
@@ -152,12 +192,18 @@ def dashboard():
 def view_scan(scan_id):
     """View specific scan result"""
     scan_result = ScanResult.query.get_or_404(scan_id)
-    
-    # Check if user has access to this scan
-    if scan_result.user_id and (not current_user.is_authenticated or scan_result.user_id != current_user.id):
-        flash('You do not have access to this scan result.', 'error')
-        return redirect(url_for('index'))
-    
+
+    if scan_result.user_id:
+        # Owned scan — only the owner may view it.
+        if not current_user.is_authenticated or scan_result.user_id != current_user.id:
+            flash('You do not have access to this scan result.', 'error')
+            return redirect(url_for('index'))
+    else:
+        # Guest scan — only viewable by the session that created it.
+        if scan_id not in session.get('guest_scans', []):
+            flash('You do not have access to this scan result.', 'error')
+            return redirect(url_for('index'))
+
     results = json.loads(scan_result.results)
     return render_template('scan_result.html', results=results, scan_id=scan_id)
 
@@ -192,6 +238,12 @@ def create_api_key():
 def badge_svg(domain, score):
     """Dynamic SVG security score badge for sharing."""
     score = max(0, min(100, score))
+
+    # Sanitize the domain: keep only safe label characters, cap length, then
+    # XML-escape before interpolating into the SVG markup.
+    import re as _re
+    domain = _re.sub(r'[^a-zA-Z0-9.\-]', '', domain)[:253]
+    domain = html.escape(domain, quote=True)
 
     if score >= 80:
         color = '#1a7f4b'
@@ -242,6 +294,7 @@ def badge_svg(domain, score):
 
 
 @app.route('/seo', methods=['GET', 'POST'])
+@rate_limit(max_calls=10, window_seconds=60)
 def seo_scan():
     """Dedicated SEO analysis page"""
     if request.method == 'GET':
@@ -270,6 +323,7 @@ def seo_scan():
 
 
 @app.route('/seo/crawl', methods=['POST'])
+@rate_limit(max_calls=5, window_seconds=60)
 def seo_crawl_start():
     """Start a site-wide SEO crawl as a background job."""
     target = request.form.get('target', '').strip()
@@ -313,6 +367,7 @@ def seo_crawl_report(job_id):
 
 
 @app.route('/email', methods=['GET', 'POST'])
+@rate_limit(max_calls=10, window_seconds=60)
 def email_scan():
     """Email security analysis page."""
     if request.method == 'GET':
@@ -340,6 +395,7 @@ def email_scan():
 
 
 @app.route('/threat', methods=['GET', 'POST'])
+@rate_limit(max_calls=20, window_seconds=60)
 def threat_scan():
     """Threat intelligence lookup — hash, domain, IP, URL."""
     if request.method == 'GET':
@@ -348,6 +404,10 @@ def threat_scan():
     query = request.form.get('query', '').strip()
     if not query:
         flash('Please enter a search term.', 'warning')
+        return redirect(url_for('threat_scan'))
+
+    if len(query) > 2048:
+        flash('Search term is too long.', 'error')
         return redirect(url_for('threat_scan'))
 
     try:

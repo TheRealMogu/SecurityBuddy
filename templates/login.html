@@ -27,6 +27,7 @@
             <!-- Login panel -->
             <div class="auth-panel active" id="panelLogin" role="tabpanel" aria-labelledby="tabLoginBtn">
                 <form method="POST" action="{{ url_for('login') }}" id="loginForm" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group">
                         <label class="form-label" for="loginUsername">Username</label>
                         <input type="text" class="form-control" id="loginUsername"
@@ -54,6 +55,7 @@
             <!-- Register panel -->
             <div class="auth-panel" id="panelRegister" role="tabpanel" aria-labelledby="tabRegisterBtn">
                 <form method="POST" action="{{ url_for('register') }}" id="registerForm" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group">
                         <label class="form-label" for="registerUsername">Username</label>
                         <input type="text" class="form-control" id="registerUsername"

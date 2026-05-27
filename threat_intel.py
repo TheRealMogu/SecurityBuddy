@@ -1,7 +1,8 @@
 import re
 import os
 import base64
-import socket
+import ipaddress
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -11,21 +12,25 @@ TIMEOUT = 8
 VT_API_KEY = os.environ.get('VIRUSTOTAL_API_KEY', '')
 ABUSEIPDB_KEY = os.environ.get('ABUSEIPDB_API_KEY', '')
 
+_DOMAIN_RE = re.compile(
+    r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+)
+
 
 def _is_private_ip(ip: str) -> bool:
+    """True for any non-public address (private, loopback, link-local, reserved)."""
     try:
-        parts = [int(x) for x in ip.split('.')]
-        return (
-            parts[0] == 10
-            or parts[0] == 127
-            or parts[0] == 0
-            or parts[0] >= 240
-            or (parts[0] == 172 and 16 <= parts[1] <= 31)
-            or (parts[0] == 192 and parts[1] == 168)
-            or (parts[0] == 169 and parts[1] == 254)
-        )
-    except Exception:
-        return False
+        ip_obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return True  # treat unparseable input as unsafe
+    return (
+        ip_obj.is_private
+        or ip_obj.is_loopback
+        or ip_obj.is_link_local
+        or ip_obj.is_reserved
+        or ip_obj.is_multicast
+        or ip_obj.is_unspecified
+    )
 
 
 class ThreatIntelAnalyzer:
@@ -70,6 +75,8 @@ class ThreatIntelAnalyzer:
         return self._build_result(url, 'url', sources, tags, first_seen, last_seen)
 
     def _analyze_domain(self, domain: str) -> dict:
+        if not _DOMAIN_RE.match(domain):
+            return self._error_result(domain, 'domain', 'Not a valid domain, IP, URL or hash.')
         checks = [(self._urlhaus_host, [domain]), (self._threatfox, [domain])]
         if VT_API_KEY:
             checks.append((self._virustotal_domain, [domain]))
@@ -267,7 +274,7 @@ class ThreatIntelAnalyzer:
         src = {'name': 'VirusTotal', 'status': 'unknown', 'details': {},
                'link': f'https://www.virustotal.com/gui/domain/{domain}', 'tags': []}
         try:
-            r = requests.get(f'https://www.virustotal.com/api/v3/domains/{domain}',
+            r = requests.get(f'https://www.virustotal.com/api/v3/domains/{quote(domain, safe="")}',
                              headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})
@@ -285,7 +292,7 @@ class ThreatIntelAnalyzer:
         src = {'name': 'VirusTotal', 'status': 'unknown', 'details': {},
                'link': f'https://www.virustotal.com/gui/ip-address/{ip}', 'tags': []}
         try:
-            r = requests.get(f'https://www.virustotal.com/api/v3/ip_addresses/{ip}',
+            r = requests.get(f'https://www.virustotal.com/api/v3/ip_addresses/{quote(ip, safe="")}',
                              headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})
@@ -305,7 +312,7 @@ class ThreatIntelAnalyzer:
         src = {'name': 'VirusTotal', 'status': 'unknown', 'details': {},
                'link': f'https://www.virustotal.com/gui/file/{hash_value}', 'tags': []}
         try:
-            r = requests.get(f'https://www.virustotal.com/api/v3/files/{hash_value}',
+            r = requests.get(f'https://www.virustotal.com/api/v3/files/{quote(hash_value, safe="")}',
                              headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})

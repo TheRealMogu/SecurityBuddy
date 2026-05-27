@@ -40,6 +40,7 @@
             <!-- Scan form -->
             <div class="scan-form-wrap">
                 <form method="POST" action="{{ url_for('scan') }}" id="scanForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="scan-input-group">
                         <input
                             type="text"

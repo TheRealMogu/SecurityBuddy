@@ -16,8 +16,23 @@ from models import User, ScanResult, APIKey
 from app import db
 from scanner import SecurityScanner
 from validators import AdvancedValidator, clean_target
+def _addr_is_public(addr):
+    return not (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_reserved
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_unspecified
+    )
+
+
 def _is_safe_webhook_url(url):
-    """Validate webhook URL to prevent SSRF: must be http/https and not target private IPs."""
+    """
+    Validate webhook URL to prevent SSRF. Resolves ALL addresses for the host
+    (not just the first) and rejects if any points at a private/internal range.
+    Called again immediately before sending to reduce the DNS-rebinding window.
+    """
     try:
         parsed = urlparse(url)
         if parsed.scheme not in ('http', 'https'):
@@ -25,22 +40,34 @@ def _is_safe_webhook_url(url):
         hostname = parsed.hostname
         if not hostname:
             return False
-        # Block localhost and loopback
         if hostname in ('localhost', '127.0.0.1', '::1'):
             return False
-        # Resolve and check for private/reserved ranges
+        # Literal IP?
         try:
             addr = ipaddress.ip_address(hostname)
+            return _addr_is_public(addr)
         except ValueError:
-            try:
-                addr = ipaddress.ip_address(socket.gethostbyname(hostname))
-            except Exception:
-                return False
-        if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            pass
+        # Resolve every A/AAAA record and require all of them to be public.
+        try:
+            infos = socket.getaddrinfo(hostname, None)
+        except Exception:
             return False
+        if not infos:
+            return False
+        for info in infos:
+            ip = info[4][0].split('%')[0]
+            try:
+                if not _addr_is_public(ipaddress.ip_address(ip)):
+                    return False
+            except ValueError:
+                return False
         return True
     except Exception:
         return False
+
+
+MAX_BATCH_TARGETS = 10
 
 api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
 
@@ -66,17 +93,14 @@ def require_api_key(f):
                 'message': 'The provided API key is invalid or inactive'
             }), 401
         
-        # Check rate limits
-        if api_key_obj.is_rate_limited():
+        # Atomically check the rate limit and consume one request
+        if not api_key_obj.try_consume():
             return jsonify({
                 'error': 'Rate limit exceeded',
                 'message': 'API rate limit exceeded. Please try again later.',
                 'reset_time': api_key_obj.rate_limit_reset.isoformat() if api_key_obj.rate_limit_reset else None
             }), 429
-        
-        # Update usage
-        api_key_obj.increment_usage()
-        
+
         # Add user to request context
         request.api_user = api_key_obj.user
         request.api_key = api_key_obj
@@ -240,6 +264,16 @@ def api_webhook():
             }), 400
         
         targets = data['targets']
+        if not isinstance(targets, list):
+            return jsonify({
+                'error': 'Invalid targets',
+                'message': 'targets must be an array'
+            }), 400
+        if len(targets) > MAX_BATCH_TARGETS:
+            return jsonify({
+                'error': 'Too many targets',
+                'message': f'A maximum of {MAX_BATCH_TARGETS} targets per request is allowed'
+            }), 400
         webhook_url = data.get('webhook_url')
         fail_threshold = data.get('fail_threshold', 60)
         
@@ -330,8 +364,13 @@ def api_webhook():
                     'message': 'webhook_url must be a public HTTP/HTTPS URL'
                 }), 400
             try:
+                # Re-validate immediately before sending to shrink the
+                # DNS-rebinding window, and never follow redirects to internal hosts.
+                if not _is_safe_webhook_url(webhook_url):
+                    raise ValueError("webhook_url resolved to a non-public address")
                 import requests as req_lib
-                req_lib.post(webhook_url, json=response_data, timeout=10)
+                req_lib.post(webhook_url, json=response_data, timeout=10,
+                             allow_redirects=False)
             except Exception as webhook_err:
                 current_app.logger.warning(f"Webhook delivery failed to {webhook_url}: {webhook_err}")
         

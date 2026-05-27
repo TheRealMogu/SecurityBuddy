@@ -369,6 +369,27 @@ class SiteCrawler:
         self._visited: set   = set()
         self._queue:   deque = deque([(base_url, 0)])
         self.pages:    list  = []
+        self._robots = self._load_robots(parsed)
+
+    def _load_robots(self, parsed):
+        """Load and parse robots.txt so the crawler can respect Disallow rules."""
+        rp = urllib.robotparser.RobotFileParser()
+        robots_url = f'{parsed.scheme}://{parsed.netloc}/robots.txt'
+        try:
+            resp = self.session.get(robots_url, timeout=8, allow_redirects=True)
+            if resp.status_code == 200:
+                rp.parse(resp.text.splitlines())
+            else:
+                rp.allow_all = True
+        except Exception:
+            rp.allow_all = True
+        return rp
+
+    def _allowed(self, url: str) -> bool:
+        try:
+            return self._robots.can_fetch('*', url)
+        except Exception:
+            return True
 
     def _normalise(self, href: str, page_url: str):
         try:
@@ -397,6 +418,8 @@ class SiteCrawler:
             if key in self._visited:
                 continue
             self._visited.add(key)
+            if not self._allowed(url):
+                continue
             try:
                 t0       = time.monotonic()
                 response = self.session.get(url, timeout=12, allow_redirects=True)

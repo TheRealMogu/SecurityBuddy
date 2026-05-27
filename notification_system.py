@@ -2,6 +2,8 @@
 Notification system for Security Buddy including email alerts and monitoring
 """
 import smtplib
+import ssl
+import re
 import html as html_lib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -48,9 +50,10 @@ class NotificationSystem:
                 pdf_part = MIMEBase('application', 'octet-stream')
                 pdf_part.set_payload(pdf_buffer.read())
                 encoders.encode_base64(pdf_part)
+                safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', str(scan_result.target))[:100]
                 pdf_part.add_header(
                     'Content-Disposition',
-                    f'attachment; filename="security_report_{scan_result.target}_{datetime.now().strftime("%Y%m%d")}.pdf"'
+                    f'attachment; filename="security_report_{safe_name}_{datetime.now().strftime("%Y%m%d")}.pdf"'
                 )
                 msg.attach(pdf_part)
             
@@ -66,15 +69,16 @@ class NotificationSystem:
             return False, "Email service not configured"
         
         try:
+            safe_target = html_lib.escape(str(scan_result.target))
             subject = f"🚨 Critical Security Issues Detected: {scan_result.target}"
-            
+
             html_content = f"""
             <html>
             <body style="font-family: 'Inter', Arial, sans-serif; color: #1D2B36; line-height: 1.6;">
                 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
                     <div style="background: linear-gradient(135deg, #FF3B30, #FF6B6B); color: white; padding: 30px; border-radius: 12px; text-align: center; margin-bottom: 30px;">
                         <h1 style="margin: 0; font-size: 24px;">⚠️ Critical Security Alert</h1>
-                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Immediate attention required for {scan_result.target}</p>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Immediate attention required for {safe_target}</p>
                     </div>
                     
                     <div style="background: #FFF5F5; border-left: 4px solid #FF3B30; padding: 20px; margin-bottom: 20px;">
@@ -176,7 +180,9 @@ class NotificationSystem:
         """Create HTML email template for scan completion"""
         score = results.get('overall_score', 0)
         risk_level = results.get('risk_level', 'unknown')
-        
+        safe_target = html_lib.escape(str(scan_result.target))
+        safe_risk = html_lib.escape(str(risk_level).title())
+
         # Determine colors based on score
         if score >= 80:
             score_color = "#34C759"
@@ -199,8 +205,8 @@ class NotificationSystem:
                 
                 <div style="background: {risk_bg}; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
                     <h2 style="margin: 0 0 10px 0; color: {score_color}; font-size: 32px;">{score}/100</h2>
-                    <p style="margin: 0; font-size: 18px; font-weight: 600; color: #1D2B36;">{scan_result.target}</p>
-                    <p style="margin: 5px 0 0 0; color: #8E95A9;">Risk Level: {risk_level.title()}</p>
+                    <p style="margin: 0; font-size: 18px; font-weight: 600; color: #1D2B36;">{safe_target}</p>
+                    <p style="margin: 5px 0 0 0; color: #8E95A9;">Risk Level: {safe_risk}</p>
                 </div>
                 
                 <div style="background: #F5F7FA; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
@@ -230,7 +236,7 @@ class NotificationSystem:
     
     def _create_monitoring_email_template(self, total_scans, avg_score, unique_domains, trend, recent_scans, period_days):
         """Create monitoring summary email template"""
-        return f"""
+        html_content = f"""
         <html>
         <body style="font-family: 'Inter', Arial, sans-serif; color: #1D2B36; line-height: 1.6;">
             <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -294,16 +300,15 @@ class NotificationSystem:
             smtp_username = os.environ.get('SMTP_USERNAME')
             smtp_password = os.environ.get('SMTP_PASSWORD')
             
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            
-            text = msg.as_string()
-            server.sendmail(msg['From'], msg['To'], text)
-            server.quit()
-            
+            context = ssl.create_default_context()
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+                server.starttls(context=context)
+                server.login(smtp_username, smtp_password)
+                text = msg.as_string()
+                server.sendmail(msg['From'], msg['To'], text)
+
             return True, "Email sent successfully"
-            
+
         except Exception as e:
             return False, f"SMTP error: {str(e)}"
 
