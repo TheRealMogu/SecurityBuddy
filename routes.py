@@ -1,6 +1,9 @@
 import json
 import html
+import os
 import ipaddress
+from datetime import datetime, timedelta
+from hmac import compare_digest as _hmac_compare
 from urllib.parse import urlparse
 from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
@@ -10,7 +13,7 @@ from models import User, ScanResult, APIKey, MonitoringConfig
 from scanner import SecurityScanner
 from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
-from notification_system import NotificationSystem
+from notification_system import NotificationSystem, make_unsubscribe_token
 from email_analyzer import EmailAnalyzer
 from threat_intel import ThreatIntelAnalyzer
 from api_routes import api_bp
@@ -137,18 +140,25 @@ def register():
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
-        
+        agree_terms = request.form.get('agree_terms')
+        age_confirm = request.form.get('age_confirm')
+
         if not all([username, email, password]):
             flash('Please fill in all fields.', 'warning')
             return render_template('login.html')
 
-        # Enforce a minimum password policy
+        if not agree_terms:
+            flash('You must accept the Terms of Service and Privacy Policy to register.', 'error')
+            return render_template('login.html')
+
+        if not age_confirm:
+            flash('You must confirm you are 16 or older to register.', 'error')
+            return render_template('login.html')
+
         if len(password) < 12:
             flash('Password must be at least 12 characters long.', 'error')
             return render_template('login.html')
 
-        # Use a generic message for both duplicate username and email to avoid
-        # account enumeration.
         existing = (
             User.query.filter_by(username=username).first()
             or User.query.filter_by(email=email).first()
@@ -157,16 +167,15 @@ def register():
             flash('Registration failed — please check your details and try again.', 'error')
             return render_template('login.html')
 
-        # Create new user
-        user = User(username=username, email=email)
+        user = User(username=username, email=email, tos_accepted_at=datetime.utcnow())
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
-        
+
         login_user(user)
         flash('Registration successful! Welcome to Security Buddy.', 'success')
         return redirect(url_for('dashboard'))
-    
+
     return render_template('login.html')
 
 @app.route('/logout')
@@ -417,6 +426,109 @@ def threat_scan():
     except Exception as e:
         flash(f'Search failed: {str(e)}', 'error')
         return redirect(url_for('threat_scan'))
+
+
+@app.route('/privacy')
+def privacy():
+    """GDPR Art. 13 privacy notice."""
+    return render_template('privacy.html')
+
+
+@app.route('/account', methods=['GET', 'POST'])
+@login_required
+def account():
+    """Account settings — notification prefs."""
+    if request.method == 'POST':
+        if request.form.get('action') == 'notifications':
+            current_user.email_notifications = bool(request.form.get('email_notifications'))
+            db.session.commit()
+            flash('Notification preferences saved.', 'success')
+        return redirect(url_for('account'))
+    return render_template('account.html')
+
+
+@app.route('/account/delete', methods=['POST'])
+@login_required
+def account_delete():
+    """Permanently delete account and all associated data (Art. 17 GDPR)."""
+    password = request.form.get('password', '')
+    if not current_user.check_password(password):
+        flash('Incorrect password. Account not deleted.', 'error')
+        return redirect(url_for('account'))
+    user = User.query.get(current_user.id)
+    logout_user()
+    db.session.delete(user)
+    db.session.commit()
+    flash('Your account and all associated data have been permanently deleted.', 'info')
+    return redirect(url_for('index'))
+
+
+@app.route('/account/export')
+@login_required
+def account_export():
+    """Data portability export — JSON (Art. 15 & 20 GDPR)."""
+    scans = ScanResult.query.filter_by(user_id=current_user.id).all()
+    data = {
+        'exported_at': datetime.utcnow().isoformat(),
+        'user': {
+            'username': current_user.username,
+            'email': current_user.email,
+            'created_at': current_user.created_at.isoformat(),
+            'tos_accepted_at': current_user.tos_accepted_at.isoformat()
+                               if current_user.tos_accepted_at else None,
+        },
+        'scans': [
+            {
+                'target': s.target,
+                'scan_type': s.scan_type,
+                'security_score': s.security_score,
+                'created_at': s.created_at.isoformat(),
+            }
+            for s in scans
+        ],
+    }
+    resp = make_response(json.dumps(data, indent=2))
+    resp.headers['Content-Type'] = 'application/json'
+    resp.headers['Content-Disposition'] = 'attachment; filename="securitybuddy-export.json"'
+    return resp
+
+
+@app.route('/notifications/unsubscribe')
+def notifications_unsubscribe():
+    """One-click email unsubscribe with HMAC token."""
+    uid = request.args.get('uid', type=int)
+    token = request.args.get('token', '')
+    if not uid or not token:
+        flash('Invalid unsubscribe link.', 'error')
+        return redirect(url_for('index'))
+    expected = make_unsubscribe_token(uid, app.secret_key)
+    if not _hmac_compare(expected, token):
+        flash('Invalid unsubscribe link.', 'error')
+        return redirect(url_for('index'))
+    user = User.query.get(uid)
+    if user:
+        user.email_notifications = False
+        db.session.commit()
+    flash('You have been unsubscribed from email notifications.', 'info')
+    return redirect(url_for('index'))
+
+
+@app.route('/cron/cleanup', methods=['POST'])
+def cron_cleanup():
+    """Retention cleanup: delete guest scans older than 90 days."""
+    secret = os.environ.get('CRON_SECRET', '')
+    if not secret:
+        return jsonify({'error': 'Not configured'}), 503
+    auth = request.headers.get('Authorization', '')
+    if not _hmac_compare(f'Bearer {secret}', auth):
+        return jsonify({'error': 'Unauthorized'}), 401
+    cutoff = datetime.utcnow() - timedelta(days=90)
+    deleted = ScanResult.query.filter(
+        ScanResult.user_id.is_(None),
+        ScanResult.created_at < cutoff
+    ).delete()
+    db.session.commit()
+    return jsonify({'deleted': deleted})
 
 
 @app.errorhandler(404)

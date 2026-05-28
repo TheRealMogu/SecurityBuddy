@@ -14,10 +14,13 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256))
     organization = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Relationship to scan results
-    scan_results = db.relationship('ScanResult', backref='user', lazy=True)
-    api_keys = db.relationship('APIKey', backref='user', lazy=True)
+    tos_accepted_at = db.Column(db.DateTime, nullable=True)
+    email_notifications = db.Column(db.Boolean, default=True)
+
+    scan_results = db.relationship('ScanResult', backref='user', lazy=True,
+                                   cascade='all, delete-orphan')
+    api_keys = db.relationship('APIKey', backref='user', lazy=True,
+                               cascade='all, delete-orphan')
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -137,7 +140,8 @@ class MonitoringConfig(db.Model):
     last_scan = db.Column(db.DateTime, nullable=True)
     next_scan = db.Column(db.DateTime, nullable=True)
     
-    user = db.relationship('User', backref='monitoring_configs')
+    user = db.relationship('User', backref=db.backref('monitoring_configs',
+                           cascade='all, delete-orphan', lazy=True))
     
     def __repr__(self):
         return f'<MonitoringConfig {self.target}>'

@@ -92,7 +92,15 @@
                         <input type="checkbox" id="agreeTerms" name="agree_terms"
                                style="width:16px;height:16px;margin-top:3px;flex-shrink:0;" required>
                         <label for="agreeTerms" style="font-size:0.85rem;color:var(--color-text-muted);cursor:pointer;">
-                            I agree to the Terms of Service
+                            I agree to the
+                            <a href="{{ url_for('privacy') }}" target="_blank" rel="noopener">Terms of Service &amp; Privacy Policy</a>
+                        </label>
+                    </div>
+                    <div class="form-group" style="display:flex;align-items:flex-start;gap:0.5rem;">
+                        <input type="checkbox" id="ageConfirm" name="age_confirm"
+                               style="width:16px;height:16px;margin-top:3px;flex-shrink:0;" required>
+                        <label for="ageConfirm" style="font-size:0.85rem;color:var(--color-text-muted);cursor:pointer;">
+                            I confirm I am 16 years of age or older
                         </label>
                     </div>
                     <div class="field-error mb-2" id="agreeTermsError"></div>
