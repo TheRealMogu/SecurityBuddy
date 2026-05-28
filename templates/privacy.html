@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy — Security Buddy{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:760px;padding-top:3rem;padding-bottom:4rem;">
+
+    <h1 style="font-size:2rem;font-weight:800;margin-bottom:0.25rem;">Privacy Policy</h1>
+    <p class="text-muted" style="margin-bottom:2.5rem;">Last updated: 1 January 2026</p>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">1. Data Controller</h2>
+        <p>Security Buddy ("we", "us") operates the web service at <strong>securitybuddy.app</strong>.
+        We are the data controller for personal data collected through this service.
+        For privacy enquiries, please open an issue on our
+        <a href="https://github.com/therealmogu/securitybuddy/issues" target="_blank" rel="noopener">GitHub repository</a>.</p>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">2. Data We Collect</h2>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr><th>Data</th><th>When collected</th><th>Stored?</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Username, email, hashed password</td>
+                        <td>On account registration</td>
+                        <td>Yes — until account deletion</td>
+                    </tr>
+                    <tr>
+                        <td>Scanned domain or IP address + results</td>
+                        <td>On every scan</td>
+                        <td>Yes — see retention below</td>
+                    </tr>
+                    <tr>
+                        <td>IP address</td>
+                        <td>Each request</td>
+                        <td>No — processed transiently for rate-limiting and SSRF prevention only</td>
+                    </tr>
+                    <tr>
+                        <td>Analytics (page views)</td>
+                        <td>With your consent</td>
+                        <td>Aggregated — no personal identifiers</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">3. Legal Basis</h2>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr><th>Processing</th><th>Legal basis</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Account management, scan history</td>
+                        <td>Art. 6(1)(b) GDPR — performance of a contract</td>
+                    </tr>
+                    <tr>
+                        <td>Analytics cookies</td>
+                        <td>Art. 6(1)(a) GDPR — consent (opt-in via banner)</td>
+                    </tr>
+                    <tr>
+                        <td>Security rate-limiting</td>
+                        <td>Art. 6(1)(f) GDPR — legitimate interests (preventing abuse)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">4. Data Retention</h2>
+        <ul>
+            <li><strong>Account data</strong> — retained until you delete your account.</li>
+            <li><strong>Authenticated scan results</strong> — retained with your account until deletion.</li>
+            <li><strong>Guest scan results</strong> — automatically deleted after 90 days.</li>
+            <li><strong>Analytics data</strong> — aggregated; no personal identifiers retained by us. Subject to Vercel's retention policy.</li>
+        </ul>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">5. Your Rights (GDPR)</h2>
+        <p>You have the following rights under GDPR. To exercise any right, either use the self-service options below or contact us via GitHub.</p>
+        <ul>
+            <li><strong>Access (Art. 15)</strong> — download all your data from
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('account_export') }}">Account &rarr; Export data</a>
+                {% else %}
+                your Account Settings after login
+                {% endif %}.</li>
+            <li><strong>Erasure (Art. 17)</strong> — delete your account and all data from
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('account') }}">Account Settings</a>
+                {% else %}
+                Account Settings after login
+                {% endif %}.</li>
+            <li><strong>Portability (Art. 20)</strong> — your data export is machine-readable JSON.</li>
+            <li><strong>Rectification (Art. 16)</strong> — contact us via GitHub to correct inaccurate data.</li>
+            <li><strong>Object / Restrict (Art. 21/18)</strong> — contact us via GitHub.</li>
+            <li><strong>Lodge a complaint (Art. 77)</strong> — you may lodge a complaint with your local data protection supervisory authority.</li>
+        </ul>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">6. Cookies</h2>
+        <p>We set <strong>no cookies by default</strong>. If you click <em>Accept</em> on the cookie consent banner, Vercel Analytics may set cookies prefixed <code>va-</code> to count page views. No personal data is stored in these cookies.</p>
+        <p>You can withdraw consent at any time by clearing this site's data in your browser settings, or by clicking <em>Reject</em> on the banner. Consent is stored in <code>localStorage</code> under the key <code>sb_consent</code>.</p>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">7. Third-party Services</h2>
+        <ul>
+            <li><strong>Vercel</strong> — our hosting and infrastructure provider, and the provider of Vercel Analytics (if consented).
+                See <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">Vercel's Privacy Policy</a>.</li>
+            <li><strong>Threat intelligence APIs</strong> (URLhaus, ThreatFox, MalwareBazaar) — queried when you use the Threat Intel scanner.
+                Only the URL, domain, IP, or hash you submit is sent. No account or personal data is shared.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2 style="font-size:1.15rem;font-weight:700;">8. Changes to This Policy</h2>
+        <p>We may update this policy as the service evolves. Material changes will be noted in the
+        <a href="https://github.com/therealmogu/securitybuddy" target="_blank" rel="noopener">GitHub repository</a>.
+        Continued use after changes constitutes acceptance.</p>
+    </section>
+
+</div>
+{% endblock %}

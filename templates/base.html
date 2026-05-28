@@ -119,6 +119,7 @@
             <div class="footer-inner">
                 <p class="footer-copy">© 2026 Security Buddy</p>
                 <div class="footer-links">
+                    <a href="{{ url_for('privacy') }}" class="footer-link">Privacy Policy</a>
                     <a href="https://github.com/therealmogu/securitybuddy" class="footer-link" target="_blank" rel="noopener">GitHub</a>
                     <a href="https://github.com/therealmogu/securitybuddy/issues" class="footer-link" target="_blank" rel="noopener">Report a bug</a>
                 </div>
@@ -126,11 +127,24 @@
         </div>
     </footer>
 
+    <!-- Cookie consent banner -->
+    <div id="cookie-banner" role="dialog" aria-label="Cookie consent" aria-live="polite"
+         style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--color-surface);border-top:1px solid var(--color-border);padding:.875rem 1.25rem;z-index:9999;box-shadow:0 -2px 16px rgba(0,0,0,.08);">
+        <div style="max-width:900px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;">
+            <p style="margin:0;flex:1;min-width:200px;font-size:.875rem;color:var(--color-text-muted);">
+                We use analytics cookies to improve Security Buddy. Read our
+                <a href="{{ url_for('privacy') }}" style="color:var(--color-primary);">Privacy Policy</a>.
+            </p>
+            <div style="display:flex;gap:.5rem;flex-shrink:0;">
+                <button id="cookie-reject" class="btn btn-sm btn-outline-secondary">Reject</button>
+                <button id="cookie-accept" class="btn btn-sm btn-primary">Accept</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Icons (deferred — never blocks page render) -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <!-- Vercel Analytics -->
-    <script defer src="/_vercel/insights/script.js"></script>
     <script>
         lucide.createIcons();
 
@@ -156,6 +170,35 @@
                 iconDark.style.display  = isDark ? 'block' : 'none';
             });
         }
+
+        // Cookie consent — gate Vercel Analytics behind explicit opt-in
+        (function() {
+            var CONSENT_KEY = 'sb_consent';
+            var banner = document.getElementById('cookie-banner');
+            var stored = localStorage.getItem(CONSENT_KEY);
+            if (stored === '1') {
+                loadAnalytics();
+            } else if (stored === null && banner) {
+                banner.style.display = 'block';
+            }
+            function loadAnalytics() {
+                var s = document.createElement('script');
+                s.defer = true;
+                s.src = '/_vercel/insights/script.js';
+                document.head.appendChild(s);
+            }
+            var acceptBtn = document.getElementById('cookie-accept');
+            var rejectBtn = document.getElementById('cookie-reject');
+            if (acceptBtn) acceptBtn.addEventListener('click', function() {
+                localStorage.setItem(CONSENT_KEY, '1');
+                banner.style.display = 'none';
+                loadAnalytics();
+            });
+            if (rejectBtn) rejectBtn.addEventListener('click', function() {
+                localStorage.setItem(CONSENT_KEY, '0');
+                banner.style.display = 'none';
+            });
+        })();
     </script>
 
     {% block scripts %}{% endblock %}
