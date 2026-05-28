@@ -15,6 +15,4 @@ htmlcov/
 .coverage
 .DS_Store
 *.db
-.replit
 uv.lock
-attached_assets/
