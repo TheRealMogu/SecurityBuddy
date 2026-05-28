@@ -58,6 +58,10 @@
                             <a class="nav-link{% if request.endpoint == 'threat_scan' %} nav-link-active{% endif %}"
                                href="{{ url_for('threat_scan') }}">Threat Intel</a>
                         </li>
+                        <li>
+                            <a class="nav-link{% if request.endpoint == 'password_generator' %} nav-link-active{% endif %}"
+                               href="{{ url_for('password_generator') }}">Password</a>
+                        </li>
                         {% if current_user.is_authenticated %}
                         <li>
                             <a class="nav-link{% if request.endpoint == 'dashboard' %} nav-link-active{% endif %}"
