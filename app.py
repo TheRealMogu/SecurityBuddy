@@ -104,9 +104,12 @@ def _inject_csrf_token():
 def _csrf_protect():
     if request.method in _CSRF_SAFE_METHODS:
         return
-    # The REST API authenticates via X-API-Key (not cookies), so it is not
-    # susceptible to CSRF and is exempt.
+    # REST API authenticates via X-API-Key — not cookie-based, no CSRF risk.
     if request.path.startswith("/api/"):
+        return
+    # Cron endpoint is authenticated by Authorization: Bearer header, not a
+    # browser session, so it is not susceptible to CSRF.
+    if request.path.startswith("/cron/"):
         return
     sent = (
         request.form.get("csrf_token")
@@ -174,10 +177,27 @@ def _set_security_headers(response):
     )
     return response
 
+def _run_column_migrations():
+    """Safely add new columns to existing tables (idempotent, no data loss)."""
+    from sqlalchemy import text
+    candidates = [
+        'ALTER TABLE "user" ADD COLUMN tos_accepted_at DATETIME NULL',
+        'ALTER TABLE "user" ADD COLUMN email_notifications BOOLEAN NOT NULL DEFAULT TRUE',
+    ]
+    with db.engine.connect() as conn:
+        for stmt in candidates:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                conn.rollback()  # column already exists — safe to ignore
+
+
 with app.app_context():
     try:
         import models  # noqa: F401
         db.create_all()
+        _run_column_migrations()
         logging.info("Database tables created successfully")
     except Exception as e:
         logging.warning(f"Database initialization error: {e}")
