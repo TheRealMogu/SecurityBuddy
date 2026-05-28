@@ -1,4 +1,4 @@
-# SecurityBuddy — Guida per Claude Code
+# SecurityBuddy — Guida allo sviluppo
 
 ## Panoramica del progetto
 
@@ -190,7 +190,6 @@ GET  /badge/<domain>/<score>.svg  # Badge SVG dinamico
 
 ## Convenzioni di sviluppo
 
-- Branch di lavoro: `claude/` prefix (es. `claude/add-response-validation-d1KnL`)
 - I file statici stanno in `static/css/` e `static/js/`
 - I template Jinja2 estendono tutti `base.html`
 - Nessun Bootstrap — design system custom in `static/css/style.css` con CSS variables (`--color-*`, `--font-*`, `--radius-*`)
