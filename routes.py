@@ -428,6 +428,12 @@ def threat_scan():
         return redirect(url_for('threat_scan'))
 
 
+@app.route('/tools/password')
+def password_generator():
+    """Client-side cryptographically secure password generator."""
+    return render_template('password_generator.html')
+
+
 @app.route('/privacy')
 def privacy():
     """GDPR Art. 13 privacy notice."""
