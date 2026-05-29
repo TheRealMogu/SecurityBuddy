@@ -499,9 +499,10 @@ def account_export():
     return resp
 
 
-@app.route('/notifications/unsubscribe')
+@app.route('/notifications/unsubscribe', methods=['GET', 'POST'])
 def notifications_unsubscribe():
-    """One-click email unsubscribe with HMAC token."""
+    """Email unsubscribe with HMAC token. GET shows confirmation page, POST performs action.
+    Two-step design prevents email prefetchers from auto-triggering the unsubscribe."""
     uid = request.args.get('uid', type=int)
     token = request.args.get('token', '')
     if not uid or not token:
@@ -511,23 +512,35 @@ def notifications_unsubscribe():
     if not _hmac_compare(expected, token):
         flash('Invalid unsubscribe link.', 'error')
         return redirect(url_for('index'))
-    user = User.query.get(uid)
-    if user:
-        user.email_notifications = False
-        db.session.commit()
-    flash('You have been unsubscribed from email notifications.', 'info')
-    return redirect(url_for('index'))
+    if request.method == 'POST':
+        user = User.query.get(uid)
+        if user:
+            user.email_notifications = False
+            db.session.commit()
+        flash('You have been unsubscribed from email notifications.', 'info')
+        return redirect(url_for('index'))
+    return render_template('unsubscribe_confirm.html', uid=uid, token=token)
+
+
+def _verify_cron_auth():
+    """Return (True, None) when the request carries a valid cron bearer token,
+    or (False, error_response) otherwise. Centralises cron auth so every cron
+    route uses the same logic."""
+    secret = os.environ.get('CRON_SECRET', '')
+    if not secret:
+        return False, (jsonify({'error': 'Not configured'}), 503)
+    auth = request.headers.get('Authorization', '')
+    if not _hmac_compare(f'Bearer {secret}', auth):
+        return False, (jsonify({'error': 'Unauthorized'}), 401)
+    return True, None
 
 
 @app.route('/cron/cleanup', methods=['POST'])
 def cron_cleanup():
     """Retention cleanup: delete guest scans older than 90 days."""
-    secret = os.environ.get('CRON_SECRET', '')
-    if not secret:
-        return jsonify({'error': 'Not configured'}), 503
-    auth = request.headers.get('Authorization', '')
-    if not _hmac_compare(f'Bearer {secret}', auth):
-        return jsonify({'error': 'Unauthorized'}), 401
+    ok, err = _verify_cron_auth()
+    if not ok:
+        return err
     cutoff = datetime.utcnow() - timedelta(days=90)
     deleted = ScanResult.query.filter(
         ScanResult.user_id.is_(None),

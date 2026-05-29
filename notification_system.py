@@ -31,11 +31,12 @@ class NotificationSystem:
     # ── GDPR helpers ──────────────────────────────────────────────────────────
 
     def _user_wants_email(self, user_id) -> bool:
-        """Return False when the user has opted out of email notifications."""
+        """Return False only when the user has explicitly opted out (False).
+        NULL (never set) is treated as opted-in, not opted-out."""
         if not user_id:
             return True  # guest scans — no preference stored
         user = User.query.get(user_id)
-        return user.email_notifications if user else True
+        return (user.email_notifications is not False) if user else True
 
     def _unsubscribe_footer(self, user_id) -> str:
         """HTML paragraph with one-click unsubscribe link for email footers."""
@@ -50,11 +51,12 @@ class NotificationSystem:
 
     # ── Public send methods ───────────────────────────────────────────────────
 
-    def send_scan_complete_email(self, user_email, scan_result, pdf_buffer=None):
-        """Send email notification when scan is complete"""
+    def send_scan_complete_email(self, user_email, scan_result, pdf_buffer=None, force=False):
+        """Send email notification when scan is complete.
+        Pass force=True to bypass the email_notifications preference (e.g. explicitly requested exports)."""
         if not self._check_email_config():
             return False, "Email service not configured"
-        if not self._user_wants_email(scan_result.user_id):
+        if not force and not self._user_wants_email(scan_result.user_id):
             return True, "User unsubscribed"
 
         try:
@@ -90,11 +92,11 @@ class NotificationSystem:
             return False, f"Failed to send email: {str(e)}"
 
     def send_vulnerability_alert(self, user_email, scan_result, critical_issues):
-        """Send immediate alert for critical vulnerabilities"""
+        """Send immediate alert for critical vulnerabilities.
+        Security alerts are always delivered — they are not subject to the
+        email_notifications opt-out preference, which covers marketing/digest emails."""
         if not self._check_email_config():
             return False, "Email service not configured"
-        if not self._user_wants_email(scan_result.user_id):
-            return True, "User unsubscribed"
 
         try:
             safe_target = html_lib.escape(str(scan_result.target))
