@@ -12,10 +12,6 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 - **Dashboard** — scan history for registered users
 - **No premium gates** — all features are free
 
-## Quick Deploy to Vercel
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/therealmogu/securitybuddy)
-
 ### Environment Variables
 
 | Variable | Required | Description |
