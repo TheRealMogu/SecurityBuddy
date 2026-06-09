@@ -22,3 +22,7 @@ PyJWT==2.10.1
 oauthlib==3.2.2
 SQLAlchemy==2.0.41
 flask-dance==7.1.0
+google-api-python-client==2.149.0
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0

@@ -21,6 +21,9 @@ class User(UserMixin, db.Model):
                                    cascade='all, delete-orphan')
     api_keys = db.relationship('APIKey', backref='user', lazy=True,
                                cascade='all, delete-orphan')
+    gmail_credential = db.relationship('GmailCredential', backref='user',
+                                       uselist=False, lazy=True,
+                                       cascade='all, delete-orphan')
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -127,6 +130,27 @@ class APIKey(db.Model):
 
     def __repr__(self):
         return f'<APIKey {self.name}>'
+
+class GmailCredential(db.Model):
+    """OAuth tokens for a user's connected Gmail account (Newsletter Manager).
+
+    One row per user. Stores only the tokens needed to call the Gmail API on
+    the user's behalf — never any email content. Deleting the user (or
+    disconnecting) removes the row.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    email = db.Column(db.String(255), nullable=True)      # connected Gmail address
+    token = db.Column(db.Text, nullable=True)             # OAuth access token
+    refresh_token = db.Column(db.Text, nullable=True)     # OAuth refresh token
+    token_uri = db.Column(db.String(255), nullable=True)
+    scopes = db.Column(db.Text, nullable=True)            # space-separated scopes
+    expiry = db.Column(db.DateTime, nullable=True)        # access token expiry (UTC)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<GmailCredential user={self.user_id} email={self.email}>'
 
 class MonitoringConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)

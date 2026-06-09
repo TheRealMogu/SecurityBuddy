@@ -9,7 +9,7 @@ from flask import render_template, request, redirect, url_for, flash, session, m
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import app, db, rate_limit
-from models import User, ScanResult, APIKey, MonitoringConfig
+from models import User, ScanResult, APIKey, MonitoringConfig, GmailCredential
 from scanner import SecurityScanner
 from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
@@ -18,6 +18,7 @@ from email_analyzer import EmailAnalyzer
 from threat_intel import ThreatIntelAnalyzer
 from api_routes import api_bp
 from background_jobs import job_manager
+import gmail_manager
 
 # Register API blueprint
 app.register_blueprint(api_bp)
@@ -440,6 +441,16 @@ def privacy():
     return render_template('privacy.html')
 
 
+@app.route('/ads.txt')
+def ads_txt():
+    """Authorized Digital Sellers (ads.txt) for Google AdSense verification."""
+    content = 'google.com, pub-9729522875920807, DIRECT, f08c47fec0942fa0\n'
+    resp = make_response(content)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
+
+
 @app.route('/account', methods=['GET', 'POST'])
 @login_required
 def account():
@@ -517,6 +528,153 @@ def notifications_unsubscribe():
         db.session.commit()
     flash('You have been unsubscribed from email notifications.', 'info')
     return redirect(url_for('index'))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Gmail Newsletter Manager
+#
+# OAuth + Gmail endpoints live under /gmail/* (not /api/*) on purpose: the
+# /api/ namespace is reserved for the X-API-Key REST API and is CSRF-exempt.
+# These endpoints are session/cookie authenticated, so they must stay inside
+# the CSRF-protected world. State-changing requests (POST/DELETE) therefore
+# send the per-session token via the X-CSRF-Token header.
+# ─────────────────────────────────────────────────────────────────────────
+@app.route('/newsletter-manager')
+@login_required
+def newsletter_manager():
+    """Newsletter Manager page — connect Gmail and unsubscribe from newsletters."""
+    cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
+    return render_template(
+        'newsletter_manager.html',
+        connected=cred is not None,
+        gmail_email=cred.email if cred else None,
+        oauth_configured=gmail_manager.gmail_oauth_configured(),
+    )
+
+
+@app.route('/gmail/auth')
+@login_required
+def gmail_auth():
+    """Start the Google OAuth flow and redirect to the consent screen."""
+    if not gmail_manager.gmail_oauth_configured():
+        flash('Gmail integration is not configured on this server.', 'error')
+        return redirect(url_for('newsletter_manager'))
+    redirect_uri = url_for('gmail_callback', _external=True)
+    auth_url, state = gmail_manager.build_auth_url(redirect_uri)
+    session['gmail_oauth_state'] = state
+    return redirect(auth_url)
+
+
+@app.route('/gmail/callback')
+@login_required
+def gmail_callback():
+    """Handle the OAuth callback and persist the tokens for the current user."""
+    state = session.pop('gmail_oauth_state', None)
+    if not state or request.args.get('state') != state:
+        flash('Gmail authorization failed: invalid state.', 'error')
+        return redirect(url_for('newsletter_manager'))
+    if request.args.get('error'):
+        flash('Gmail authorization was cancelled.', 'warning')
+        return redirect(url_for('newsletter_manager'))
+
+    code = request.args.get('code')
+    if not code:
+        flash('Gmail authorization failed: missing code.', 'error')
+        return redirect(url_for('newsletter_manager'))
+
+    try:
+        redirect_uri = url_for('gmail_callback', _external=True)
+        creds = gmail_manager.exchange_code(redirect_uri, state, code)
+        email = gmail_manager.get_email_address(creds)
+
+        cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
+        if cred is None:
+            cred = GmailCredential(user_id=current_user.id)
+            db.session.add(cred)
+        cred.email = email
+        cred.token = creds.token
+        if creds.refresh_token:  # only returned on first consent — keep the old one otherwise
+            cred.refresh_token = creds.refresh_token
+        cred.token_uri = creds.token_uri
+        cred.scopes = ' '.join(creds.scopes or gmail_manager.GMAIL_SCOPES)
+        cred.expiry = creds.expiry
+        cred.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash(f'Connected Gmail account {email}.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Could not connect Gmail: {e}', 'error')
+
+    return redirect(url_for('newsletter_manager'))
+
+
+@app.route('/gmail/newsletters')
+@login_required
+def gmail_newsletters():
+    """Return the list of newsletter senders found in the connected mailbox (JSON)."""
+    cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
+    if cred is None:
+        return jsonify({'error': 'not_connected'}), 400
+    try:
+        creds = gmail_manager.credentials_from_record(cred)
+        newsletters = gmail_manager.list_newsletters(creds)
+        # Persist a refreshed access token if google-auth renewed it mid-request.
+        if creds.token and creds.token != cred.token:
+            cred.token = creds.token
+            cred.expiry = creds.expiry
+            cred.updated_at = datetime.utcnow()
+            db.session.commit()
+        return jsonify({'newsletters': newsletters})
+    except Exception as e:
+        app.logger.warning(f'Gmail newsletter fetch failed: {e}')
+        return jsonify({'error': 'fetch_failed', 'message': str(e)}), 502
+
+
+@app.route('/gmail/unsubscribe', methods=['POST'])
+@login_required
+@rate_limit(max_calls=30, window_seconds=60)
+def gmail_unsubscribe():
+    """Unsubscribe from a newsletter.
+
+    one_click + https URL → perform the RFC 8058 POST server-side.
+    Otherwise return the url/mailto for the browser to open in a new tab.
+    """
+    cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
+    if cred is None:
+        return jsonify({'status': 'error', 'message': 'Gmail is not connected.'}), 400
+
+    data = request.get_json(silent=True) or {}
+    url = (data.get('url') or '').strip()
+    mailto = (data.get('mailto') or '').strip()
+    one_click = bool(data.get('one_click'))
+
+    if one_click and url:
+        ok, message = gmail_manager.one_click_unsubscribe(url)
+        return jsonify({'status': 'ok' if ok else 'error', 'message': message}), \
+            (200 if ok else 502)
+    if url:
+        return jsonify({'status': 'open', 'url': url,
+                        'message': 'Opening the unsubscribe page in a new tab.'})
+    if mailto:
+        return jsonify({'status': 'mailto', 'url': mailto,
+                        'message': 'Opening your email client to unsubscribe.'})
+    return jsonify({'status': 'error',
+                    'message': 'No unsubscribe method available for this sender.'}), 400
+
+
+@app.route('/gmail/disconnect', methods=['DELETE', 'POST'])
+@login_required
+def gmail_disconnect():
+    """Disconnect the Gmail account: revoke tokens at Google and delete the row."""
+    cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
+    if cred:
+        try:
+            gmail_manager.revoke(cred.refresh_token or cred.token)
+        except Exception:
+            pass  # best-effort — still drop our copy below
+        db.session.delete(cred)
+        db.session.commit()
+    return jsonify({'status': 'ok'})
 
 
 @app.route('/cron/cleanup', methods=['POST'])
