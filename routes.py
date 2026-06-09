@@ -441,6 +441,16 @@ def privacy():
     return render_template('privacy.html')
 
 
+@app.route('/ads.txt')
+def ads_txt():
+    """Authorized Digital Sellers (ads.txt) for Google AdSense verification."""
+    content = 'google.com, pub-9729522875920807, DIRECT, f08c47fec0942fa0\n'
+    resp = make_response(content)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
+
+
 @app.route('/account', methods=['GET', 'POST'])
 @login_required
 def account():
