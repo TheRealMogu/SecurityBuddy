@@ -7,6 +7,7 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 - **Security Scanner** — 18 checks: HTTPS, SSL/TLS, headers, cookies, CORS, DNS (SPF/DMARC), open ports, mixed content, HSTS quality, subdomain takeover, directory listing, open redirect, and more
 - **Email Security** — MX records, SPF, DMARC, DKIM, 7 IP blacklists + 2 domain blacklists, PTR/rDNS, STARTTLS per mail server
 - **SEO Analyser** — meta tags, content quality, PageSpeed Insights (mobile + desktop), Open Graph, structured data
+- **Newsletter Manager** — connect Gmail via OAuth and unsubscribe from newsletters (reads only `List-Unsubscribe` headers, never email content)
 - **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown
 - **REST API** — programmatic access with API keys, batch scanning and webhook callbacks
 - **Dashboard** — scan history for registered users
@@ -25,6 +26,8 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 | `FLASK_DEBUG` | — | Set to `1` to enable debug mode |
 | `SENDGRID_API_KEY` | — | Email notifications |
 | `TWILIO_*` | — | SMS alerts |
+| `GOOGLE_CLIENT_ID` | — | Google OAuth client for the Gmail Newsletter Manager |
+| `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
 
 ### Database Setup
 

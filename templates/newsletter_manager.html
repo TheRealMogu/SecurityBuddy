@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Newsletter Manager — Security Buddy{% endblock %}
+
+{% block content %}
+<div class="container dashboard-page">
+
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Newsletter Manager</h1>
+            <p class="text-muted mb-0">
+                Connect Gmail to find active newsletters and unsubscribe in one click.
+            </p>
+        </div>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i data-lucide="arrow-left" style="width:14px;height:14px;"></i>Dashboard
+        </a>
+    </div>
+
+    {% if not oauth_configured %}
+    <div class="alert alert-warning mb-4">
+        <i data-lucide="alert-triangle" style="width:16px;height:16px;flex-shrink:0;"></i>
+        Gmail integration is not configured on this server. Set
+        <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> to enable it.
+    </div>
+    {% endif %}
+
+    {% if not connected %}
+    <!-- ── Not connected: connect CTA ─────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-body" style="text-align:center;padding:3rem 2rem;">
+            <div class="empty-state-icon">
+                <i data-lucide="mail" style="width:48px;height:48px;color:var(--color-primary);"></i>
+            </div>
+            <h5 style="font-weight:700;margin-bottom:0.5rem;">Connect your Gmail account</h5>
+            <p class="text-muted small" style="max-width:460px;margin:0 auto 1.5rem;">
+                Security Buddy will list the newsletters in your inbox by reading only the
+                <code>List-Unsubscribe</code> headers — never the content of your emails.
+                Read-only access (<code>gmail.readonly</code>) is all we request, and you can
+                disconnect at any time.
+            </p>
+            {% if oauth_configured %}
+            <a href="{{ url_for('gmail_auth') }}" class="btn btn-primary">
+                <i data-lucide="mail" style="width:15px;height:15px;"></i>Connect Gmail
+            </a>
+            {% else %}
+            <button class="btn btn-primary" disabled>
+                <i data-lucide="mail" style="width:15px;height:15px;"></i>Connect Gmail
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% else %}
+    <!-- ── Connected: account bar ─────────────────────────────────────────── -->
+    <div class="card mb-4">
+        <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <span class="badge badge-success">Connected</span>
+                <span class="text-mono">{{ gmail_email }}</span>
+            </div>
+            <button id="disconnectBtn" class="btn btn-sm btn-outline-secondary">
+                <i data-lucide="log-out" style="width:14px;height:14px;"></i>Disconnect
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Newsletters list ───────────────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-header" style="justify-content:space-between;">
+            <span style="display:flex;align-items:center;gap:0.5rem;">
+                <i data-lucide="inbox" style="width:16px;height:16px;color:var(--color-primary);"></i>
+                Active Newsletters
+                <span id="newsletterCount" class="badge badge-neutral" style="display:none;"></span>
+            </span>
+            <div id="sortControls" style="display:none;align-items:center;gap:0.5rem;">
+                <label for="sortSelect" class="text-muted small" style="margin:0;">Sort by</label>
+                <select id="sortSelect" class="form-control" style="width:auto;padding:0.3rem 1.75rem 0.3rem 0.6rem;font-size:0.85rem;">
+                    <option value="date">Latest email</option>
+                    <option value="name">Sender name</option>
+                </select>
+            </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+
+            <!-- Loading skeleton -->
+            <div id="loadingState" style="padding:1rem 1.25rem;">
+                {% for _ in range(5) %}
+                <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:1px solid var(--color-border);">
+                    <div class="skeleton" style="height:14px;width:38%;"></div>
+                    <div class="skeleton" style="height:14px;width:22%;"></div>
+                    <div class="skeleton" style="height:30px;width:96px;margin-left:auto;"></div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Error state -->
+            <div id="errorState" class="dashboard-empty-state" style="display:none;border-radius:0;">
+                <div class="empty-state-icon">
+                    <i data-lucide="alert-triangle" style="width:40px;height:40px;color:var(--color-danger);"></i>
+                </div>
+                <h5>Couldn't load your newsletters</h5>
+                <p class="text-muted small mb-3" id="errorMessage">Please try again.</p>
+                <button id="retryBtn" class="btn btn-sm btn-primary">
+                    <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i>Retry
+                </button>
+            </div>
+
+            <!-- Empty state -->
+            <div id="emptyState" class="dashboard-empty-state" style="display:none;border-radius:0;">
+                <div class="empty-state-icon">
+                    <i data-lucide="inbox" style="width:40px;height:40px;color:var(--color-text-faint);"></i>
+                </div>
+                <h5>No newsletters found</h5>
+                <p class="text-muted small mb-0">
+                    We didn't find any recent emails with an unsubscribe header. Nice and tidy!
+                </p>
+            </div>
+
+            <!-- Newsletter table -->
+            <div id="tableWrapper" class="table-wrapper" style="display:none;border:none;border-radius:0;">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Sender</th>
+                            <th>Last email</th>
+                            <th style="text-align:right;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="newsletterBody"></tbody>
+                </table>
+            </div>
+
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if connected %}
+<script>
+(function () {
+    const URLS = {
+        newsletters: "{{ url_for('gmail_newsletters') }}",
+        unsubscribe: "{{ url_for('gmail_unsubscribe') }}",
+        disconnect:  "{{ url_for('gmail_disconnect') }}",
+    };
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+
+    const el = {
+        loading: document.getElementById('loadingState'),
+        error:   document.getElementById('errorState'),
+        errorMsg:document.getElementById('errorMessage'),
+        empty:   document.getElementById('emptyState'),
+        wrapper: document.getElementById('tableWrapper'),
+        body:    document.getElementById('newsletterBody'),
+        count:   document.getElementById('newsletterCount'),
+        sortBox: document.getElementById('sortControls'),
+        sort:    document.getElementById('sortSelect'),
+    };
+
+    let newsletters = [];
+
+    function show(node) {
+        [el.loading, el.error, el.empty, el.wrapper].forEach(n => n.style.display = 'none');
+        if (node) node.style.display = node === el.wrapper ? 'block' : '';
+    }
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        if (isNaN(d)) return '—';
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function sortNewsletters() {
+        const mode = el.sort.value;
+        newsletters.sort((a, b) => {
+            if (mode === 'name') {
+                return (a.name || a.email).localeCompare(b.name || b.email, undefined, { sensitivity: 'base' });
+            }
+            return (b.last_date || '').localeCompare(a.last_date || '');  // newest first
+        });
+    }
+
+    function render() {
+        sortNewsletters();
+        el.body.innerHTML = '';
+        newsletters.forEach((n, i) => {
+            const canAct = !!(n.url || n.mailto);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <strong>${esc(n.name)}</strong>
+                    <div class="text-muted small text-mono">${esc(n.email)}</div>
+                </td>
+                <td><small class="text-muted">${formatDate(n.last_date)}</small></td>
+                <td style="text-align:right;white-space:nowrap;">
+                    <span class="unsub-feedback small" data-i="${i}" style="margin-right:0.5rem;"></span>
+                    <button class="btn btn-sm ${canAct ? 'btn-outline-secondary' : ''}" data-i="${i}"
+                            ${canAct ? '' : 'disabled'}>
+                        Unsubscribe
+                    </button>
+                </td>`;
+            el.body.appendChild(tr);
+        });
+        el.count.textContent = newsletters.length;
+        el.count.style.display = '';
+        el.sortBox.style.display = 'flex';
+        show(el.wrapper);
+    }
+
+    function setFeedback(i, ok, msg) {
+        const span = el.body.querySelector(`.unsub-feedback[data-i="${i}"]`);
+        if (!span) return;
+        span.textContent = msg;
+        span.style.color = ok ? 'var(--color-success)' : 'var(--color-danger)';
+    }
+
+    async function unsubscribe(i, btn) {
+        const n = newsletters[i];
+        const span = el.body.querySelector(`.unsub-feedback[data-i="${i}"]`);
+        if (span) span.textContent = '';
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Working…';
+        try {
+            const resp = await fetch(URLS.unsubscribe, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+                body: JSON.stringify({ url: n.url, mailto: n.mailto, one_click: n.one_click }),
+            });
+            const data = await resp.json();
+            if (data.status === 'ok') {
+                setFeedback(i, true, '✓ Unsubscribed');
+                btn.textContent = 'Done';
+                return;
+            }
+            if (data.status === 'open' || data.status === 'mailto') {
+                window.open(data.url, '_blank', 'noopener');
+                setFeedback(i, true, '↗ Opened');
+                btn.textContent = original;
+                btn.disabled = false;
+                return;
+            }
+            setFeedback(i, false, data.message || 'Failed');
+            btn.textContent = original;
+            btn.disabled = false;
+        } catch (e) {
+            setFeedback(i, false, 'Network error');
+            btn.textContent = original;
+            btn.disabled = false;
+        }
+    }
+
+    async function load() {
+        show(el.loading);
+        try {
+            const resp = await fetch(URLS.newsletters, { headers: { 'Accept': 'application/json' } });
+            const data = await resp.json();
+            if (!resp.ok) {
+                el.errorMsg.textContent = data.message || 'Please try again in a moment.';
+                show(el.error);
+                return;
+            }
+            newsletters = data.newsletters || [];
+            if (newsletters.length === 0) { show(el.empty); return; }
+            render();
+        } catch (e) {
+            el.errorMsg.textContent = 'Network error. Please try again.';
+            show(el.error);
+        }
+    }
+
+    // Event wiring
+    el.body.addEventListener('click', e => {
+        const btn = e.target.closest('button[data-i]');
+        if (btn && !btn.disabled) unsubscribe(parseInt(btn.dataset.i, 10), btn);
+    });
+    el.sort.addEventListener('change', () => { if (newsletters.length) render(); });
+    document.getElementById('retryBtn').addEventListener('click', load);
+
+    document.getElementById('disconnectBtn').addEventListener('click', async () => {
+        try {
+            await fetch(URLS.disconnect, { method: 'DELETE', headers: { 'X-CSRF-Token': CSRF } });
+        } catch (e) { /* ignore — reload reflects state */ }
+        window.location.reload();
+    });
+
+    load();
+    lucide.createIcons();
+})();
+</script>
+{% else %}
+<script>lucide.createIcons();</script>
+{% endif %}
+{% endblock %}

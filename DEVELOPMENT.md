@@ -19,6 +19,7 @@ email_analyzer.py       # EmailAnalyzer — MX, SPF, DMARC, DKIM, blacklist, PTR
 validators.py           # AdvancedValidator — validazione input
 models.py               # ORM: User, ScanResult, APIKey, MonitoringConfig
 notification_system.py  # Email alert (SendGrid/Twilio)
+gmail_manager.py        # GmailManager — OAuth Google + discovery newsletter (solo header)
 background_jobs.py      # Job asincroni per il crawler SEO (threading)
 cache_manager.py        # Cache risultati
 cli.py                  # CLI (entry point: securitybuddy)
@@ -129,6 +130,7 @@ I check DKIM (18 selector comuni) e le blacklist vengono eseguiti in parallelo c
 | `dashboard.html` | Dashboard utente con storico scan |
 | `login.html` | Login + registrazione (tab switcher) |
 | `api_keys.html` | Gestione API key |
+| `newsletter_manager.html` | Gmail Newsletter Manager — connect/disconnect, lista newsletter, unsubscribe |
 | `email.html` | Analisi email security — tabbed interface (Overview/Records/Deliverability/Mail Servers) |
 | `seo_crawl_waiting.html` | Pagina di attesa con polling del job SEO |
 | `404.html`, `500.html` | Pagine di errore |
@@ -168,7 +170,33 @@ GET  /dashboard            # Dashboard utente (login required)
 GET  /api-keys             # Gestione API key (login required)
 GET  /login                # Login / registrazione
 GET  /badge/<domain>/<score>.svg  # Badge SVG dinamico
+GET  /newsletter-manager   # Gmail Newsletter Manager (login required)
+GET  /gmail/auth           # Avvia OAuth Google → redirect al consenso
+GET  /gmail/callback       # Callback OAuth, salva i token
+GET  /gmail/newsletters    # Lista newsletter (JSON) — solo header List-Unsubscribe
+POST /gmail/unsubscribe     # Unsubscribe one-click (RFC 8058) o apri URL/mailto
+DELETE /gmail/disconnect   # Revoca token e disconnette l'account Gmail
 ```
+
+## Architettura Newsletter Manager
+
+`gmail_manager.py` incapsula OAuth Google e la discovery delle newsletter via Gmail API
+(`google-api-python-client` / `google-auth-oauthlib`). **Privacy by design**: si leggono
+solo gli header dei messaggi (`From`, `Date`, `List-Unsubscribe`, `List-Unsubscribe-Post`),
+mai il corpo. La query Gmail è `has:list-unsubscribe`; i metadata dei messaggi vengono
+recuperati in parallelo (`ThreadPoolExecutor`) e raggruppati per mittente (ultima email per
+sender). Scope minimo: `gmail.readonly`.
+
+- I token OAuth sono salvati nel DB (`GmailCredential`, una riga per utente), non nella
+  sessione cookie. La riga viene rimossa al disconnect o alla cancellazione account (cascade).
+- Gli endpoint stanno sotto `/gmail/*` (non `/api/*`) perché autenticati via sessione: il
+  namespace `/api/` è riservato alla REST API con `X-API-Key` ed è CSRF-exempt. Le richieste
+  POST/DELETE inviano il token CSRF nell'header `X-CSRF-Token`.
+- Unsubscribe: se il mittente supporta one-click (RFC 8058) il POST viene fatto lato server
+  con guard anti-SSRF (solo HTTPS pubblico, no redirect); altrimenti l'URL/`mailto` viene
+  aperto in una nuova scheda dal browser.
+- Richiede `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. In Google Cloud Console funziona in
+  modalità "testing" aggiungendo il proprio account come test user (nessuna verifica completa).
 
 ## Deploy (Vercel)
 
@@ -187,6 +215,8 @@ GET  /badge/<domain>/<score>.svg  # Badge SVG dinamico
 | `FLASK_DEBUG` | Abilita debug mode |
 | `SENDGRID_API_KEY` | Per notifiche email |
 | `TWILIO_*` | Per SMS alert |
+| `GOOGLE_CLIENT_ID` | OAuth Google per il Newsletter Manager |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google per il Newsletter Manager |
 
 ## Convenzioni di sviluppo
 
