@@ -21,6 +21,9 @@
     <!-- CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
+    <!-- Visual enhancements (deferred + idle-gated — never blocks first paint) -->
+    <script defer src="{{ url_for('static', filename='js/enhancements.js') }}"></script>
+
     {% block head %}{% endblock %}
 </head>
 <body>
