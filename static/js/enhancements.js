@@ -61,6 +61,21 @@
 
   /* ── Hero shader gradient ────────────────────────────────────────── */
 
+  // Every page's banner gets the gradient backdrop. We inject the host
+  // element so no template needs editing — present and future pages with
+  // a `.hero-section` or `.premium-hero` are covered automatically.
+  function ensureHeroBg() {
+    var existing = document.querySelector('.hero-bg');
+    if (existing) return existing;
+    var section = document.querySelector('.hero-section, .premium-hero');
+    if (!section) return null;
+    var bg = document.createElement('div');
+    bg.className = 'hero-bg';
+    bg.setAttribute('aria-hidden', 'true');
+    section.insertBefore(bg, section.firstChild);
+    return bg;
+  }
+
   var VERT =
     'attribute vec2 a_pos;' +
     'void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }';
@@ -111,7 +126,7 @@
   ].join('\n');
 
   function initHeroGradient() {
-    var host = document.querySelector('.hero-bg');
+    var host = ensureHeroBg();
     if (!host) return;
 
     var canvas = document.createElement('canvas');
