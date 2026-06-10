@@ -485,6 +485,7 @@ def account_delete():
 def account_export():
     """Data portability export — JSON (Art. 15 & 20 GDPR)."""
     scans = ScanResult.query.filter_by(user_id=current_user.id).all()
+    gmail_cred = current_user.gmail_credential
     data = {
         'exported_at': datetime.utcnow().isoformat(),
         'user': {
@@ -494,6 +495,12 @@ def account_export():
             'tos_accepted_at': current_user.tos_accepted_at.isoformat()
                                if current_user.tos_accepted_at else None,
         },
+        # Gmail connection status only — OAuth tokens are never exported.
+        'gmail_connection': ({
+            'connected': True,
+            'email': gmail_cred.email,
+            'connected_at': gmail_cred.created_at.isoformat() if gmail_cred.created_at else None,
+        } if gmail_cred else {'connected': False}),
         'scans': [
             {
                 'target': s.target,
@@ -592,9 +599,9 @@ def gmail_callback():
             cred = GmailCredential(user_id=current_user.id)
             db.session.add(cred)
         cred.email = email
-        cred.token = creds.token
+        cred.token = gmail_manager.encrypt_token(creds.token)
         if creds.refresh_token:  # only returned on first consent — keep the old one otherwise
-            cred.refresh_token = creds.refresh_token
+            cred.refresh_token = gmail_manager.encrypt_token(creds.refresh_token)
         cred.token_uri = creds.token_uri
         cred.scopes = ' '.join(creds.scopes or gmail_manager.GMAIL_SCOPES)
         cred.expiry = creds.expiry
@@ -619,8 +626,8 @@ def gmail_newsletters():
         creds = gmail_manager.credentials_from_record(cred)
         newsletters = gmail_manager.list_newsletters(creds)
         # Persist a refreshed access token if google-auth renewed it mid-request.
-        if creds.token and creds.token != cred.token:
-            cred.token = creds.token
+        if creds.token and creds.token != gmail_manager.decrypt_token(cred.token):
+            cred.token = gmail_manager.encrypt_token(creds.token)
             cred.expiry = creds.expiry
             cred.updated_at = datetime.utcnow()
             db.session.commit()
@@ -669,7 +676,10 @@ def gmail_disconnect():
     cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
     if cred:
         try:
-            gmail_manager.revoke(cred.refresh_token or cred.token)
+            gmail_manager.revoke(
+                gmail_manager.decrypt_token(cred.refresh_token)
+                or gmail_manager.decrypt_token(cred.token)
+            )
         except Exception:
             pass  # best-effort — still drop our copy below
         db.session.delete(cred)

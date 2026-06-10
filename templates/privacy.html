@@ -6,7 +6,7 @@
 <div class="container" style="max-width:760px;padding-top:3rem;padding-bottom:4rem;">
 
     <h1 style="font-size:2rem;font-weight:800;margin-bottom:0.25rem;">Privacy Policy</h1>
-    <p class="text-muted" style="margin-bottom:2.5rem;">Last updated: 1 January 2026</p>
+    <p class="text-muted" style="margin-bottom:2.5rem;">Last updated: 10 June 2026</p>
 
     <section class="mb-4">
         <h2 style="font-size:1.15rem;font-weight:700;">1. Data Controller</h2>
@@ -44,6 +44,16 @@
                         <td>With your consent</td>
                         <td>Aggregated — no personal identifiers</td>
                     </tr>
+                    <tr>
+                        <td>Gmail OAuth tokens + connected Gmail address</td>
+                        <td>When you connect Gmail in the Newsletter Manager</td>
+                        <td>Yes — encrypted at rest; until you disconnect or delete your account</td>
+                    </tr>
+                    <tr>
+                        <td>Newsletter sender details (name, email, date from message headers)</td>
+                        <td>When you open the Newsletter Manager</td>
+                        <td>No — processed transiently and shown to you only; never stored</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -69,6 +79,10 @@
                         <td>Security rate-limiting</td>
                         <td>Art. 6(1)(f) GDPR — legitimate interests (preventing abuse)</td>
                     </tr>
+                    <tr>
+                        <td>Gmail Newsletter Manager</td>
+                        <td>Art. 6(1)(a) GDPR — consent (granted through Google's OAuth screen; withdrawable at any time by disconnecting)</td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -80,6 +94,7 @@
             <li><strong>Account data</strong> — retained until you delete your account.</li>
             <li><strong>Authenticated scan results</strong> — retained with your account until deletion.</li>
             <li><strong>Guest scan results</strong> — automatically deleted after 90 days.</li>
+            <li><strong>Gmail connection</strong> — OAuth tokens are kept (encrypted) until you disconnect Gmail or delete your account. Disconnecting also revokes the token at Google.</li>
             <li><strong>Analytics data</strong> — aggregated; no personal identifiers retained by us. Subject to Vercel's retention policy.</li>
         </ul>
     </section>
@@ -120,11 +135,32 @@
                 See <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">Vercel's Privacy Policy</a>.</li>
             <li><strong>Threat intelligence APIs</strong> (URLhaus, ThreatFox, MalwareBazaar) — queried when you use the Threat Intel scanner.
                 Only the URL, domain, IP, or hash you submit is sent. No account or personal data is shared.</li>
+            <li><strong>Google (Gmail API)</strong> — used only if you connect Gmail in the Newsletter Manager. We request read-only access
+                (<code>gmail.readonly</code>) and read only message headers to identify newsletters; this involves a transfer of data to Google
+                (a US provider, covered by the EU–US Data Privacy Framework). See
+                <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</li>
+        </ul>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.15rem;font-weight:700;">8. Gmail Newsletter Manager</h2>
+        <p>This optional feature lets you connect your Gmail account to find and unsubscribe from newsletters. We want to be explicit about how it works:</p>
+        <ul>
+            <li><strong>Read-only, headers only.</strong> We request the minimal <code>gmail.readonly</code> scope and read only the
+                <code>From</code>, <code>Date</code>, <code>List-Unsubscribe</code> and <code>List-Unsubscribe-Post</code> headers. We never read,
+                store, or transmit the body or content of any email.</li>
+            <li><strong>What we store.</strong> Only your OAuth tokens (encrypted at rest) and your Gmail address. The list of newsletters is
+                generated on demand and shown to you — it is never saved.</li>
+            <li><strong>Withdraw at any time.</strong> Click <em>Disconnect</em> in the Newsletter Manager to delete the stored tokens and revoke
+                our access at Google. Deleting your account does the same automatically.</li>
+            <li>Security Buddy's use of information from Google APIs adheres to the
+                <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+                including the Limited Use requirements.</li>
         </ul>
     </section>
 
     <section>
-        <h2 style="font-size:1.15rem;font-weight:700;">8. Changes to This Policy</h2>
+        <h2 style="font-size:1.15rem;font-weight:700;">9. Changes to This Policy</h2>
         <p>We may update this policy as the service evolves. Material changes will be noted in the
         <a href="https://github.com/therealmogu/securitybuddy" target="_blank" rel="noopener">GitHub repository</a>.
         Continued use after changes constitutes acceptance.</p>
