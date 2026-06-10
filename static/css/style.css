@@ -2813,7 +2813,23 @@ button { cursor: pointer; font-family: inherit; }
   transition: opacity 1.4s ease;
 }
 .hero-bg canvas.is-ready { opacity: 1; }
-.hero-section .container { position: relative; z-index: 1; }
+.hero-section .container,
+.premium-hero .container { position: relative; z-index: 1; }
+
+/* Premium banner becomes a backdrop host too (hero-section already is) */
+.premium-hero {
+  position: relative;
+  overflow: hidden;
+}
+.premium-hero::before {
+  content: '';
+  position: absolute;
+  top: -100px; left: 50%;
+  transform: translateX(-50%);
+  width: 700px; height: 500px;
+  background: radial-gradient(ellipse at center, var(--color-primary-dim) 0%, transparent 65%);
+  pointer-events: none;
+}
 
 /* Glass scan card — reads the animated gradient through the blur */
 .scan-input-group {
