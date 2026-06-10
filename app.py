@@ -100,6 +100,14 @@ def _inject_csrf_token():
     return {"csrf_token": generate_csrf_token}
 
 
+@app.context_processor
+def _inject_feature_flags():
+    """Expose feature flags to templates. The Gmail Newsletter Manager stays
+    dormant (hidden + routes return 404) until Google OAuth is configured."""
+    import gmail_manager
+    return {"gmail_enabled": gmail_manager.gmail_oauth_configured()}
+
+
 @app.before_request
 def _csrf_protect():
     if request.method in _CSRF_SAFE_METHODS:

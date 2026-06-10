@@ -10,6 +10,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 ### Aggiunto
 - **Gmail Newsletter Manager** (`/newsletter-manager`) — connessione Gmail via OAuth Google
   per elencare le newsletter attive e disiscriversi
+  - **Dormiente di default**: senza `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` il link è
+    nascosto e le route rispondono 404; si riattiva impostando le env (nessuna modifica al codice)
   - `gmail_manager.py`: flusso OAuth (`google-auth-oauthlib`) + Gmail API
     (`google-api-python-client`), scope minimo `gmail.readonly`
   - Privacy by design: legge **solo** gli header dei messaggi
