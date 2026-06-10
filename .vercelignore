@@ -16,3 +16,6 @@ htmlcov/
 .DS_Store
 *.db
 uv.lock
+
+# Documentation — not needed at runtime, kept out of the deploy bundle
+*.md
