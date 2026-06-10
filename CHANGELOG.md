@@ -20,9 +20,24 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
   - Endpoint `/gmail/auth`, `/gmail/callback`, `/gmail/newsletters`, `/gmail/unsubscribe`,
     `/gmail/disconnect` (autenticati via sessione, protetti da CSRF)
   - Modello `GmailCredential` (token OAuth nel DB, una riga per utente, cascade su delete)
-  - Variabili d'ambiente `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+  - Token OAuth **cifrati at-rest** con Fernet (chiave da `TOKEN_ENCRYPTION_KEY` o derivata
+    da `SESSION_SECRET`) — GDPR Art. 32
+  - Variabili d'ambiente `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `TOKEN_ENCRYPTION_KEY`
+  - Dipendenze: `google-api-python-client`, `google-auth`, `google-auth-oauthlib`,
+    `google-auth-httplib2`, `cryptography`
   - Template `newsletter_manager.html` con skeleton di caricamento, empty state,
     ordinamento per data/mittente e feedback inline
+- **Verifica Google AdSense** — meta tag `google-adsense-account` in `base.html` e route
+  `/ads.txt` (nessuno script né cookie di terze parti, GDPR-neutro)
+- **File `LICENSE`** (MIT)
+
+### Modificato
+- **Privacy policy** (`privacy.html`) aggiornata per il Newsletter Manager: trattamento Gmail,
+  token e indirizzo salvati, Google come terza parte / trasferimento UE–USA, base giuridica
+  (consenso, Art. 6(1)(a)), conservazione, revoca via disconnect e sezione dedicata con
+  aderenza alla Google API Limited Use
+- **Export dati** (`account_export`) include lo stato della connessione Gmail (indirizzo +
+  data), mai i token — GDPR Art. 15
 
 ---
 
