@@ -1,11 +1,12 @@
 import json
 import html
 import os
+import functools
 import ipaddress
 from datetime import datetime, timedelta
 from hmac import compare_digest as _hmac_compare
 from urllib.parse import urlparse
-from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify
+from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify, abort
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import app, db, rate_limit
@@ -545,9 +546,23 @@ def notifications_unsubscribe():
 # These endpoints are session/cookie authenticated, so they must stay inside
 # the CSRF-protected world. State-changing requests (POST/DELETE) therefore
 # send the per-session token via the X-CSRF-Token header.
+#
+# The whole feature stays dormant until Google OAuth is configured: without
+# GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET every route below returns 404 and the
+# nav link is hidden. Setting those env vars re-enables it with no code change.
 # ─────────────────────────────────────────────────────────────────────────
+def _require_gmail_enabled(view):
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not gmail_manager.gmail_oauth_configured():
+            abort(404)
+        return view(*args, **kwargs)
+    return wrapper
+
+
 @app.route('/newsletter-manager')
 @login_required
+@_require_gmail_enabled
 def newsletter_manager():
     """Newsletter Manager page — connect Gmail and unsubscribe from newsletters."""
     cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
@@ -561,6 +576,7 @@ def newsletter_manager():
 
 @app.route('/gmail/auth')
 @login_required
+@_require_gmail_enabled
 def gmail_auth():
     """Start the Google OAuth flow and redirect to the consent screen."""
     if not gmail_manager.gmail_oauth_configured():
@@ -574,6 +590,7 @@ def gmail_auth():
 
 @app.route('/gmail/callback')
 @login_required
+@_require_gmail_enabled
 def gmail_callback():
     """Handle the OAuth callback and persist the tokens for the current user."""
     state = session.pop('gmail_oauth_state', None)
@@ -617,6 +634,7 @@ def gmail_callback():
 
 @app.route('/gmail/newsletters')
 @login_required
+@_require_gmail_enabled
 def gmail_newsletters():
     """Return the list of newsletter senders found in the connected mailbox (JSON)."""
     cred = GmailCredential.query.filter_by(user_id=current_user.id).first()
@@ -639,6 +657,7 @@ def gmail_newsletters():
 
 @app.route('/gmail/unsubscribe', methods=['POST'])
 @login_required
+@_require_gmail_enabled
 @rate_limit(max_calls=30, window_seconds=60)
 def gmail_unsubscribe():
     """Unsubscribe from a newsletter.
@@ -671,6 +690,7 @@ def gmail_unsubscribe():
 
 @app.route('/gmail/disconnect', methods=['DELETE', 'POST'])
 @login_required
+@_require_gmail_enabled
 def gmail_disconnect():
     """Disconnect the Gmail account: revoke tokens at Google and delete the row."""
     cred = GmailCredential.query.filter_by(user_id=current_user.id).first()

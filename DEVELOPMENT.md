@@ -180,6 +180,12 @@ DELETE /gmail/disconnect   # Revoca token e disconnette l'account Gmail
 
 ## Architettura Newsletter Manager
 
+> **Stato: dormiente.** La feature è completa nel codice ma disattivata finché non si
+> impostano `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. Senza quelle env il link in navbar
+> è nascosto e tutte le route `/newsletter-manager` e `/gmail/*` rispondono 404 (gate
+> `_require_gmail_enabled` + context flag `gmail_enabled`). Impostando le env si riattiva
+> automaticamente, senza modifiche al codice.
+
 `gmail_manager.py` incapsula OAuth Google e la discovery delle newsletter via Gmail API
 (`google-api-python-client` / `google-auth-oauthlib`). **Privacy by design**: si leggono
 solo gli header dei messaggi (`From`, `Date`, `List-Unsubscribe`, `List-Unsubscribe-Post`),
