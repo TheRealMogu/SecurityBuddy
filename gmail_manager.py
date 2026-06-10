@@ -48,6 +48,42 @@ def gmail_oauth_configured():
     return bool(os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"))
 
 
+# ── Token encryption at rest (GDPR Art. 32) ─────────────────────────────────
+# OAuth tokens grant ongoing read access to the user's mailbox, so they are
+# encrypted before being written to the database. The key comes from
+# TOKEN_ENCRYPTION_KEY if set (a urlsafe-base64 32-byte Fernet key); otherwise
+# it is derived deterministically from SESSION_SECRET.
+def _fernet():
+    import base64
+    import hashlib
+    from cryptography.fernet import Fernet
+    key = os.environ.get("TOKEN_ENCRYPTION_KEY")
+    if key:
+        fkey = key.encode()
+    else:
+        secret = os.environ.get("SESSION_SECRET") or "dev-secret-key-change-in-production"
+        fkey = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+    return Fernet(fkey)
+
+
+def encrypt_token(plaintext):
+    """Encrypt a token for storage. Returns None/empty unchanged."""
+    if not plaintext:
+        return plaintext
+    return _fernet().encrypt(plaintext.encode()).decode()
+
+
+def decrypt_token(ciphertext):
+    """Decrypt a stored token. Returns None if missing or undecryptable."""
+    if not ciphertext:
+        return None
+    try:
+        return _fernet().decrypt(ciphertext.encode()).decode()
+    except Exception:
+        # Key rotated or value tampered — treat as disconnected; user reconnects.
+        return None
+
+
 def _client_config(redirect_uri):
     return {
         "web": {
@@ -85,11 +121,14 @@ def exchange_code(redirect_uri, state, code):
 
 
 def credentials_from_record(record):
-    """Build a google Credentials object from a stored GmailCredential row."""
+    """Build a google Credentials object from a stored GmailCredential row.
+
+    Tokens are decrypted on the way out (they are stored encrypted at rest).
+    """
     from google.oauth2.credentials import Credentials
     return Credentials(
-        token=record.token,
-        refresh_token=record.refresh_token,
+        token=decrypt_token(record.token),
+        refresh_token=decrypt_token(record.refresh_token),
         token_uri=record.token_uri or _TOKEN_URI,
         client_id=os.environ.get("GOOGLE_CLIENT_ID"),
         client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
