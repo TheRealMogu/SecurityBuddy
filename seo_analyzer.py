@@ -365,6 +365,7 @@ class SiteCrawler:
         self.session    = session
         parsed          = urlparse(base_url)
         self.host       = parsed.netloc
+        self.root_host  = self._canon_host(parsed.netloc)
         self.max_pages  = max_pages
         self._visited: set   = set()
         self._queue:   deque = deque([(base_url, 0)])
@@ -391,6 +392,16 @@ class SiteCrawler:
         except Exception:
             return True
 
+    @staticmethod
+    def _canon_host(netloc: str) -> str:
+        """Treat www and apex as the same host (sites often link with one form
+        while being reached via the other, which would otherwise strand the
+        crawler on the homepage)."""
+        host = (netloc or '').lower()
+        if '@' in host:
+            host = host.split('@', 1)[1]
+        return host[4:] if host.startswith('www.') else host
+
     def _normalise(self, href: str, page_url: str):
         try:
             url    = urljoin(page_url, href)
@@ -399,7 +410,7 @@ class SiteCrawler:
             return None
         if parsed.scheme not in ('http', 'https'):
             return None
-        if parsed.netloc != self.host:
+        if self._canon_host(parsed.netloc) != self.root_host:
             return None
         path = parsed.path.lower()
         if any(path.endswith(ext) for ext in self._SKIP_EXT):
