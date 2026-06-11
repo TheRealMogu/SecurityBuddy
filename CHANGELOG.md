@@ -14,7 +14,12 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
   - **Cursor spotlight** sulle feature card — glow radiale che segue il puntatore, solo su dispositivi pointer:fine
   - **Scroll reveal** scaglionato sulle feature card — IntersectionObserver, staggered delay, mai applicato a card già visibili al caricamento
   - Tutto attivato su `window.load` + `requestIdleCallback`; bail-out automatico per `prefers-reduced-motion`, Save-Data, WebGL assente, shader compile failure, context loss
-- **Password generator — "Exclude look-alikes"** — nuovo toggle che rimuove dal pool i caratteri visivamente ambigui (`0 O o`, `1 l I i`, `|`); disattivo per default; entropia, charset size e crack time si ricalcolano sul pool ridotto
+- **Password generator — "Exclude look-alikes"** — nuovo toggle che rimuove dal pool i caratteri visivamente ambigui (`0 O o`, `1 l I i`, `|`); entropia, charset size e crack time si ricalcolano sul pool ridotto
+- **Password generator — preferenze persistenti** — lunghezza e toggle salvati in `localStorage` (`sb_pw_prefs`) e ripristinati alla visita successiva; vengono salvate **solo le impostazioni**, mai le password generate
+
+### Modificato
+- **Password generator — nuovi default**: 12 caratteri (era 16), simboli disattivi, look-alikes esclusi — pensato per password da digitare/trascrivere senza errori
+- **Password generator — layout compatto**: hero ridotta e griglia a due colonne su desktop (password + statistiche a sinistra, opzioni a destra), tutto raggiungibile senza scroll; su mobile resta a colonna singola
 
 ### Corretto
 - **Cold start Vercel molto lento al primo accesso** — due cause rimosse:
