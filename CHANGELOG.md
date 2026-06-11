@@ -17,6 +17,14 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 - **Password generator — "Exclude look-alikes"** — nuovo toggle che rimuove dal pool i caratteri visivamente ambigui (`0 O o`, `1 l I i`, `|`); disattivo per default; entropia, charset size e crack time si ricalcolano sul pool ridotto
 
 ### Corretto
+- **Cold start Vercel molto lento al primo accesso** — due cause rimosse:
+  - il bundle della serverless function installava ~29 pacchetti di cui solo ~13 usati a
+    runtime (matplotlib, seaborn→pandas+numpy, reportlab, celery, redis, twilio, trafilatura,
+    sendgrid… servivano solo a moduli morti). Nuovo `requirements.txt` minimale che
+    `@vercel/python` usa con priorità; rimosso `requirements_vercel.txt` (nome non
+    riconosciuto da Vercel, era ignorato)
+  - `db.create_all()` + migrazioni giravano ad ogni cold start: ora skippabili con
+    `DB_AUTO_INIT=0` (da impostare dopo il primo deploy)
 - **Password generator — slider lunghezza invisibile** — il range input aveva `-webkit-appearance:none` ma nessuno stile per track e thumb; aggiunto stile esplicito con fill primario dinamico (`--range-pct`) per WebKit e Firefox
 - **Password generator — lunghezza non editabile** — sostituito lo `<span>` statico con un `<input type="number">` bidirezionalmente sincronizzato con lo slider; normalizzazione (clamp 8–64) su blur/enter
 - **SEO crawler — sito bloccato sulla homepage** — `SiteCrawler._normalise` confrontava l'host con uguaglianza stretta; aggiunto `_canon_host()` che tratta `www.example.com` e `example.com` come lo stesso sito, così i siti con link interni che usano la forma opposta vengono crawlati correttamente (sottodomini reali restano esterni)
