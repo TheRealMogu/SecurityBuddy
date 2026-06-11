@@ -228,6 +228,15 @@ sender). Scope minimo: `gmail.readonly`.
 
 **Importante:** senza il builder `@vercel/static`, i file statici non vengono inclusi nel bundle e la pagina appare non stilizzata.
 
+### Cold start
+
+Il primo accesso dopo un periodo di inattività paga l'avvio della serverless function. I fattori, in ordine di impatto:
+
+1. **Dimensione del bundle** — `@vercel/python` installa da `requirements.txt` (priorità su `pyproject.toml`). Il file è volutamente minimale: solo le librerie importate a runtime. Le dipendenze pesanti di `pyproject.toml` (matplotlib, seaborn→pandas+numpy, reportlab, celery, twilio, trafilatura…) servono solo a moduli non usati (`premium_features.py`, `pdf_generator.py`) e **non vanno aggiunte** a `requirements.txt`.
+2. **Init DB a import time** — `app.py` esegue `db.create_all()` + migrazioni colonne ad ogni cold start. Dopo il primo deploy impostare `DB_AUTO_INIT=0` per saltare i roundtrip.
+3. **Resume del database** — Neon/Supabase free tier sospendono il DB inattivo; la prima query paga la ripresa (~0.5–3 s). Indipendente dall'app.
+4. Le librerie Google in `gmail_manager.py` sono già lazy-importate (dentro le funzioni), quindi non pesano sull'import dell'app.
+
 ## Variabili d'ambiente
 
 | Variabile | Descrizione |
@@ -239,6 +248,7 @@ sender). Scope minimo: `gmail.readonly`.
 | `TWILIO_*` | Per SMS alert |
 | `GOOGLE_CLIENT_ID` | OAuth Google per il Newsletter Manager |
 | `GOOGLE_CLIENT_SECRET` | OAuth Google per il Newsletter Manager |
+| `DB_AUTO_INIT` | `0` per saltare `create_all` + migrazioni al cold start (default: attivo) |
 
 ## Aree di miglioramento
 

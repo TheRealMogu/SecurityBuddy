@@ -201,11 +201,15 @@ def _run_column_migrations():
                 conn.rollback()  # column already exists — safe to ignore
 
 
-with app.app_context():
-    try:
-        import models  # noqa: F401
-        db.create_all()
-        _run_column_migrations()
-        logging.info("Database tables created successfully")
-    except Exception as e:
-        logging.warning(f"Database initialization error: {e}")
+# Schema setup runs at import time so first-ever deploys work out of the box.
+# On serverless (Vercel) this costs several DB roundtrips on EVERY cold start —
+# once the schema exists, set DB_AUTO_INIT=0 in production to skip it.
+if os.environ.get("DB_AUTO_INIT", "1") != "0":
+    with app.app_context():
+        try:
+            import models  # noqa: F401
+            db.create_all()
+            _run_column_migrations()
+            logging.info("Database tables created successfully")
+        except Exception as e:
+            logging.warning(f"Database initialization error: {e}")

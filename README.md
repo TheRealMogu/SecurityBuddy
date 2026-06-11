@@ -24,6 +24,7 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 |---|---|---|
 | `SESSION_SECRET` | ✅ | Flask session secret key |
 | `DATABASE_URL` | ✅ (prod) | PostgreSQL connection string — SQLite used locally |
+| `DB_AUTO_INIT` | — | Set to `0` **after the first deploy** to skip schema setup on every cold start (faster first request) |
 | `FLASK_DEBUG` | — | Set to `1` to enable debug mode |
 | `SENDGRID_API_KEY` | — | Email notifications |
 | `TWILIO_*` | — | SMS alerts |
@@ -35,6 +36,12 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 1. Create a PostgreSQL database ([Neon](https://neon.tech/) or [Supabase](https://supabase.com/) work well)
 2. Set `DATABASE_URL`
 3. Tables are created automatically on first run
+4. Once deployed and working, set `DB_AUTO_INIT=0` so cold starts skip the schema check
+
+> **Cold start tip:** runtime dependencies live in `requirements.txt`, kept intentionally
+> minimal — the smaller the lambda bundle, the faster the first request after idle.
+> On Neon free tier the database also auto-suspends; the first query after idle pays
+> a resume delay that is independent of this app.
 
 ## Local Development
 
