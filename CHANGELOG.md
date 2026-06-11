@@ -8,6 +8,22 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 ## [Non rilasciato]
 
 ### Aggiunto
+- **Visual enhancements — lazy-loaded, zero impatto sul critical path** (`static/js/enhancements.js`)
+  - **Gradiente shader animato** nella hero section e in ogni banner di pagina (`.hero-section`, `.premium-hero`) — WebGL self-hosted con simplex noise (equivalente a ShaderGradient, zero dipendenze, ~5 KB); colors letti dalle CSS variables e aggiornati al toggle light/dark; pausa automatica quando la sezione esce dal viewport o il tab è nascosto; DPR capped a 1.5; fallback CSS statico sempre presente
+  - **Glassmorphism** su scan card e trust badge — `backdrop-filter: blur + saturate`, semitrasparenza che legge il gradiente sottostante; entrambi i temi light/dark
+  - **Cursor spotlight** sulle feature card — glow radiale che segue il puntatore, solo su dispositivi pointer:fine
+  - **Scroll reveal** scaglionato sulle feature card — IntersectionObserver, staggered delay, mai applicato a card già visibili al caricamento
+  - Tutto attivato su `window.load` + `requestIdleCallback`; bail-out automatico per `prefers-reduced-motion`, Save-Data, WebGL assente, shader compile failure, context loss
+- **Password generator — "Exclude look-alikes"** — nuovo toggle che rimuove dal pool i caratteri visivamente ambigui (`0 O o`, `1 l I i`, `|`); disattivo per default; entropia, charset size e crack time si ricalcolano sul pool ridotto
+
+### Corretto
+- **Password generator — slider lunghezza invisibile** — il range input aveva `-webkit-appearance:none` ma nessuno stile per track e thumb; aggiunto stile esplicito con fill primario dinamico (`--range-pct`) per WebKit e Firefox
+- **Password generator — lunghezza non editabile** — sostituito lo `<span>` statico con un `<input type="number">` bidirezionalmente sincronizzato con lo slider; normalizzazione (clamp 8–64) su blur/enter
+- **SEO crawler — sito bloccato sulla homepage** — `SiteCrawler._normalise` confrontava l'host con uguaglianza stretta; aggiunto `_canon_host()` che tratta `www.example.com` e `example.com` come lo stesso sito, così i siti con link interni che usano la forma opposta vengono crawlati correttamente (sottodomini reali restano esterni)
+
+---
+
+### Aggiunto
 - **Gmail Newsletter Manager** (`/newsletter-manager`) — connessione Gmail via OAuth Google
   per elencare le newsletter attive e disiscriversi
   - **Dormiente di default**: senza `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` il link è

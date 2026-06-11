@@ -8,7 +8,8 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 - **Email Security** — MX records, SPF, DMARC, DKIM, 7 IP blacklists + 2 domain blacklists, PTR/rDNS, STARTTLS per mail server
 - **SEO Analyser** — meta tags, content quality, PageSpeed Insights (mobile + desktop), Open Graph, structured data
 - **Newsletter Manager** — connect Gmail via OAuth and unsubscribe from newsletters (reads only `List-Unsubscribe` headers, never email content)
-- **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown
+- **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown (www/apex link mismatch handled automatically)
+- **Password Generator** — cryptographically secure, configurable charsets, exclude look-alike characters (`0 O o 1 l I i |`)
 - **REST API** — programmatic access with API keys, batch scanning and webhook callbacks
 - **Dashboard** — scan history for registered users
 - **No premium gates** — all features are free

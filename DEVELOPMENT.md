@@ -118,6 +118,22 @@ I check DKIM (18 selector comuni) e le blacklist vengono eseguiti in parallelo c
 **Blacklist IP**: Spamhaus ZEN, SpamCop, SORBS, Barracuda, UCEPROTECT L1, PSBL, S5H.  
 **Blacklist dominio**: Spamhaus DBL, URIBL Multi.
 
+## Frontend enhancements
+
+`static/js/enhancements.js` — loader unico per tutti gli effetti visivi, attivato su `window.load` + `requestIdleCallback`. Non tocca il critical rendering path.
+
+| Effetto | Selettore target | Fallback |
+|---|---|---|
+| Shader gradient hero | `.hero-section`, `.premium-hero` (auto-inject di `.hero-bg`) | `::before` radial-gradient CSS |
+| Glassmorphism scan card | `.scan-input-group` | background opaco |
+| Glass trust badge | `.trust-badge` | background opaco |
+| Cursor spotlight | `.features-grid .feature-card` | hover senza glow |
+| Scroll reveal | `.features-grid .feature-card` (solo sotto la fold) | card visibili subito |
+
+**Bail-out automatici**: `prefers-reduced-motion`, `Save-Data`, WebGL assente, shader compile failure, context loss WebGL, tab nascosto, sezione offscreen.
+
+Il canvas shader viene iniettato a runtime come `firstChild` di qualsiasi `.hero-section` / `.premium-hero` — aggiungere un nuovo banner page non richiede modifiche al template. Il colore tema viene riletto dai CSS custom properties ad ogni toggle light/dark via `MutationObserver`.
+
 ## Template Jinja2
 
 | Template | Descrizione |
@@ -223,6 +239,30 @@ sender). Scope minimo: `gmail.readonly`.
 | `TWILIO_*` | Per SMS alert |
 | `GOOGLE_CLIENT_ID` | OAuth Google per il Newsletter Manager |
 | `GOOGLE_CLIENT_SECRET` | OAuth Google per il Newsletter Manager |
+
+## Aree di miglioramento
+
+### SEO Crawler
+- **Siti JS-rendered (SPA/Wix/Squarespace)**: senza headless browser i link generati lato client non sono scopribili. Il seeding da sitemap è il mitigatore attuale; un'integrazione opzionale con Playwright/Pyppeteer aumenterebbe la copertura su siti moderni.
+- **Bot protection**: alcuni siti (Cloudflare, WAF custom) bloccano IP datacenter anche con User-Agent da browser. Non correggibile lato codice; documentare nella UI che i risultati "1 pagina" possono indicare un blocco IP.
+- **Crawl budget e velocità**: il delay fisso `CRAWL_DELAY = 0.35s` + `max_pages = 100` può richiedere fino a ~35s solo di attesa. Un backoff adattivo (basato su risposta del server) e/o crawl parallelo (con semaforo) ridurrebbero il tempo.
+- **Link extraction**: il parser HTML custom non gestisce tag `<base href>`, che spostano la base di risoluzione dei link relativi. Aggiungere supporto a `<base>` migliorerebbe l'accuratezza su alcuni CMS.
+
+### Password Generator
+- **Passphrase**: aggiungere la modalità wordlist (EFF Long List) come alternativa al charset casuale. È più memorabile a parità di entropia ed è già descritta nella nota a piè di pagina.
+- **History locale**: opzione per mostrare le ultime N password generate in sessione (localStorage), utile per confrontare varianti.
+- **Lunghezza minima con look-alikes**: quando "Exclude look-alikes" è attivo con tutti i tipi selezionati, i charset ridotti (specialmente Numbers: 8 caratteri) riducono l'entropia per password molto corte. Potrebbe valere un warning visivo sotto gli 8 caratteri con l'opzione attiva.
+
+### Visual Enhancements
+- **Pagine app interne** (dashboard, account, API keys): `.page-header` è troppo compatto per lo shader; una sottile barra gradiente CSS (`border-bottom` o pseudo-elemento `::after` con `conic-gradient`) darebbe coerenza visiva senza usare WebGL.
+- **Spotlight + reveal sulle premium feature card** (`.premium-feature-card`): la classe è diversa da `.feature-card`, quindi gli effetti 21st.dev non si applicano lì. Estensione banale in `enhancements.js`.
+- **Verifica browser**: lo shader e il glassmorphism non sono stati testati visivamente nel container di sviluppo (network policy blocca il download di Chromium headless). Consigliato un test manuale su Safari (supporto backdrop-filter variabile) e Firefox (WebGL path diverso).
+- **Performance mobile low-end**: DPR capped a 1.5 e `powerPreference: 'low-power'` attenuano il costo, ma su dispositivi molto deboli lo shader potrebbe causare jank. Considerare un check `navigator.hardwareConcurrency <= 2` come ulteriore bail-out.
+
+### Sicurezza
+- **Rate limiting per-IP sul crawler SEO**: attualmente il limite è per API key; un utente non autenticato che avvia crawl multipli può saturare la coda.
+- **CSP header del sito stesso**: SecurityBuddy non espone un `Content-Security-Policy` nella propria risposta HTTP. Ironico per uno scanner di sicurezza.
+- **DKIM check**: i 18 selector comuni coprono i provider più diffusi ma non selector custom. Aggiungere un campo "selector personalizzato" nell'interfaccia email security.
 
 ## Convenzioni di sviluppo
 
