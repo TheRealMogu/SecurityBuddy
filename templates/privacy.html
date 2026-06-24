@@ -76,6 +76,10 @@
                         <td>Art. 6(1)(a) GDPR — consent (opt-in via banner)</td>
                     </tr>
                     <tr>
+                        <td>Personalised advertising (Google AdSense)</td>
+                        <td>Art. 6(1)(a) GDPR — consent (opt-in via banner); non-personalised ads shown otherwise</td>
+                    </tr>
+                    <tr>
                         <td>Security rate-limiting</td>
                         <td>Art. 6(1)(f) GDPR — legitimate interests (preventing abuse)</td>
                     </tr>
@@ -123,9 +127,24 @@
     </section>
 
     <section class="mb-4">
-        <h2 style="font-size:1.15rem;font-weight:700;">6. Cookies</h2>
-        <p>We set <strong>no cookies by default</strong>. If you click <em>Accept</em> on the cookie consent banner, Vercel Analytics may set cookies prefixed <code>va-</code> to count page views. No personal data is stored in these cookies.</p>
-        <p>You can withdraw consent at any time by clearing this site's data in your browser settings, or by clicking <em>Reject</em> on the banner. Consent is stored in <code>localStorage</code> under the key <code>sb_consent</code>.</p>
+        <h2 style="font-size:1.15rem;font-weight:700;">6. Cookies and Advertising</h2>
+        <p>We set <strong>no non-essential cookies by default</strong>. We use
+        <strong>Google Consent Mode</strong>, which keeps advertising and analytics signals set
+        to "denied" until you choose <em>Accept</em> on the cookie banner.</p>
+        <ul>
+            <li><strong>Analytics.</strong> If you click <em>Accept</em>, Vercel Analytics may set
+            cookies prefixed <code>va-</code> to count page views. No personal data is stored in
+            these cookies.</li>
+            <li><strong>Advertising.</strong> Content pages display ads from
+            <strong>Google AdSense</strong>. Until you accept, ads are shown in
+            <em>non-personalised</em> mode. If you click <em>Accept</em>, Google and its partners
+            may set cookies to personalise ads and measure their performance. Ads are never shown on
+            sign-in, dashboard, scan-result or error pages.</li>
+        </ul>
+        <p>You can withdraw consent at any time by clicking <em>Reject</em> on the banner or by
+        clearing this site's data in your browser. Your choice is stored in <code>localStorage</code>
+        under the key <code>sb_consent</code>. You can also manage Google's personalised advertising
+        at <a href="https://adssettings.google.com" target="_blank" rel="noopener">adssettings.google.com</a>.</p>
     </section>
 
     <section class="mb-4">
@@ -133,6 +152,10 @@
         <ul>
             <li><strong>Vercel</strong> — our hosting and infrastructure provider, and the provider of Vercel Analytics (if consented).
                 See <a href="https://vercel.com/legal/privacy-policy" target="_blank" rel="noopener">Vercel's Privacy Policy</a>.</li>
+            <li><strong>Google AdSense</strong> — serves the ads on our content pages. With your consent, Google and its partners may use
+                cookies and similar technologies to personalise ads and measure performance; without consent, ads are non-personalised.
+                See <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">how Google uses information from sites that use its services</a>
+                and <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</li>
             <li><strong>Threat intelligence APIs</strong> (URLhaus, ThreatFox, MalwareBazaar) — queried when you use the Threat Intel scanner.
                 Only the URL, domain, IP, or hash you submit is sent. No account or personal data is shared.</li>
             <li><strong>Google (Gmail API)</strong> — used only if you connect Gmail in the Newsletter Manager. We request read-only access
