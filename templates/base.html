@@ -8,6 +8,14 @@
     <title>{% block title %}Security Buddy — Web Security Scanner{% endblock %}</title>
     <meta name="description" content="Instant web security scanner. HTTPS, SSL, headers, cookies, ports and more. Free, no account required.">
 
+    {# AdSense is loaded ONLY on content-rich pages, which set g.show_ads=True.
+       Tool screens, auth pages, scan results and error pages leave it unset so
+       ads never appear on "screens without publisher content" (an AdSense
+       policy requirement). Using g — rather than request.endpoint — means a
+       404 rendered from a content route does not inherit its ad slot. #}
+    {% if g.get('show_ads') %}
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9729522875920807" crossorigin="anonymous"></script>
+    {% endif %}
     <!-- Fonts -->
     <link rel="preconnect" href="https://api.fontshare.com">
     <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">

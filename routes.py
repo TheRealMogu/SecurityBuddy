@@ -6,7 +6,7 @@ import ipaddress
 from datetime import datetime, timedelta
 from hmac import compare_digest as _hmac_compare
 from urllib.parse import urlparse
-from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify, abort
+from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify, abort, g
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import app, db, rate_limit
@@ -49,6 +49,7 @@ def _remember_guest_scan(scan_id):
 @app.route('/')
 def index():
     """Homepage with scan form"""
+    g.show_ads = True
     return render_template('index.html')
 
 @app.route('/scan', methods=['POST'])
@@ -446,12 +447,14 @@ def privacy():
 @app.route('/about')
 def about():
     """About page — what Security Buddy is and the principles behind it."""
+    g.show_ads = True
     return render_template('about.html')
 
 
 @app.route('/guides')
 def guides():
     """Editorial hub listing every security guide."""
+    g.show_ads = True
     return render_template('guides.html', guides=GUIDES)
 
 
@@ -464,6 +467,7 @@ def guide(slug):
     # Surface a few other guides as "related" — the next ones in order, wrapping around.
     idx = GUIDES.index(item)
     related = [GUIDES[(idx + i) % len(GUIDES)] for i in range(1, 4)]
+    g.show_ads = True
     return render_template('guide.html', guide=item, related=related,
                            updated=GUIDES_UPDATED)
 
