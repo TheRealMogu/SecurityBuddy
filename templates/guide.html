@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}{{ guide.title }} — Security Buddy{% endblock %}
+{% block head %}
+<meta name="description" content="{{ guide.description }}">
+<link rel="canonical" href="https://securitybuddy.vercel.app/guides/{{ guide.slug }}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{ guide.title }}">
+<meta property="og:description" content="{{ guide.description }}">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": {{ guide.title | tojson }},
+  "description": {{ guide.description | tojson }},
+  "datePublished": "{{ updated }}",
+  "dateModified": "{{ updated }}",
+  "author": {"@type": "Organization", "name": "Security Buddy"},
+  "publisher": {"@type": "Organization", "name": "Security Buddy"},
+  "mainEntityOfPage": "https://securitybuddy.vercel.app/guides/{{ guide.slug }}"
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<article class="container guide-article">
+    <nav class="guide-breadcrumb" aria-label="Breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ url_for('guides') }}">Guides</a>
+        <span aria-hidden="true">/</span>
+        <span class="current">{{ guide.category }}</span>
+    </nav>
+
+    <header class="guide-header">
+        <span class="section-label">{{ guide.category }}</span>
+        <h1 class="guide-title">{{ guide.title }}</h1>
+        <p class="guide-meta">
+            <i data-lucide="clock" style="width:14px;height:14px;"></i> {{ guide.read_time }}
+            <span class="guide-meta-sep">·</span>
+            Updated {{ updated }}
+        </p>
+    </header>
+
+    <div class="guide-prose">
+        {{ guide.body | safe }}
+    </div>
+
+    <aside class="guide-cta">
+        <div class="feature-icon"><i data-lucide="shield-check" style="width:20px;height:20px;"></i></div>
+        <h2>See where your site stands</h2>
+        <p>Security Buddy runs 12+ checks — HTTPS, headers, cookies, CORS, ports and more —
+        and gives you a graded report in seconds. Free, no account required.</p>
+        <a href="{{ url_for('index') }}" class="btn btn-primary">
+            <i data-lucide="search" style="width:16px;height:16px;"></i> Scan your site
+        </a>
+    </aside>
+
+    {% if related %}
+    <section class="guide-related">
+        <h2 class="section-title" style="font-size:1.25rem;">Related guides</h2>
+        <div class="guides-grid">
+            {% for r in related %}
+            <a class="guide-card" href="{{ url_for('guide', slug=r.slug) }}">
+                <div class="feature-icon">
+                    <i data-lucide="{{ r.icon }}" style="width:20px;height:20px;"></i>
+                </div>
+                <span class="guide-card-category">{{ r.category }}</span>
+                <h3 class="guide-card-title">{{ r.title }}</h3>
+                <p class="guide-card-desc">{{ r.description }}</p>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</article>
+{% endblock %}

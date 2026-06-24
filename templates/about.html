@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}About Security Buddy — Free Web Security Scanner{% endblock %}
+{% block head %}
+<meta name="description" content="Security Buddy is a free web security scanner and learning resource. Learn what we check, how it works, and the principles behind the project.">
+<link rel="canonical" href="https://securitybuddy.vercel.app/about">
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:760px;padding-top:3rem;padding-bottom:4rem;">
+
+    <span class="section-label">About</span>
+    <h1 style="font-size:2rem;font-weight:800;margin-bottom:0.75rem;">About Security Buddy</h1>
+    <p class="text-muted" style="font-size:1.05rem;margin-bottom:2.5rem;">
+        Free, no-nonsense security tools and guides for developers, small teams and
+        curious site owners.
+    </p>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.2rem;font-weight:700;">What Security Buddy is</h2>
+        <p>Security Buddy is a free web application that helps you understand and improve the
+        security of your website. Enter a domain and, in seconds, you get a graded report
+        across more than a dozen checks — HTTPS and TLS configuration, security headers,
+        cookie flags, CORS policy, technology fingerprinting and exposed network ports —
+        each explained in plain language with guidance on how to fix what it finds.</p>
+        <p>It is built for people who want a clear answer to a simple question: <em>is my
+        site configured securely, and if not, what should I do about it?</em> No account is
+        required to run a scan, and results come with context rather than just a pass/fail.</p>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.2rem;font-weight:700;">Why we built it</h2>
+        <p>Good security advice is often locked behind jargon, paywalls or enterprise tools
+        that assume a dedicated security team. Most websites are not run by security
+        specialists — they are run by developers, founders and small teams juggling many
+        responsibilities. Those people deserve straightforward tools that explain the
+        <em>why</em>, not just the <em>what</em>.</p>
+        <p>That is the gap Security Buddy aims to fill: actionable checks paired with
+        educational <a href="{{ url_for('guides') }}">guides</a> so that, over time, you do
+        not just fix an issue — you understand it.</p>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.2rem;font-weight:700;">What we check</h2>
+        <div class="table-wrapper">
+            <table class="table">
+                <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+                <tbody>
+                    <tr><td>Security Scanner</td><td>Grades HTTPS/SSL, security headers, cookies, CORS, tech fingerprint and open ports</td></tr>
+                    <tr><td>SEO Analyzer</td><td>Audits on-page SEO signals and crawlability for a domain</td></tr>
+                    <tr><td>Email Analyzer</td><td>Checks SPF, DKIM and DMARC so you know how spoofable a domain is</td></tr>
+                    <tr><td>Threat Intel</td><td>Looks up domains, IPs, URLs and file hashes against open threat-intelligence feeds</td></tr>
+                    <tr><td>Password Generator</td><td>Creates strong, random passwords entirely in your browser</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.2rem;font-weight:700;">Our principles</h2>
+        <ul>
+            <li><strong>Privacy first.</strong> We set no cookies by default and gate analytics
+            behind explicit opt-in. Read the full <a href="{{ url_for('privacy') }}">Privacy
+            Policy</a>.</li>
+            <li><strong>Explain, don't just flag.</strong> Every finding comes with context and
+            a path to fixing it, backed by our in-depth guides.</li>
+            <li><strong>Free and accessible.</strong> The core scanning tools are free to use
+            without an account.</li>
+            <li><strong>Responsible scanning.</strong> Our checks are non-intrusive,
+            observation-based assessments of publicly reachable configuration — not intrusive
+            exploitation. Only ever scan systems you own or have permission to test.</li>
+        </ul>
+    </section>
+
+    <section class="mb-4">
+        <h2 style="font-size:1.2rem;font-weight:700;">Open source</h2>
+        <p>Security Buddy is developed in the open. You can read the code, report a bug or
+        suggest a feature on our
+        <a href="https://github.com/therealmogu/securitybuddy" target="_blank" rel="noopener">GitHub
+        repository</a>. Transparency is part of how a security tool earns trust.</p>
+    </section>
+
+    <section>
+        <h2 style="font-size:1.2rem;font-weight:700;">Get started</h2>
+        <p>Ready to see where your site stands? <a href="{{ url_for('index') }}">Run a free
+        security scan</a>, or browse the <a href="{{ url_for('guides') }}">guides</a> to learn
+        the concepts first.</p>
+    </section>
+
+</div>
+{% endblock %}

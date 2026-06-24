@@ -66,6 +66,10 @@
                             <a class="nav-link{% if request.endpoint == 'password_generator' %} nav-link-active{% endif %}"
                                href="{{ url_for('password_generator') }}">Password</a>
                         </li>
+                        <li>
+                            <a class="nav-link{% if request.endpoint in ['guides', 'guide'] %} nav-link-active{% endif %}"
+                               href="{{ url_for('guides') }}">Guides</a>
+                        </li>
                         {% if current_user.is_authenticated %}
                         <li>
                             <a class="nav-link{% if request.endpoint == 'dashboard' %} nav-link-active{% endif %}"
@@ -132,6 +136,8 @@
             <div class="footer-inner">
                 <p class="footer-copy">© 2026 Security Buddy</p>
                 <div class="footer-links">
+                    <a href="{{ url_for('guides') }}" class="footer-link">Guides</a>
+                    <a href="{{ url_for('about') }}" class="footer-link">About</a>
                     <a href="{{ url_for('privacy') }}" class="footer-link">Privacy Policy</a>
                     <a href="https://github.com/therealmogu/securitybuddy" class="footer-link" target="_blank" rel="noopener">GitHub</a>
                     <a href="https://github.com/therealmogu/securitybuddy/issues" class="footer-link" target="_blank" rel="noopener">Report a bug</a>

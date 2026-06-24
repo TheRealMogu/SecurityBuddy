@@ -2886,3 +2886,178 @@ button { cursor: pointer; font-family: inherit; }
     transform: none;
   }
 }
+
+/* ── Guides: hub grid & cards ──────────────── */
+.guides-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+@media (max-width: 767px) {
+  .guides-grid { grid-template-columns: 1fr; }
+}
+@media (min-width: 768px) and (max-width: 991px) {
+  .guides-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.guide-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+.guide-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.guide-card-category {
+  display: inline-block;
+  align-self: flex-start;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  margin: 1rem 0 0.5rem;
+}
+.guide-card-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5rem;
+}
+.guide-card-desc {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0 0 1rem;
+  flex: 1;
+}
+.guide-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Guides: article layout ────────────────── */
+.guide-article {
+  max-width: 760px;
+  padding-top: 2rem;
+  padding-bottom: 4rem;
+}
+.guide-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: 1.5rem;
+}
+.guide-breadcrumb a { color: var(--color-text-muted); text-decoration: none; }
+.guide-breadcrumb a:hover { color: var(--color-primary); }
+.guide-breadcrumb .current { color: var(--color-text); }
+
+.guide-header { margin-bottom: 2rem; }
+.guide-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.6rem, 4vw, 2.3rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  margin: 0.25rem 0 0.75rem;
+}
+.guide-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+.guide-meta-sep { opacity: 0.5; }
+
+.guide-prose { font-size: 1.02rem; line-height: 1.75; color: var(--color-text); }
+.guide-prose .guide-lead {
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  margin-bottom: 2rem;
+}
+.guide-prose h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+  margin: 2.5rem 0 0.85rem;
+}
+.guide-prose h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.12rem;
+  margin: 1.75rem 0 0.6rem;
+}
+.guide-prose p { margin: 0 0 1.1rem; }
+.guide-prose ul, .guide-prose ol { margin: 0 0 1.2rem; padding-left: 1.4rem; }
+.guide-prose li { margin-bottom: 0.5rem; }
+.guide-prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.guide-prose a:hover { text-decoration: none; }
+.guide-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+.guide-prose pre {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  margin: 0 0 1.3rem;
+}
+.guide-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.guide-cta {
+  margin: 3rem 0;
+  padding: 2rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+.guide-cta .feature-icon { margin: 0 auto 1rem; }
+.guide-cta h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.guide-cta p {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  max-width: 480px;
+  margin: 0 auto 1.25rem;
+}
+
+.guide-related { margin-top: 3.5rem; }
+.guide-related .guides-grid { margin-top: 1.5rem; }

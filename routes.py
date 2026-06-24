@@ -19,6 +19,7 @@ from email_analyzer import EmailAnalyzer
 from threat_intel import ThreatIntelAnalyzer
 from api_routes import api_bp
 from background_jobs import job_manager
+from guides_content import GUIDES, GUIDES_BY_SLUG, GUIDES_UPDATED
 import gmail_manager
 
 # Register API blueprint
@@ -440,6 +441,74 @@ def password_generator():
 def privacy():
     """GDPR Art. 13 privacy notice."""
     return render_template('privacy.html')
+
+
+@app.route('/about')
+def about():
+    """About page — what Security Buddy is and the principles behind it."""
+    return render_template('about.html')
+
+
+@app.route('/guides')
+def guides():
+    """Editorial hub listing every security guide."""
+    return render_template('guides.html', guides=GUIDES)
+
+
+@app.route('/guides/<slug>')
+def guide(slug):
+    """A single long-form security guide, rendered from structured content."""
+    item = GUIDES_BY_SLUG.get(slug)
+    if item is None:
+        abort(404)
+    # Surface a few other guides as "related" — the next ones in order, wrapping around.
+    idx = GUIDES.index(item)
+    related = [GUIDES[(idx + i) % len(GUIDES)] for i in range(1, 4)]
+    return render_template('guide.html', guide=item, related=related,
+                           updated=GUIDES_UPDATED)
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    """XML sitemap covering public, content-rich pages for search engines."""
+    pages = [
+        (url_for('index', _external=True), '1.0'),
+        (url_for('about', _external=True), '0.7'),
+        (url_for('guides', _external=True), '0.8'),
+        (url_for('seo_scan', _external=True), '0.6'),
+        (url_for('email_scan', _external=True), '0.6'),
+        (url_for('threat_scan', _external=True), '0.6'),
+        (url_for('password_generator', _external=True), '0.6'),
+        (url_for('privacy', _external=True), '0.3'),
+    ]
+    pages += [(url_for('guide', slug=g['slug'], _external=True), '0.7') for g in GUIDES]
+
+    urls = ''.join(
+        f'<url><loc>{loc}</loc><lastmod>{GUIDES_UPDATED}</lastmod>'
+        f'<priority>{prio}</priority></url>'
+        for loc, prio in pages
+    )
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f'{urls}</urlset>')
+    resp = make_response(xml)
+    resp.headers['Content-Type'] = 'application/xml; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Allow crawling and point search engines at the sitemap."""
+    content = (
+        'User-agent: *\n'
+        'Allow: /\n'
+        f'Sitemap: {url_for("sitemap", _external=True)}\n'
+    )
+    resp = make_response(content)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
 
 
 @app.route('/ads.txt')

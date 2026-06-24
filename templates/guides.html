@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Web Security Guides — Security Buddy{% endblock %}
+{% block head %}
+<meta name="description" content="In-depth, practical web security guides: HTTPS &amp; TLS, security headers, cookies, CORS, open ports, passwords, phishing and more.">
+<link rel="canonical" href="https://securitybuddy.vercel.app/guides">
+{% endblock %}
+
+{% block content %}
+<section class="hero-section" style="padding-bottom:2rem;">
+    <div class="container">
+        <div class="text-center">
+            <span class="section-label">Learn</span>
+            <h1 class="hero-headline">Web Security Guides</h1>
+            <p class="hero-subtext">
+                Practical, in-depth explanations of the web security topics behind every
+                Security Buddy check — written to help you understand the risk and fix it,
+                not just tick a box.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="features-section" style="padding-top:1rem;">
+    <div class="container">
+        <div class="guides-grid">
+            {% for guide in guides %}
+            <a class="guide-card" href="{{ url_for('guide', slug=guide.slug) }}">
+                <div class="feature-icon">
+                    <i data-lucide="{{ guide.icon }}" style="width:20px;height:20px;"></i>
+                </div>
+                <span class="guide-card-category">{{ guide.category }}</span>
+                <h2 class="guide-card-title">{{ guide.title }}</h2>
+                <p class="guide-card-desc">{{ guide.description }}</p>
+                <span class="guide-card-meta">
+                    <i data-lucide="clock" style="width:13px;height:13px;"></i>
+                    {{ guide.read_time }}
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+
+        <div class="text-center" style="margin-top:3rem;">
+            <p class="section-sub" style="margin-bottom:1rem;">
+                Ready to put this into practice? Scan your own site for free.
+            </p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                <i data-lucide="search" style="width:16px;height:16px;"></i>
+                Run a security scan
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}
