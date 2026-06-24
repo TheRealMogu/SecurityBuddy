@@ -3,7 +3,7 @@
 {% block title %}Web Security Guides — Security Buddy{% endblock %}
 {% block head %}
 <meta name="description" content="In-depth, practical web security guides: HTTPS &amp; TLS, security headers, cookies, CORS, open ports, passwords, phishing and more.">
-<link rel="canonical" href="https://securitybuddy.vercel.app/guides">
+<link rel="canonical" href="{{ canonical_origin }}{{ url_for('guides') }}">
 {% endblock %}
 
 {% block content %}

@@ -3,7 +3,7 @@
 {% block title %}About Security Buddy — Free Web Security Scanner{% endblock %}
 {% block head %}
 <meta name="description" content="Security Buddy is a free web security scanner and learning resource. Learn what we check, how it works, and the principles behind the project.">
-<link rel="canonical" href="https://securitybuddy.vercel.app/about">
+<link rel="canonical" href="{{ canonical_origin }}{{ url_for('about') }}">
 {% endblock %}
 
 {% block content %}

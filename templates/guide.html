@@ -3,7 +3,7 @@
 {% block title %}{{ guide.title }} — Security Buddy{% endblock %}
 {% block head %}
 <meta name="description" content="{{ guide.description }}">
-<link rel="canonical" href="https://securitybuddy.vercel.app/guides/{{ guide.slug }}">
+<link rel="canonical" href="{{ canonical_origin }}{{ url_for('guide', slug=guide.slug) }}">
 <meta property="og:type" content="article">
 <meta property="og:title" content="{{ guide.title }}">
 <meta property="og:description" content="{{ guide.description }}">
@@ -17,7 +17,7 @@
   "dateModified": "{{ updated }}",
   "author": {"@type": "Organization", "name": "Security Buddy"},
   "publisher": {"@type": "Organization", "name": "Security Buddy"},
-  "mainEntityOfPage": "https://securitybuddy.vercel.app/guides/{{ guide.slug }}"
+  "mainEntityOfPage": "{{ canonical_origin }}{{ url_for('guide', slug=guide.slug) }}"
 }
 </script>
 {% endblock %}

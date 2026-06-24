@@ -25,6 +25,21 @@ import gmail_manager
 # Register API blueprint
 app.register_blueprint(api_bp)
 
+# Preferred public origin for canonical URLs, Open Graph tags, JSON-LD and the
+# sitemap. Configurable so the deploy host (e.g. the production domain vs. the
+# Vercel preview subdomain) can be set without touching templates. Used
+# everywhere instead of a hard-coded host so all SEO signals stay consistent.
+CANONICAL_ORIGIN = os.environ.get(
+    'CANONICAL_ORIGIN', 'https://securitybuddy.vercel.app'
+).rstrip('/')
+
+
+@app.context_processor
+def inject_canonical_origin():
+    """Expose the canonical origin to every template."""
+    return {'canonical_origin': CANONICAL_ORIGIN}
+
+
 # Pre-computed dummy hash so login timing is constant whether or not the user exists
 _DUMMY_PASSWORD_HASH = generate_password_hash('dummy-password-for-timing-equalization')
 
@@ -475,17 +490,20 @@ def guide(slug):
 @app.route('/sitemap.xml')
 def sitemap():
     """XML sitemap covering public, content-rich pages for search engines."""
+    def _abs(endpoint, **kw):
+        return CANONICAL_ORIGIN + url_for(endpoint, **kw)
+
     pages = [
-        (url_for('index', _external=True), '1.0'),
-        (url_for('about', _external=True), '0.7'),
-        (url_for('guides', _external=True), '0.8'),
-        (url_for('seo_scan', _external=True), '0.6'),
-        (url_for('email_scan', _external=True), '0.6'),
-        (url_for('threat_scan', _external=True), '0.6'),
-        (url_for('password_generator', _external=True), '0.6'),
-        (url_for('privacy', _external=True), '0.3'),
+        (_abs('index'), '1.0'),
+        (_abs('about'), '0.7'),
+        (_abs('guides'), '0.8'),
+        (_abs('seo_scan'), '0.6'),
+        (_abs('email_scan'), '0.6'),
+        (_abs('threat_scan'), '0.6'),
+        (_abs('password_generator'), '0.6'),
+        (_abs('privacy'), '0.3'),
     ]
-    pages += [(url_for('guide', slug=g['slug'], _external=True), '0.7') for g in GUIDES]
+    pages += [(_abs('guide', slug=g['slug']), '0.7') for g in GUIDES]
 
     urls = ''.join(
         f'<url><loc>{loc}</loc><lastmod>{GUIDES_UPDATED}</lastmod>'
@@ -507,7 +525,7 @@ def robots_txt():
     content = (
         'User-agent: *\n'
         'Allow: /\n'
-        f'Sitemap: {url_for("sitemap", _external=True)}\n'
+        f'Sitemap: {CANONICAL_ORIGIN}{url_for("sitemap")}\n'
     )
     resp = make_response(content)
     resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
