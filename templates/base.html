@@ -8,9 +8,15 @@
     <title>{% block title %}Security Buddy — Web Security Scanner{% endblock %}</title>
     <meta name="description" content="Instant web security scanner. HTTPS, SSL, headers, cookies, ports and more. Free, no account required.">
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://api.fontshare.com">
-    <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+    <!-- Fonts — loaded non-render-blocking (swap in once ready) -->
+    <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=satoshi@400,500,700&display=swap"
+          rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript>
+        <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+    </noscript>
 
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
@@ -156,10 +162,14 @@
     </div>
 
     <!-- Icons (deferred — never blocks page render) -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script defer src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-        lucide.createIcons();
+        // Lucide loads with `defer`, so it is guaranteed available by
+        // DOMContentLoaded but NOT while this inline script first runs.
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.lucide) lucide.createIcons();
+        });
 
         const navToggle   = document.getElementById('navToggle');
         const navCollapse = document.getElementById('navCollapse');
@@ -167,7 +177,7 @@
             navToggle.addEventListener('click', () => {
                 const open = navCollapse.classList.toggle('open');
                 navToggle.setAttribute('aria-expanded', String(open));
-                lucide.createIcons();
+                if (window.lucide) lucide.createIcons();
             });
         }
 

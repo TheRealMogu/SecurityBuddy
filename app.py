@@ -4,6 +4,7 @@ import hmac
 import secrets
 import logging
 import functools
+import threading
 from collections import defaultdict, deque
 from flask import Flask, request, session, abort, jsonify, g
 from flask_sqlalchemy import SQLAlchemy
@@ -76,6 +77,7 @@ login_manager.login_message_category = 'info'
 
 @login_manager.user_loader
 def load_user(user_id):
+    init_db_once()
     from models import User
     return User.query.get(int(user_id))
 
@@ -201,15 +203,49 @@ def _run_column_migrations():
                 conn.rollback()  # column already exists — safe to ignore
 
 
-# Schema setup runs at import time so first-ever deploys work out of the box.
-# On serverless (Vercel) this costs several DB roundtrips on EVERY cold start —
-# once the schema exists, set DB_AUTO_INIT=0 in production to skip it.
-if os.environ.get("DB_AUTO_INIT", "1") != "0":
-    with app.app_context():
+# ─────────────────────────────────────────────────────────────────────────
+# Lazy, once-per-process schema initialization.
+#
+# Running db.create_all() + migrations at IMPORT time made every serverless
+# cold start pay several DB round-trips before serving the first byte — and
+# with a serverless Postgres that may itself be cold, that can add seconds to
+# the very first page load. Instead we initialize on demand the first time a
+# request actually needs the database, so DB-free pages (the landing page in
+# particular) stay fast on a cold lambda.
+#
+# Set DB_AUTO_INIT=0 when the schema is managed externally to skip entirely.
+# ─────────────────────────────────────────────────────────────────────────
+_db_init_lock = threading.Lock()
+_db_initialized = False
+
+# Endpoints that never touch the database — kept off the lazy-init path so the
+# landing page (the first thing visitors hit) responds instantly on a cold
+# lambda without waiting on a database connection.
+_DB_FREE_ENDPOINTS = {"index", "static"}
+
+
+def init_db_once():
+    """Create tables + run column migrations exactly once per process."""
+    global _db_initialized
+    if _db_initialized or os.environ.get("DB_AUTO_INIT", "1") == "0":
+        return
+    with _db_init_lock:
+        if _db_initialized:
+            return
         try:
-            import models  # noqa: F401
-            db.create_all()
-            _run_column_migrations()
+            with app.app_context():
+                import models  # noqa: F401
+                db.create_all()
+                _run_column_migrations()
+            _db_initialized = True
             logging.info("Database tables created successfully")
         except Exception as e:
+            # Leave the flag unset so a transient cold-DB failure can retry.
             logging.warning(f"Database initialization error: {e}")
+
+
+@app.before_request
+def _lazy_db_init():
+    if request.endpoint in _DB_FREE_ENDPOINTS:
+        return
+    init_db_once()
