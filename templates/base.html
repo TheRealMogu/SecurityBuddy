@@ -162,8 +162,8 @@
     </div>
 
     <!-- Icons — loaded synchronously at end of body (after page content, so
-         it never blocks first paint) so the inline `lucide.createIcons()`
-         calls in child templates' {% block scripts %} always find it. -->
+         it never blocks first paint) so the inline lucide.createIcons()
+         calls in child templates' script blocks always find it. -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
