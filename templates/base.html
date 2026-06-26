@@ -161,15 +161,13 @@
         </div>
     </div>
 
-    <!-- Icons (deferred — never blocks page render) -->
-    <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script defer src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <!-- Icons — loaded synchronously at end of body (after page content, so
+         it never blocks first paint) so the inline `lucide.createIcons()`
+         calls in child templates' {% block scripts %} always find it. -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-        // Lucide loads with `defer`, so it is guaranteed available by
-        // DOMContentLoaded but NOT while this inline script first runs.
-        document.addEventListener('DOMContentLoaded', function () {
-            if (window.lucide) lucide.createIcons();
-        });
+        lucide.createIcons();
 
         const navToggle   = document.getElementById('navToggle');
         const navCollapse = document.getElementById('navCollapse');
