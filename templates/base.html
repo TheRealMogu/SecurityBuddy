@@ -8,6 +8,43 @@
     <title>{% block title %}Security Buddy — Web Security Scanner{% endblock %}</title>
     <meta name="description" content="Instant web security scanner. HTTPS, SSL, headers, cookies, ports and more. Free, no account required.">
 
+    {# Google Consent Mode v2 — default every advertising/analytics signal to
+       "denied" so no personalised-ad or analytics cookies are set before the
+       visitor opts in through the cookie banner. The banner's Accept handler
+       flips these to "granted". Defined on every page (not just ad pages) so a
+       choice made anywhere applies site-wide on the next page load. #}
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('consent', 'default', {
+        'ad_storage': 'denied',
+        'ad_user_data': 'denied',
+        'ad_personalization': 'denied',
+        'analytics_storage': 'denied',
+        'wait_for_update': 500
+      });
+      try {
+        if (localStorage.getItem('sb_consent') === '1') {
+          gtag('consent', 'update', {
+            'ad_storage': 'granted',
+            'ad_user_data': 'granted',
+            'ad_personalization': 'granted',
+            'analytics_storage': 'granted'
+          });
+        }
+      } catch (e) {}
+    </script>
+
+    {# AdSense is loaded ONLY on content-rich pages, which set g.show_ads=True.
+       Tool screens, auth pages, scan results and error pages leave it unset so
+       ads never appear on "screens without publisher content" (an AdSense
+       policy requirement). Using g — rather than request.endpoint — means a
+       404 rendered from a content route does not inherit its ad slot.
+       Until consent is granted, Consent Mode keeps any ads non-personalised. #}
+    {% if g.get('show_ads') %}
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9729522875920807" crossorigin="anonymous"></script>
+    {% endif %}
+
     <!-- Fonts — loaded non-render-blocking (swap in once ready) -->
     <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
     <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
@@ -71,6 +108,10 @@
                         <li>
                             <a class="nav-link{% if request.endpoint == 'password_generator' %} nav-link-active{% endif %}"
                                href="{{ url_for('password_generator') }}">Password</a>
+                        </li>
+                        <li>
+                            <a class="nav-link{% if request.endpoint in ['guides', 'guide'] %} nav-link-active{% endif %}"
+                               href="{{ url_for('guides') }}">Guides</a>
                         </li>
                         {% if current_user.is_authenticated %}
                         <li>
@@ -138,6 +179,8 @@
             <div class="footer-inner">
                 <p class="footer-copy">© 2026 Security Buddy</p>
                 <div class="footer-links">
+                    <a href="{{ url_for('guides') }}" class="footer-link">Guides</a>
+                    <a href="{{ url_for('about') }}" class="footer-link">About</a>
                     <a href="{{ url_for('privacy') }}" class="footer-link">Privacy Policy</a>
                     <a href="https://github.com/therealmogu/securitybuddy" class="footer-link" target="_blank" rel="noopener">GitHub</a>
                     <a href="https://github.com/therealmogu/securitybuddy/issues" class="footer-link" target="_blank" rel="noopener">Report a bug</a>
@@ -151,7 +194,9 @@
          style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--color-surface);border-top:1px solid var(--color-border);padding:.875rem 1.25rem;z-index:9999;box-shadow:0 -2px 16px rgba(0,0,0,.08);">
         <div style="max-width:900px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;">
             <p style="margin:0;flex:1;min-width:200px;font-size:.875rem;color:var(--color-text-muted);">
-                We use analytics cookies to improve Security Buddy. Read our
+                We use cookies for analytics and to show personalised ads that help keep
+                Security Buddy free. You can reject non-essential cookies and still use
+                everything — you'll just see non-personalised ads. Read our
                 <a href="{{ url_for('privacy') }}" style="color:var(--color-primary);">Privacy Policy</a>.
             </p>
             <div style="display:flex;gap:.5rem;flex-shrink:0;">
@@ -192,7 +237,8 @@
             });
         }
 
-        // Cookie consent — gate Vercel Analytics behind explicit opt-in
+        // Cookie consent — gate Vercel Analytics and Google ad personalisation
+        // behind explicit opt-in, and keep Google Consent Mode in sync.
         (function() {
             var CONSENT_KEY = 'sb_consent';
             var banner = document.getElementById('cookie-banner');
@@ -208,16 +254,27 @@
                 s.src = '/_vercel/insights/script.js';
                 document.head.appendChild(s);
             }
+            function updateConsent(state) {
+                if (typeof gtag !== 'function') return;
+                gtag('consent', 'update', {
+                    'ad_storage': state,
+                    'ad_user_data': state,
+                    'ad_personalization': state,
+                    'analytics_storage': state
+                });
+            }
             var acceptBtn = document.getElementById('cookie-accept');
             var rejectBtn = document.getElementById('cookie-reject');
             if (acceptBtn) acceptBtn.addEventListener('click', function() {
                 localStorage.setItem(CONSENT_KEY, '1');
                 banner.style.display = 'none';
+                updateConsent('granted');
                 loadAnalytics();
             });
             if (rejectBtn) rejectBtn.addEventListener('click', function() {
                 localStorage.setItem(CONSENT_KEY, '0');
                 banner.style.display = 'none';
+                updateConsent('denied');
             });
         })();
     </script>

@@ -6,7 +6,7 @@ import ipaddress
 from datetime import datetime, timedelta
 from hmac import compare_digest as _hmac_compare
 from urllib.parse import urlparse
-from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify, abort
+from flask import render_template, request, redirect, url_for, flash, session, make_response, jsonify, abort, g
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import app, db, rate_limit
@@ -19,10 +19,26 @@ from email_analyzer import EmailAnalyzer
 from threat_intel import ThreatIntelAnalyzer
 from api_routes import api_bp
 from background_jobs import job_manager
+from guides_content import GUIDES, GUIDES_BY_SLUG, GUIDES_UPDATED
 import gmail_manager
 
 # Register API blueprint
 app.register_blueprint(api_bp)
+
+# Preferred public origin for canonical URLs, Open Graph tags, JSON-LD and the
+# sitemap. Configurable so the deploy host (e.g. the production domain vs. the
+# Vercel preview subdomain) can be set without touching templates. Used
+# everywhere instead of a hard-coded host so all SEO signals stay consistent.
+CANONICAL_ORIGIN = os.environ.get(
+    'CANONICAL_ORIGIN', 'https://securitybuddy.vercel.app'
+).rstrip('/')
+
+
+@app.context_processor
+def inject_canonical_origin():
+    """Expose the canonical origin to every template."""
+    return {'canonical_origin': CANONICAL_ORIGIN}
+
 
 # Pre-computed dummy hash so login timing is constant whether or not the user exists
 _DUMMY_PASSWORD_HASH = generate_password_hash('dummy-password-for-timing-equalization')
@@ -48,6 +64,7 @@ def _remember_guest_scan(scan_id):
 @app.route('/')
 def index():
     """Homepage with scan form"""
+    g.show_ads = True
     return render_template('index.html')
 
 @app.route('/scan', methods=['POST'])
@@ -440,6 +457,80 @@ def password_generator():
 def privacy():
     """GDPR Art. 13 privacy notice."""
     return render_template('privacy.html')
+
+
+@app.route('/about')
+def about():
+    """About page — what Security Buddy is and the principles behind it."""
+    g.show_ads = True
+    return render_template('about.html')
+
+
+@app.route('/guides')
+def guides():
+    """Editorial hub listing every security guide."""
+    g.show_ads = True
+    return render_template('guides.html', guides=GUIDES)
+
+
+@app.route('/guides/<slug>')
+def guide(slug):
+    """A single long-form security guide, rendered from structured content."""
+    item = GUIDES_BY_SLUG.get(slug)
+    if item is None:
+        abort(404)
+    # Surface a few other guides as "related" — the next ones in order, wrapping around.
+    idx = GUIDES.index(item)
+    related = [GUIDES[(idx + i) % len(GUIDES)] for i in range(1, 4)]
+    g.show_ads = True
+    return render_template('guide.html', guide=item, related=related,
+                           updated=GUIDES_UPDATED)
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    """XML sitemap covering public, content-rich pages for search engines."""
+    def _abs(endpoint, **kw):
+        return CANONICAL_ORIGIN + url_for(endpoint, **kw)
+
+    pages = [
+        (_abs('index'), '1.0'),
+        (_abs('about'), '0.7'),
+        (_abs('guides'), '0.8'),
+        (_abs('seo_scan'), '0.6'),
+        (_abs('email_scan'), '0.6'),
+        (_abs('threat_scan'), '0.6'),
+        (_abs('password_generator'), '0.6'),
+        (_abs('privacy'), '0.3'),
+    ]
+    pages += [(_abs('guide', slug=g['slug']), '0.7') for g in GUIDES]
+
+    urls = ''.join(
+        f'<url><loc>{loc}</loc><lastmod>{GUIDES_UPDATED}</lastmod>'
+        f'<priority>{prio}</priority></url>'
+        for loc, prio in pages
+    )
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           f'{urls}</urlset>')
+    resp = make_response(xml)
+    resp.headers['Content-Type'] = 'application/xml; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Allow crawling and point search engines at the sitemap."""
+    content = (
+        'User-agent: *\n'
+        'Allow: /\n'
+        f'Sitemap: {CANONICAL_ORIGIN}{url_for("sitemap")}\n'
+    )
+    resp = make_response(content)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
 
 
 @app.route('/ads.txt')
