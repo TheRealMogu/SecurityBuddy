@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}Scanning {{ target }} — Security Buddy{% endblock %}
+
+{% block head %}
+<style>
+  .live-wrap { max-width: 820px; margin: 2.5rem auto; padding: 0 1rem; }
+  .live-head { text-align: center; margin-bottom: 2rem; }
+  .live-head h1 { font-size: 1.6rem; margin: 0 0 .35rem; word-break: break-all; }
+  .live-target { color: var(--color-primary, #01696f); font-weight: 600; }
+  .live-sub { color: var(--color-text-muted, #667); font-size: .95rem; }
+
+  .live-score { text-align:center; margin: 0 auto 2rem; }
+  .score-ring {
+    --pct: 0;
+    width: 132px; height: 132px; border-radius: 50%;
+    margin: 0 auto .6rem;
+    display: grid; place-items: center;
+    background:
+      radial-gradient(closest-side, var(--color-bg, #fff) 78%, transparent 79% 100%),
+      conic-gradient(var(--ring-color, #01696f) calc(var(--pct) * 1%), var(--color-border, #e5e7eb) 0);
+    transition: --pct .6s ease;
+  }
+  .score-num { font-size: 2.2rem; font-weight: 700; line-height: 1; }
+  .score-lbl { font-size: .8rem; color: var(--color-text-muted, #667); text-transform: uppercase; letter-spacing: .05em; }
+  .risk-pill { display:inline-block; margin-top:.4rem; padding:.2rem .8rem; border-radius:999px; font-size:.8rem; font-weight:600; }
+  .risk-low { background:#e6f4ea; color:#1a7f37; }
+  .risk-medium { background:#fff3d6; color:#9a6700; }
+  .risk-high { background:#ffe3d6; color:#b3400f; }
+  .risk-critical { background:#ffe0e0; color:#b31212; }
+
+  .modules { display: grid; gap: .85rem; }
+  .module-card {
+    display:flex; align-items:center; gap:1rem;
+    padding: 1rem 1.15rem; border-radius: 14px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-surface, #fff);
+  }
+  .module-icon {
+    flex: 0 0 40px; width:40px; height:40px; border-radius:10px;
+    display:grid; place-items:center;
+    background: rgba(1,105,111,.08); color: var(--color-primary, #01696f);
+  }
+  .module-body { flex: 1 1 auto; min-width: 0; }
+  .module-title { font-weight: 600; margin: 0; }
+  .module-desc { font-size: .85rem; color: var(--color-text-muted, #667); margin:.1rem 0 0; }
+  .module-status { flex: 0 0 auto; display:flex; align-items:center; gap:.4rem; font-size:.85rem; font-weight:600; }
+
+  .spinner {
+    width:18px; height:18px; border-radius:50%;
+    border:2.5px solid var(--color-border, #e5e7eb);
+    border-top-color: var(--color-primary, #01696f);
+    animation: sb-spin .8s linear infinite;
+  }
+  @keyframes sb-spin { to { transform: rotate(360deg); } }
+  .dot { width:10px; height:10px; border-radius:50%; }
+  .s-pending { color: var(--color-text-muted, #667); }
+  .s-done    { color:#1a7f37; }
+  .s-error   { color:#b3400f; }
+  .s-skipped { color: var(--color-text-muted, #99a); }
+
+  .live-actions { text-align:center; margin-top: 2rem; }
+  .live-actions .btn { min-width: 200px; }
+  .live-note { text-align:center; color: var(--color-text-muted, #667); font-size:.85rem; margin-top:1rem; }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .score-ring { transition: none; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="live-wrap"
+     id="liveScan"
+     data-public-id="{{ public_id }}"
+     data-status-url="{{ url_for('api_scan.scan_status', public_id=public_id) }}">
+
+  <div class="live-head">
+    <h1>Scanning <span class="live-target">{{ target }}</span></h1>
+    <p class="live-sub" id="liveSub">Running independent checks in parallel…</p>
+  </div>
+
+  <div class="live-score" id="liveScore" style="display:none;">
+    <div class="score-ring" id="scoreRing"><div><span class="score-num" id="scoreNum">–</span></div></div>
+    <div class="score-lbl">Security score</div>
+    <div id="riskPill"></div>
+  </div>
+
+  <div class="modules" id="modules">
+    <!-- cards injected by JS -->
+  </div>
+
+  <div class="live-actions" id="liveActions" style="display:none;">
+    <a href="#" class="btn btn-primary" id="reportBtn">View full report</a>
+  </div>
+
+  <p class="live-note" id="liveNote"></p>
+
+  <noscript>
+    <p class="live-note">This live scan needs JavaScript. You can still use the
+      <a href="{{ url_for('index') }}">standard scanner</a>.</p>
+  </noscript>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var root = document.getElementById('liveScan');
+  if (!root) return;
+
+  var publicId  = root.dataset.publicId;
+  var statusUrl = root.dataset.statusUrl;
+  var csrfMeta  = document.querySelector('meta[name="csrf-token"]');
+  var csrf      = csrfMeta ? csrfMeta.content : '';
+
+  // Module definitions — order matches the visual card order.
+  var MODULES = [
+    { key: 'ssl',     title: 'HTTPS & TLS',        desc: 'Certificate, TLS version, HSTS, mixed content', icon: 'lock' },
+    { key: 'headers', title: 'Headers & Cookies',  desc: 'Security headers, cookies, CORS, methods',       icon: 'shield' },
+    { key: 'ports',   title: 'Ports & Exposure',   desc: 'Open ports, sensitive files, admin panels',      icon: 'radio' },
+    { key: 'seo',     title: 'SEO Analysis',        desc: 'Meta tags, content, PageSpeed (domains only)',  icon: 'search' },
+    { key: 'threat',  title: 'Threat Intel',        desc: 'URLhaus / ThreatFox reputation lookup',         icon: 'alert-triangle' }
+  ];
+
+  var WORKER_BASE = '/api/scan/worker/';
+  var cards = {};
+
+  // Build the module cards.
+  var container = document.getElementById('modules');
+  MODULES.forEach(function (m) {
+    var card = document.createElement('div');
+    card.className = 'module-card';
+    card.innerHTML =
+      '<div class="module-icon"><i data-lucide="' + m.icon + '" style="width:20px;height:20px;"></i></div>' +
+      '<div class="module-body">' +
+        '<p class="module-title">' + m.title + '</p>' +
+        '<p class="module-desc">' + m.desc + '</p>' +
+      '</div>' +
+      '<div class="module-status s-pending" id="st-' + m.key + '"><span class="spinner"></span><span>Running…</span></div>';
+    container.appendChild(card);
+    cards[m.key] = document.getElementById('st-' + m.key);
+  });
+  if (window.lucide && window.lucide.createIcons) { window.lucide.createIcons(); }
+
+  function setStatus(key, cls, label) {
+    var el = cards[key];
+    if (!el) return;
+    el.className = 'module-status ' + cls;
+    el.innerHTML = '<span>' + label + '</span>';
+  }
+
+  function renderModule(key, state) {
+    if (!state || state.state === 'pending') return;  // keep spinner
+    if (state.state === 'done') {
+      var extra = '';
+      if (typeof state.issues === 'number') extra = ' · ' + state.issues + ' issue' + (state.issues === 1 ? '' : 's');
+      else if (typeof state.score === 'number') extra = ' · score ' + state.score;
+      else if (state.verdict) extra = ' · ' + state.verdict;
+      setStatus(key, 's-done', '✓ Done' + extra);
+    } else if (state.state === 'error') {
+      setStatus(key, 's-error', '⚠ Failed');
+    } else if (state.state === 'skipped') {
+      setStatus(key, 's-skipped', '– Skipped');
+    }
+  }
+
+  var RISK_CLASS = { low: 'risk-low', medium: 'risk-medium', high: 'risk-high', critical: 'risk-critical' };
+  var RING_COLOR = { low: '#1a7f37', medium: '#c58b00', high: '#d1560f', critical: '#c62828' };
+
+  function showFinal(data) {
+    var score = (typeof data.overall_score === 'number') ? data.overall_score : 0;
+    var risk  = data.risk_level || 'medium';
+    var box   = document.getElementById('liveScore');
+    var ring  = document.getElementById('scoreRing');
+    document.getElementById('scoreNum').textContent = score;
+    ring.style.setProperty('--pct', score);
+    ring.style.setProperty('--ring-color', RING_COLOR[risk] || '#01696f');
+    var pill = document.getElementById('riskPill');
+    pill.innerHTML = '<span class="risk-pill ' + (RISK_CLASS[risk] || 'risk-medium') + '">' +
+                     risk.toUpperCase() + ' RISK</span>';
+    box.style.display = 'block';
+    document.getElementById('liveSub').textContent = 'Scan complete.';
+    if (data.report_url) {
+      var actions = document.getElementById('liveActions');
+      document.getElementById('reportBtn').href = data.report_url;
+      actions.style.display = 'block';
+    }
+  }
+
+  // 1) Kick off every worker in parallel. We don't depend on their responses —
+  //    the poller reads authoritative state from the database.
+  function fireWorkers() {
+    MODULES.forEach(function (m) {
+      fetch(WORKER_BASE + m.key, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ public_id: publicId })
+      }).catch(function () { /* transient; poller still reflects real state */ });
+    });
+  }
+
+  // 2) Poll status until COMPLETED (or a hard safety timeout).
+  var poll, elapsed = 0, INTERVAL = 2500, MAX_MS = 120000;
+  function tick() {
+    fetch(statusUrl, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) return;
+        if (data.modules) {
+          MODULES.forEach(function (m) { renderModule(m.key, data.modules[m.key]); });
+        }
+        if (data.status === 'COMPLETED') {
+          clearInterval(poll);
+          showFinal(data);
+        }
+      })
+      .catch(function () { /* keep polling */ });
+  }
+
+  fireWorkers();
+  tick();
+  poll = setInterval(function () {
+    elapsed += INTERVAL;
+    if (elapsed >= MAX_MS) {
+      clearInterval(poll);
+      document.getElementById('liveNote').textContent =
+        'This is taking longer than expected. Some checks may still be finishing — try refreshing.';
+      return;
+    }
+    tick();
+  }, INTERVAL);
+})();
+</script>
+{% endblock %}

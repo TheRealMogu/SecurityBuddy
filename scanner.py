@@ -138,6 +138,75 @@ class SecurityScanner:
         return results
 
     # ------------------------------------------------------------------
+    # Modular groups — each runs an independent slice of scan_target so the
+    # serverless micro-scan workers can execute them in parallel, each well
+    # inside the 60s function budget. The union of the three groups covers
+    # exactly the same checks scan_target ran, so scoring is unchanged.
+    # ------------------------------------------------------------------
+
+    def _prepare(self, target):
+        """Return (target_url, is_ip, hostname), matching scan_target's setup."""
+        is_ip = self._is_ip_address(target)
+        if not target.startswith(('http://', 'https://')):
+            target_url = f'https://{target}'
+        else:
+            target_url = target
+        hostname = urlparse(target_url).hostname or target.split('/')[0]
+        return target_url, is_ip, hostname
+
+    def scan_group_ssl(self, target):
+        """TLS group: HTTPS/redirect, SSL certificate, HSTS quality, HTTP/2, mixed content."""
+        target_url, is_ip, hostname = self._prepare(target)
+        checks = {}
+        checks['https']         = self._check_https(target_url)
+        checks['ssl']           = self._check_ssl_certificate(target)
+        checks['mixed_content'] = self._check_mixed_content(target_url)
+        if not is_ip:
+            checks['hsts_quality'] = self._check_hsts_quality(target_url)
+            checks['http2']        = self._check_http2_support(hostname)
+        return {'checks': checks}
+
+    def scan_group_headers(self, target):
+        """Headers group: connectivity, security headers, cookies, CORS, methods, tech, comments."""
+        target_url, is_ip, hostname = self._prepare(target)
+        checks = {}
+        checks['connectivity']  = self._check_connectivity(target_url)
+        checks['headers']       = self._check_security_headers(target_url)
+        checks['cookies']       = self._check_cookie_security(target_url)
+        checks['cors']          = self._check_cors(target_url)
+        checks['http_methods']  = self._check_http_methods(target_url)
+        checks['tech']          = self._check_technology_disclosure(target_url)
+        checks['html_comments'] = self._check_html_comments(target_url)
+        return {'checks': checks}
+
+    def scan_group_discovery(self, target):
+        """Ports & discovery group: open ports, sensitive files, admin panels, directory
+        listing, robots.txt, open redirect, and (domains only) DNS security + subdomain
+        takeover. Computes the shared 404 baseline used by the exposure checks."""
+        target_url, is_ip, hostname = self._prepare(target)
+        baseline = self._get_404_baseline(target_url)
+        checks = {}
+        checks['ports']             = self._check_open_ports(target)
+        checks['sensitive_files']   = self._check_sensitive_files(target_url, baseline)
+        checks['admin_panels']      = self._check_admin_panels(target_url, baseline)
+        checks['directory_listing'] = self._check_directory_listing(target_url, baseline)
+        checks['robots_txt']        = self._check_robots_txt(target_url)
+        checks['open_redirect']     = self._check_open_redirect(target_url)
+        if not is_ip:
+            checks['domain_info']        = self._get_domain_info(target)
+            checks['dns_security']       = self._check_dns_security(hostname)
+            checks['subdomain_takeover'] = self._check_subdomain_takeover(hostname)
+        return {'checks': checks, 'spa_detected': baseline['is_spa']}
+
+    def score(self, checks):
+        """Public wrapper: overall 0–100 score from a merged checks dict."""
+        return self._calculate_score(checks)
+
+    def risk_level(self, score):
+        """Public wrapper: risk band for a score."""
+        return self._determine_risk_level(score)
+
+    # ------------------------------------------------------------------
     # Existing checks (unchanged)
     # ------------------------------------------------------------------
 

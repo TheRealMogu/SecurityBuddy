@@ -6,6 +6,12 @@ from sqlalchemy import update
 from app import db
 import secrets
 import hashlib
+import uuid
+
+
+def _new_public_id():
+    """Unguessable public identifier for a scan (used by the async API/polling)."""
+    return uuid.uuid4().hex
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -52,13 +58,33 @@ class User(UserMixin, db.Model):
 
 class ScanResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Unguessable handle used by the async micro-scan API and client polling, so
+    # workers/status never expose (or allow enumeration of) the integer PK.
+    public_id = db.Column(db.String(32), index=True, default=_new_public_id)
     target = db.Column(db.String(255), nullable=False)
     scan_type = db.Column(db.String(50), nullable=False)  # 'domain' or 'ip'
-    results = db.Column(db.Text)  # JSON string of results
-    security_score = db.Column(db.Integer)  # Overall score 0-100
+    results = db.Column(db.Text)  # JSON string of the aggregated results (set when COMPLETED)
+    security_score = db.Column(db.Integer)  # Overall score 0-100 (set when COMPLETED)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # NULL for guest scans
-    
+
+    # ── Async "micro-scan" state ────────────────────────────────────────────
+    # Each worker writes ONLY its own column (a JSON blob, or {"error": ...}),
+    # so concurrent workers never clobber each other. NULL = still pending.
+    status = db.Column(db.String(20), default='PROCESSING')  # PROCESSING | COMPLETED
+    ssl_result = db.Column(db.Text, nullable=True)      # TLS group: https/ssl/hsts/http2/mixed
+    headers_result = db.Column(db.Text, nullable=True)  # connectivity/headers/cookies/cors/methods/tech/comments
+    ports_result = db.Column(db.Text, nullable=True)    # ports + discovery (files/admin/dirlist/redirect/dns/takeover)
+    seo_result = db.Column(db.Text, nullable=True)      # single-page SEO analysis
+    threat_result = db.Column(db.Text, nullable=True)   # threat-intel lookup
+
+    # The five module columns that must all be populated before a scan is COMPLETED.
+    MODULE_COLUMNS = ('ssl_result', 'headers_result', 'ports_result', 'seo_result', 'threat_result')
+
+    def modules_done(self):
+        """True once every worker has written its column (data or error)."""
+        return all(getattr(self, col) is not None for col in self.MODULE_COLUMNS)
+
     def __repr__(self):
         return f'<ScanResult {self.target}>'
 

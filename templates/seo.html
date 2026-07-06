@@ -57,13 +57,6 @@
                             Analyse page
                         </button>
                     </div>
-                    <div style="margin-top:0.6rem;text-align:center;">
-                        <button type="button" class="btn btn-secondary" id="siteAnalyseBtn" style="font-size:0.85rem;padding:0.45rem 1.1rem;">
-                            <i data-lucide="globe" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px;"></i>
-                            Analyse entire site
-                        </button>
-                        <div class="small text-muted" style="margin-top:0.35rem;">Crawls up to 100 pages — runs in the background</div>
-                    </div>
                     <div id="loadingIndicator" class="loading-indicator" style="display:none;">
                         <div class="d-flex align-items-center justify-content-center gap-3 mb-3">
                             <div class="spinner-border" role="status"></div>
@@ -1185,7 +1178,6 @@
     const form    = document.getElementById('seoForm');
     const input   = document.getElementById('targetInput');
     const btn     = document.getElementById('scanButton');
-    const siteBtn = document.getElementById('siteAnalyseBtn');
     const loader  = document.getElementById('loadingIndicator');
     const bar     = document.getElementById('progressBar');
     const step    = document.getElementById('loadingStep');
@@ -1215,33 +1207,6 @@
         ];
         let i = 0;
         setInterval(() => { if (i < steps.length) { step.textContent = steps[i].text; bar.style.width = steps[i].pct + '%'; i++; } }, 3500);
-    });
-
-    siteBtn && siteBtn.addEventListener('click', function() {
-        const val = input.value.trim();
-        if (!val) { input.focus(); return; }
-        const domain = val.replace(/^https?:\/\//, '').replace(/\/.*/, '').toLowerCase();
-        input.value  = domain;
-        siteBtn.disabled = true;
-        btn.disabled     = true;
-        loader.style.display = 'block';
-        title.textContent = 'Starting site crawl…';
-        step.textContent  = 'Submitting job…';
-        bar.style.width   = '3%';
-        const fd = new FormData();
-        fd.append('target', domain);
-        const csrf = document.querySelector('meta[name="csrf-token"]');
-        fetch('{{ url_for("seo_crawl_start") }}', {
-            method: 'POST',
-            headers: csrf ? { 'X-CSRF-Token': csrf.content } : {},
-            body: fd
-        })
-            .then(r => r.json())
-            .then(data => {
-                if (data.error) { alert('Error: ' + data.error); location.reload(); return; }
-                window.location.href = '{{ url_for("seo_crawl_report", job_id="__JOB__") }}'.replace('__JOB__', data.job_id);
-            })
-            .catch(() => { alert('Failed to start crawl. Please try again.'); location.reload(); });
     });
 })();
 </script>

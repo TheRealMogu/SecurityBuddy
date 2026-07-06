@@ -10,6 +10,7 @@ from flask import Flask, request, session, abort, jsonify, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Configure logging: DEBUG only in development, INFO in production
@@ -41,7 +42,9 @@ app.config.update(
     SESSION_COOKIE_SECURE=not _DEBUG,
 )
 
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+# Trust one proxy hop (Vercel's edge) for scheme, host AND client IP, so
+# request.remote_addr reflects the real visitor rather than the proxy.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Configure the database - Vercel compatible
 database_url = os.environ.get("DATABASE_URL")
@@ -50,16 +53,24 @@ if database_url and database_url.startswith("postgres://"):
 
 if database_url:
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    # Serverless (Vercel) note: each concurrent request may run in its own
+    # ephemeral Lambda. A per-instance QueuePool (pool_size/max_overflow) would
+    # multiply open Postgres connections across instances and exhaust the
+    # server's connection limit ("FATAL: too many connections") — made worse by
+    # the micro-scan architecture firing several parallel workers per scan.
+    # NullPool opens one connection per checkout and closes it on release
+    # (Flask-SQLAlchemy tears the session down after every request), so no
+    # idle/zombie connections linger between invocations. Front the database
+    # with an external pooler (PgBouncer / Supabase transaction pooler / Neon
+    # pooled endpoint) in the DATABASE_URL for best results.
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 300,
+        "poolclass": NullPool,
         "pool_pre_ping": True,
-        "pool_timeout": 20,
-        "pool_size": 10,
-        "max_overflow": 20
     }
 else:
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///security_buddy.db"
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "poolclass": NullPool,
         "pool_pre_ping": True,
     }
 
@@ -137,42 +148,84 @@ def _csrf_protect():
 # to per-instance limiting, which is still better than none.
 # ─────────────────────────────────────────────────────────────────────────
 _rate_buckets: dict = defaultdict(deque)
+_rate_lock = threading.Lock()
+_last_bucket_sweep = [0.0]
+_BUCKET_MAX_WINDOW = 3600  # entries older than this are dead regardless of route window
 
 
 def _client_ip():
+    """Best-effort real client IP behind Vercel's edge proxy.
+
+    Prefer X-Real-IP (set by the edge, not client-appendable the way
+    X-Forwarded-For is), then the left-most X-Forwarded-For hop, then the
+    ProxyFix-corrected remote_addr.
+    """
+    real = request.headers.get("X-Real-IP")
+    if real:
+        return real.strip()
     fwd = request.headers.get("X-Forwarded-For", "")
     if fwd:
         return fwd.split(",")[0].strip()
     return request.remote_addr or "unknown"
 
 
+def _maybe_sweep_buckets(now):
+    """Drop rate-limit buckets that have gone fully stale, bounding memory.
+
+    Without this, every unique (IP, route) pair leaves a permanent dict entry
+    even after its requests age out — an unbounded leak on a long-lived worker.
+    """
+    if now - _last_bucket_sweep[0] < 300:
+        return
+    with _rate_lock:
+        if now - _last_bucket_sweep[0] < 300:
+            return
+        _last_bucket_sweep[0] = now
+        dead = [k for k, b in _rate_buckets.items()
+                if not b or b[-1] < now - _BUCKET_MAX_WINDOW]
+        for k in dead:
+            _rate_buckets.pop(k, None)
+
+
 def rate_limit(max_calls: int, window_seconds: int = 60):
-    """Decorator: allow at most `max_calls` per `window_seconds` per client IP."""
+    """Decorator: allow at most `max_calls` per `window_seconds` per client IP.
+
+    Safe methods (GET/HEAD/OPTIONS) are never throttled, so read-only polling
+    endpoints such as GET /api/scan/status are effectively exempt.
+    """
     def decorator(view):
         @functools.wraps(view)
         def wrapper(*args, **kwargs):
-            # Only throttle state-changing / action requests, not page loads.
+            # Only throttle state-changing / action requests, not page loads or polling.
             if request.method in _CSRF_SAFE_METHODS:
                 return view(*args, **kwargs)
             now = time.time()
+            _maybe_sweep_buckets(now)
             key = f"{_client_ip()}:{view.__name__}"
-            bucket = _rate_buckets[key]
             cutoff = now - window_seconds
-            while bucket and bucket[0] < cutoff:
-                bucket.popleft()
-            if len(bucket) >= max_calls:
-                retry = int(bucket[0] + window_seconds - now) + 1
-                if request.path.startswith("/api/"):
-                    resp = jsonify({
-                        "error": "Rate limit exceeded",
-                        "message": f"Too many requests. Retry in {retry}s.",
-                    })
-                    resp.status_code = 429
-                    resp.headers["Retry-After"] = str(retry)
-                    return resp
-                abort(429, description=f"Rate limit exceeded. Retry in {retry}s.")
-            bucket.append(now)
-            return view(*args, **kwargs)
+            # Guard the read-modify-write on this bucket so concurrent workers
+            # (many parallel micro-scan requests) can't corrupt the deque.
+            with _rate_lock:
+                bucket = _rate_buckets[key]
+                while bucket and bucket[0] < cutoff:
+                    bucket.popleft()
+                allowed = len(bucket) < max_calls
+                if allowed:
+                    bucket.append(now)
+                    retry = 0
+                else:
+                    retry = int(bucket[0] + window_seconds - now) + 1
+            if allowed:
+                return view(*args, **kwargs)
+            if request.path.startswith("/api/"):
+                resp = jsonify({
+                    "error": "Rate limit exceeded",
+                    "message": f"Too many requests. Retry in {retry}s.",
+                })
+                resp.status_code = 429
+                resp.headers["Retry-After"] = str(retry)
+                return resp
+            abort(429, description=f"Rate limit exceeded. Retry in {retry}s.")
         return wrapper
     return decorator
 
@@ -193,6 +246,14 @@ def _run_column_migrations():
     candidates = [
         'ALTER TABLE "user" ADD COLUMN tos_accepted_at DATETIME NULL',
         'ALTER TABLE "user" ADD COLUMN email_notifications BOOLEAN NOT NULL DEFAULT TRUE',
+        # Async micro-scan columns on scan_result (idempotent — ignored if present).
+        'ALTER TABLE scan_result ADD COLUMN public_id VARCHAR(32)',
+        "ALTER TABLE scan_result ADD COLUMN status VARCHAR(20) DEFAULT 'PROCESSING'",
+        'ALTER TABLE scan_result ADD COLUMN ssl_result TEXT',
+        'ALTER TABLE scan_result ADD COLUMN headers_result TEXT',
+        'ALTER TABLE scan_result ADD COLUMN ports_result TEXT',
+        'ALTER TABLE scan_result ADD COLUMN seo_result TEXT',
+        'ALTER TABLE scan_result ADD COLUMN threat_result TEXT',
     ]
     with db.engine.connect() as conn:
         for stmt in candidates:
