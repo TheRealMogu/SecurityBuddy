@@ -44,6 +44,54 @@ def resolve_host_is_public(host):
     return True, None
 
 
+def resolve_and_validate_host(host):
+    """
+    Resolve a hostname and confirm every resolved address is a public, routable
+    IP, then return one validated IP for the caller to pin the connection to.
+
+    Returns a ``(ok, ip, error)`` tuple:
+      * ``ok``    — ``True`` when the host is safe to connect to
+      * ``ip``    — a validated public IP string to connect the socket directly
+                    to (skipping a second DNS lookup), or ``None`` on failure
+      * ``error`` — a human-readable, infrastructure-safe reason when blocked
+
+    Pinning the returned IP closes the DNS-rebinding / TOCTOU window: the socket
+    connects to the exact address we validated instead of re-resolving the name
+    (which an attacker could flip to an internal IP between check and connect).
+    A literal IP is validated in place. If *any* resolved address is private,
+    loopback, link-local, reserved, multicast or unspecified, the whole host is
+    rejected.
+    """
+    if not host:
+        return False, None, "No host to connect to"
+
+    # Literal IP address — validate directly, pin to itself.
+    try:
+        ipaddress.ip_address(host)
+        if is_public_ip(host):
+            return True, host, None
+        return False, None, "Target resolves to a private or reserved IP address"
+    except ValueError:
+        pass  # not a literal IP — resolve it below
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError, socket.error):
+        return False, None, "Host could not be resolved"
+
+    pinned = None
+    for info in infos:
+        ip = info[4][0].split('%')[0]  # strip IPv6 zone id if present
+        if not is_public_ip(ip):
+            return False, None, "Target resolves to a private or reserved IP address"
+        if pinned is None:
+            pinned = ip
+
+    if pinned is None:
+        return False, None, "Host could not be resolved"
+    return True, pinned, None
+
+
 class AdvancedValidator:
     def __init__(self):
         self.logger = logging.getLogger(__name__)

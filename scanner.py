@@ -8,6 +8,9 @@ from urllib.parse import urlparse
 from datetime import datetime, timezone
 import logging
 
+from utils.secure_http import secure_request, SSRFSecurityError
+from validators import resolve_and_validate_host
+
 SENSITIVE_PATHS = {
     '.env':              ['DB_PASSWORD', 'API_KEY', 'SECRET_KEY', 'APP_KEY', 'DATABASE_URL', 'AWS_SECRET'],
     '.env.local':        ['DB_PASSWORD', 'API_KEY', 'SECRET_KEY', 'APP_KEY'],
@@ -147,7 +150,7 @@ class SecurityScanner:
 
     def _check_connectivity(self, target_url):
         try:
-            response = self.session.head(target_url, timeout=self.timeout, allow_redirects=True)
+            response = secure_request(target_url, method='HEAD', timeout=self.timeout, session=self.session)
             return {
                 'status': 'success',
                 'reachable': True,
@@ -171,13 +174,13 @@ class SecurityScanner:
         }
         try:
             if target_url.startswith('https://'):
-                self.session.get(target_url, timeout=self.timeout)
+                secure_request(target_url, timeout=self.timeout, session=self.session)
                 results['https_available'] = True
                 results['score'] += 40
 
             http_url = target_url.replace('https://', 'http://')
             try:
-                http_response = self.session.get(http_url, timeout=self.timeout, allow_redirects=False)
+                http_response = secure_request(http_url, timeout=self.timeout, allow_redirects=False, session=self.session)
                 if http_response.status_code in [301, 302, 307, 308]:
                     location = http_response.headers.get('Location', '')
                     if location.startswith('https://'):
@@ -216,8 +219,15 @@ class SecurityScanner:
             else:
                 host, port = hostname, 443
 
+            # SSRF-safe: pin the socket to a validated public IP but keep the
+            # hostname for SNI and certificate verification (no second lookup).
+            ok, pinned_ip, err = resolve_and_validate_host(host)
+            if not ok:
+                results['issues'].append(f'Certificate check skipped: {err}')
+                return results
+
             context = ssl.create_default_context()
-            with socket.create_connection((host, port), timeout=self.timeout) as sock:
+            with socket.create_connection((pinned_ip, port), timeout=self.timeout) as sock:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
                     cert = ssock.getpeercert()
                     expiry_date = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
@@ -269,7 +279,7 @@ class SecurityScanner:
             'Permissions-Policy': 'Permissions-Policy not configured',
         }
         try:
-            response = self.session.get(target_url, timeout=self.timeout)
+            response = secure_request(target_url, timeout=self.timeout, session=self.session)
             headers = response.headers
 
             for header, issue in security_headers.items():
@@ -306,7 +316,7 @@ class SecurityScanner:
             'issues': [],
         }
         try:
-            response = self.session.get(target_url, timeout=self.timeout)
+            response = secure_request(target_url, timeout=self.timeout, session=self.session)
             cookies = response.cookies
 
             results['total_cookies'] = len(cookies)
@@ -359,7 +369,7 @@ class SecurityScanner:
         }
         try:
             headers = {'Origin': 'https://evil.example.com'}
-            response = self.session.get(target_url, headers=headers, timeout=self.timeout)
+            response = secure_request(target_url, headers=headers, timeout=self.timeout, session=self.session)
             acao = response.headers.get('Access-Control-Allow-Origin', '')
             acac = response.headers.get('Access-Control-Allow-Credentials', '')
 
@@ -392,7 +402,7 @@ class SecurityScanner:
         }
         dangerous = {'TRACE', 'TRACK', 'DELETE', 'PUT', 'PATCH'}
         try:
-            response = self.session.options(target_url, timeout=self.timeout)
+            response = secure_request(target_url, method='OPTIONS', timeout=self.timeout, session=self.session)
             allow_header = response.headers.get('Allow', '') or response.headers.get('Access-Control-Allow-Methods', '')
             methods = [m.strip().upper() for m in allow_header.split(',') if m.strip()]
             results['allowed_methods'] = methods
@@ -432,7 +442,7 @@ class SecurityScanner:
             (r'OpenSSL/([\d.]+)',   'OpenSSL'),
         ]
         try:
-            response = self.session.get(target_url, timeout=self.timeout)
+            response = secure_request(target_url, timeout=self.timeout, session=self.session)
             header_blob = ' '.join([
                 response.headers.get('Server', ''),
                 response.headers.get('X-Powered-By', ''),
@@ -467,10 +477,10 @@ class SecurityScanner:
     def _get_404_baseline(self, target_url):
         fake_path = f'/{uuid.uuid4().hex}'
         try:
-            response = self.session.get(
+            response = secure_request(
                 f'{target_url.rstrip("/")}{fake_path}',
                 timeout=self.timeout,
-                allow_redirects=True,
+                session=self.session,
             )
             return {
                 'status': response.status_code,
@@ -508,7 +518,7 @@ class SecurityScanner:
         for path, _ in SENSITIVE_PATHS.items():
             url = f'{base}/{path}'
             try:
-                response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                response = secure_request(url, timeout=self.timeout, session=self.session)
                 if response.status_code != 200:
                     continue
                 if self._is_false_positive(response, baseline):
@@ -544,7 +554,7 @@ class SecurityScanner:
         for path in ADMIN_PATHS:
             url = f'{base}{path}'
             try:
-                response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                response = secure_request(url, timeout=self.timeout, session=self.session)
                 if response.status_code not in (200, 401, 403):
                     continue
                 if response.status_code == 200 and self._is_false_positive(response, baseline):
@@ -571,11 +581,18 @@ class SecurityScanner:
         else:
             host = target.split(':')[0]
 
+        # SSRF-safe: resolve+validate once, then probe the pinned public IP so a
+        # rebinding attacker cannot redirect the port scan to an internal host.
+        ok, pinned_ip, err = resolve_and_validate_host(host)
+        if not ok:
+            results['issues'].append(f'Port scan skipped: {err}')
+            return results
+
         for port, description in RISKY_PORTS.items():
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(2)
-                connected = sock.connect_ex((host, port)) == 0
+                connected = sock.connect_ex((pinned_ip, port)) == 0
                 sock.close()
                 if connected:
                     results['open_ports'].append({'port': port, 'description': description})
@@ -650,10 +667,10 @@ class SecurityScanner:
             'issues': [],
         }
         try:
-            resp = self.session.get(
+            resp = secure_request(
                 f"{target_url.rstrip('/')}/robots.txt",
                 timeout=self.timeout,
-                allow_redirects=True,
+                session=self.session,
             )
             if resp.status_code == 200 and len(resp.content) < 100_000:
                 body_lower = resp.content.lower()
@@ -695,7 +712,7 @@ class SecurityScanner:
         if not target_url.startswith('https://'):
             return results
         try:
-            resp = self.session.get(target_url, timeout=self.timeout)
+            resp = secure_request(target_url, timeout=self.timeout, session=self.session)
             pattern = r'''(?:src|href|action|data)\s*=\s*['"]?(http://[^'">\s]+)'''
             matches = re.findall(pattern, resp.text, re.IGNORECASE)
             seen = set()
@@ -725,7 +742,7 @@ class SecurityScanner:
             results['issues'].append('HSTS only applies to HTTPS — site is HTTP only')
             return results
         try:
-            resp = self.session.get(target_url, timeout=self.timeout, allow_redirects=True)
+            resp = secure_request(target_url, timeout=self.timeout, session=self.session)
             hsts = resp.headers.get('Strict-Transport-Security', '')
             if not hsts:
                 results['issues'].append('HSTS header missing — browsers will not enforce HTTPS-only')
@@ -784,10 +801,10 @@ class SecurityScanner:
                     for pattern, fingerprints in DANGLING_CNAME_SIGNATURES.items():
                         if pattern in cname_target:
                             try:
-                                resp = self.session.get(
+                                resp = secure_request(
                                     f'https://{cname_target}',
                                     timeout=self.timeout,
-                                    allow_redirects=True,
+                                    session=self.session,
                                 )
                                 body = resp.text
                                 if any(fp.lower() in body.lower() for fp in fingerprints):
@@ -826,7 +843,7 @@ class SecurityScanner:
         for path in COMMON_DIRS:
             url = f'{base}{path}'
             try:
-                resp = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+                resp = secure_request(url, timeout=self.timeout, session=self.session)
                 if resp.status_code != 200:
                     continue
                 if self._is_false_positive(resp, baseline):
@@ -847,9 +864,13 @@ class SecurityScanner:
             'issues': [],
         }
         try:
+            ok, pinned_ip, err = resolve_and_validate_host(hostname)
+            if not ok:
+                results['issues'].append(f'HTTP/2 check skipped: {err}')
+                return results
             ctx = ssl.create_default_context()
             ctx.set_alpn_protocols(['h2', 'http/1.1'])
-            with socket.create_connection((hostname, 443), timeout=self.timeout) as sock:
+            with socket.create_connection((pinned_ip, 443), timeout=self.timeout) as sock:
                 with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
                     proto = ssock.selected_alpn_protocol()
                     results['negotiated_protocol'] = proto
@@ -868,7 +889,7 @@ class SecurityScanner:
             'issues': [],
         }
         try:
-            resp = self.session.get(target_url, timeout=self.timeout)
+            resp = secure_request(target_url, timeout=self.timeout, session=self.session)
             text = resp.text
 
             gen = re.search(
@@ -917,7 +938,7 @@ class SecurityScanner:
         for param in OPEN_REDIRECT_PARAMS:
             test_url = f'{base}/?{param}={_REDIRECT_CANARY}'
             try:
-                resp = self.session.get(test_url, timeout=self.timeout, allow_redirects=False)
+                resp = secure_request(test_url, timeout=self.timeout, allow_redirects=False, session=self.session)
                 if resp.status_code in (301, 302, 303, 307, 308):
                     loc = resp.headers.get('Location', '')
                     if 'securitybuddy.invalid' in loc or _REDIRECT_CANARY in loc:

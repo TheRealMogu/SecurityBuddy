@@ -17,6 +17,7 @@ from validators import AdvancedValidator, clean_target
 from notification_system import NotificationSystem, make_unsubscribe_token
 from email_analyzer import EmailAnalyzer
 from threat_intel import ThreatIntelAnalyzer
+from utils.secure_http import SSRFSecurityError
 from api_routes import api_bp
 from background_jobs import job_manager
 from guides_content import GUIDES, GUIDES_BY_SLUG, GUIDES_UPDATED
@@ -115,6 +116,9 @@ def scan():
 
         return render_template('scan_result.html', results=results, scan_id=scan_result.id)
 
+    except SSRFSecurityError:
+        flash('Invalid or blocked target detected. Only public websites can be scanned.', 'error')
+        return redirect(url_for('index'))
     except Exception as e:
         flash(f'Scan failed: {str(e)}', 'error')
         return redirect(url_for('index'))
@@ -442,6 +446,9 @@ def threat_scan():
         analyzer = ThreatIntelAnalyzer()
         results = analyzer.search(query)
         return render_template('threat.html', results=results, query=query)
+    except SSRFSecurityError:
+        flash('Invalid or blocked lookup target detected.', 'error')
+        return redirect(url_for('threat_scan'))
     except Exception as e:
         flash(f'Search failed: {str(e)}', 'error')
         return redirect(url_for('threat_scan'))

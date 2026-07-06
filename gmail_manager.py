@@ -138,11 +138,12 @@ def credentials_from_record(record):
 
 def revoke(token):
     """Best-effort revocation of an access/refresh token at Google."""
-    import requests
+    from utils.secure_http import secure_request
     if not token:
         return
-    requests.post(
+    secure_request(
         _REVOKE_URI,
+        method="POST",
         params={"token": token},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=8,
@@ -320,11 +321,15 @@ def _is_public_https(url):
 def one_click_unsubscribe(url):
     """Perform an RFC 8058 one-click unsubscribe POST. Returns (ok, message)."""
     import requests
+    from utils.secure_http import secure_request
     if not _is_public_https(url):
         return False, "Unsubscribe URL is not a valid public HTTPS endpoint."
     try:
-        resp = requests.post(
+        # secure_request pins the socket to the validated public IP, closing the
+        # DNS-rebinding (TOCTOU) window between the check above and this POST.
+        resp = secure_request(
             url,
+            method="POST",
             data="List-Unsubscribe=One-Click",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10,

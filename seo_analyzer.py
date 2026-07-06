@@ -9,6 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, urljoin
 from html.parser import HTMLParser
 
+from utils.secure_http import secure_request, SSRFSecurityError
+
 _TEXT_SKIP = {'script', 'style', 'noscript', 'nav', 'footer', 'aside', 'header'}
 
 _PSI_ENDPOINT = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed'
@@ -377,7 +379,7 @@ class SiteCrawler:
         rp = urllib.robotparser.RobotFileParser()
         robots_url = f'{parsed.scheme}://{parsed.netloc}/robots.txt'
         try:
-            resp = self.session.get(robots_url, timeout=8, allow_redirects=True)
+            resp = secure_request(robots_url, timeout=8, session=self.session)
             if resp.status_code == 200:
                 rp.parse(resp.text.splitlines())
             else:
@@ -433,7 +435,7 @@ class SiteCrawler:
                 continue
             try:
                 t0       = time.monotonic()
-                response = self.session.get(url, timeout=12, allow_redirects=True)
+                response = secure_request(url, timeout=12, session=self.session)
                 load_ms  = round((time.monotonic() - t0) * 1000)
                 if 'html' not in response.headers.get('Content-Type', '').lower():
                     continue
@@ -491,7 +493,7 @@ class SEOAnalyzer:
 
         try:
             t0 = time.monotonic()
-            response = self.session.get(base_url, timeout=self.timeout, allow_redirects=True)
+            response = secure_request(base_url, timeout=self.timeout, session=self.session)
             load_ms  = round((time.monotonic() - t0) * 1000)
 
             ct = response.headers.get('Content-Type', '')
@@ -1444,7 +1446,7 @@ class SEOAnalyzer:
         }
 
         try:
-            resp = self.session.get(robots_url, timeout=8, allow_redirects=True)
+            resp = secure_request(robots_url, timeout=8, session=self.session)
             body = resp.text
             ct   = resp.headers.get('Content-Type', '')
 
@@ -1528,7 +1530,7 @@ class SEOAnalyzer:
             f'{origin}/sitemap-index.xml',
         ):
             try:
-                resp = self.session.get(candidate, timeout=8, allow_redirects=False)
+                resp = secure_request(candidate, timeout=8, allow_redirects=False, session=self.session)
                 if resp.status_code == 200:
                     body = resp.text[:200_000]
                     if '<' in body and ('loc>' in body or 'urlset' in body or 'sitemapindex' in body):
@@ -1576,7 +1578,7 @@ class SEOAnalyzer:
             params['key'] = api_key
 
         try:
-            resp = requests.get(_PSI_ENDPOINT, params=params, timeout=50)
+            resp = secure_request(_PSI_ENDPOINT, params=params, timeout=50)
             if resp.status_code == 429:
                 r['warnings'].append(
                     'PageSpeed Insights API rate-limited — set GOOGLE_PSI_API_KEY env var for higher quota'
@@ -1761,7 +1763,7 @@ class SEOAnalyzer:
         urls: list = []
         for candidate in candidates:
             try:
-                resp = self.session.get(candidate, timeout=8, allow_redirects=True)
+                resp = secure_request(candidate, timeout=8, session=self.session)
                 if resp.status_code != 200:
                     continue
                 xml = resp.text[:600_000]
@@ -1771,7 +1773,7 @@ class SEOAnalyzer:
                     # Fetch each sub-sitemap (limit to first 15)
                     for sub in _locs(xml)[:15]:
                         try:
-                            sr = self.session.get(sub, timeout=8, allow_redirects=True)
+                            sr = secure_request(sub, timeout=8, session=self.session)
                             if sr.status_code == 200:
                                 urls.extend(_locs(sr.text[:400_000]))
                                 if len(urls) >= max_urls:
@@ -1823,7 +1825,7 @@ class SEOAnalyzer:
         }
 
         try:
-            test = self.session.get(base_url, timeout=10, allow_redirects=True)
+            test = secure_request(base_url, timeout=10, session=self.session)
             if 'html' not in test.headers.get('Content-Type', '').lower():
                 result['error'] = 'Root URL did not return an HTML page'
                 return result
