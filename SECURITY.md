@@ -18,7 +18,7 @@ Disclosing a vulnerability publicly before a fix is available puts everyone runn
 ### How to Report
 
 1. Go to the [Security tab](https://github.com/therealmogu/securitybuddy/security/advisories/new) of this repository and open a **private security advisory**.
-2. Alternatively, send the details directly to the maintainer via GitHub's private messaging.
+2. Alternatively, contact the maintainer privately via the contact details on their [GitHub profile](https://github.com/therealmogu).
 
 Include as much of the following as possible:
 

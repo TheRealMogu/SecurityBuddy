@@ -16,6 +16,8 @@ api_routes.py           # Blueprint REST API (/api/v1/*)
 scanner.py              # SecurityScanner — logica di scan
 seo_analyzer.py         # SEOAnalyzer — analisi SEO singola pagina + PageSpeed
 email_analyzer.py       # EmailAnalyzer — MX, SPF, DMARC, DKIM, blacklist, PTR, STARTTLS
+threat_intel.py         # ThreatIntelAnalyzer — lookup URLhaus/ThreatFox (+ VirusTotal/AbuseIPDB opzionali)
+guides_content.py       # Contenuto statico delle guide di sicurezza (/guides)
 validators.py           # AdvancedValidator — validazione input
 models.py               # ORM: User, ScanResult, APIKey, MonitoringConfig
 notification_system.py  # Email alert (SendGrid/Twilio)
@@ -25,8 +27,8 @@ cache_manager.py        # Cache risultati
 cli.py                  # CLI (entry point: securitybuddy)
 ```
 
-> `premium_features.py` e `pdf_generator.py` sono presenti nel repo ma non usati —
-> le funzionalità premium sono state rimosse (nessun gate `is_premium`).
+> `premium_features.py`, `pdf_generator.py` e `user_guide_system.py` sono presenti nel repo
+> ma non usati — le funzionalità premium sono state rimosse (nessun gate `is_premium`).
 
 ## Come avviare in locale
 
@@ -66,6 +68,7 @@ Il server parte su `http://localhost:5000`. Il DB SQLite viene creato automatica
 | Directory listing | `_check_directory_listing` | 5 |
 | HTML comment / generator | `_check_html_comments` | 3 |
 | Open redirect | `_check_open_redirect` | 5 |
+| robots.txt (path sensibili) | `_check_robots_txt` | — (informativo) |
 | HTTP/2 support | `_check_http2_support` | +1 bonus |
 
 > Il punteggio totale è sempre compresso nell'intervallo [0, 100].
@@ -118,6 +121,18 @@ I check DKIM (18 selector comuni) e le blacklist vengono eseguiti in parallelo c
 **Blacklist IP**: Spamhaus ZEN, SpamCop, SORBS, Barracuda, UCEPROTECT L1, PSBL, S5H.  
 **Blacklist dominio**: Spamhaus DBL, URIBL Multi.
 
+## Architettura Threat Intel
+
+`ThreatIntelAnalyzer.search(query)` in `threat_intel.py` rileva il tipo di input (URL, IP,
+hash MD5/SHA1/SHA256 o dominio) e interroga in parallelo (`ThreadPoolExecutor`) le sorgenti:
+
+- **URLhaus** e **ThreatFox** (abuse.ch) — sempre attive, gratuite, nessuna chiave richiesta
+- **VirusTotal** — solo se `VIRUSTOTAL_API_KEY` è impostata
+- **AbuseIPDB** — solo se `ABUSEIPDB_API_KEY` è impostata (lookup IP)
+
+Gli IP privati/loopback/link-local vengono rifiutati (`_is_private_ip`). La route `/threat`
+ha un rate limit di 20 richieste/minuto per IP.
+
 ## Frontend enhancements
 
 `static/js/enhancements.js` — loader unico per tutti gli effetti visivi, attivato su `window.load` + `requestIdleCallback`. Non tocca il critical rendering path.
@@ -148,8 +163,16 @@ Il canvas shader viene iniettato a runtime come `firstChild` di qualsiasi `.hero
 | `api_keys.html` | Gestione API key |
 | `newsletter_manager.html` | Gmail Newsletter Manager — connect/disconnect, lista newsletter, unsubscribe |
 | `email.html` | Analisi email security — tabbed interface (Overview/Records/Deliverability/Mail Servers) |
+| `threat.html` | Threat Intel lookup — form + risultato per dominio/IP/URL/hash |
+| `password_generator.html` | Generatore password client-side |
+| `guides.html`, `guide.html` | Indice e dettaglio delle guide di sicurezza |
+| `account.html` | Impostazioni account (export dati, cancellazione) |
+| `about.html`, `privacy.html` | Pagine statiche (about, privacy policy) |
 | `seo_crawl_waiting.html` | Pagina di attesa con polling del job SEO |
 | `404.html`, `500.html` | Pagine di errore |
+
+> `premium.html` esiste ancora nel repo ma non è più raggiungibile dalla navigazione
+> (le funzionalità premium sono state rimosse).
 
 Tutti i template estendono `base.html` tranne le pagine standalone.
 
@@ -182,9 +205,17 @@ GET  /seo/crawl/<id>/status   # Polling stato crawl (JSON)
 GET  /seo/crawl/<id>/report   # Report crawl completato
 GET  /email                # Form analisi email security
 POST /email                # Avvia analisi email security
+GET  /threat               # Form threat intel lookup
+POST /threat               # Lookup threat intel (rate limit 20 req/min per IP)
+GET  /tools/password       # Generatore password (client-side)
+GET  /guides               # Indice guide di sicurezza
+GET  /guides/<slug>        # Dettaglio guida
 GET  /dashboard            # Dashboard utente (login required)
+GET  /account              # Impostazioni account (login required)
+GET  /account/export       # Export dati GDPR (login required)
+POST /account/delete       # Cancellazione account (login required)
 GET  /api-keys             # Gestione API key (login required)
-GET  /login                # Login / registrazione
+GET  /login                # Login / registrazione (+ /register, /logout)
 GET  /badge/<domain>/<score>.svg  # Badge SVG dinamico
 GET  /newsletter-manager   # Gmail Newsletter Manager (login required)
 GET  /gmail/auth           # Avvia OAuth Google → redirect al consenso
@@ -248,6 +279,9 @@ Il primo accesso dopo un periodo di inattività paga l'avvio della serverless fu
 | `TWILIO_*` | Per SMS alert |
 | `GOOGLE_CLIENT_ID` | OAuth Google per il Newsletter Manager |
 | `GOOGLE_CLIENT_SECRET` | OAuth Google per il Newsletter Manager |
+| `TOKEN_ENCRYPTION_KEY` | Chiave Fernet per cifrare i token Gmail at-rest (fallback: derivata da `SESSION_SECRET`) |
+| `VIRUSTOTAL_API_KEY` | Abilita VirusTotal come sorgente Threat Intel (opzionale) |
+| `ABUSEIPDB_API_KEY` | Abilita AbuseIPDB come sorgente Threat Intel per gli IP (opzionale) |
 | `DB_AUTO_INIT` | `0` per saltare `create_all` + migrazioni al cold start (default: attivo) |
 
 ## Aree di miglioramento

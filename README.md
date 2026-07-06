@@ -4,9 +4,11 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 
 ## Features
 
-- **Security Scanner** — 18 checks: HTTPS, SSL/TLS, headers, cookies, CORS, DNS (SPF/DMARC), open ports, mixed content, HSTS quality, subdomain takeover, directory listing, open redirect, and more
+- **Security Scanner** — 20 checks: HTTPS, SSL/TLS, headers, cookies, CORS, DNS (SPF/DMARC), open ports, mixed content, HSTS quality, subdomain takeover, directory listing, open redirect, and more
 - **Email Security** — MX records, SPF, DMARC, DKIM, 7 IP blacklists + 2 domain blacklists, PTR/rDNS, STARTTLS per mail server
 - **SEO Analyser** — meta tags, content quality, PageSpeed Insights (mobile + desktop), Open Graph, structured data
+- **Threat Intel Lookup** — check a domain, IP, URL or file hash against URLhaus and ThreatFox (free, no key needed), plus VirusTotal and AbuseIPDB when API keys are configured
+- **Security Guides** — built-in educational guides on web and email security
 - **Newsletter Manager** — connect Gmail via OAuth and unsubscribe from newsletters (reads only `List-Unsubscribe` headers, never email content)
 - **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown (www/apex link mismatch handled automatically)
 - **Password Generator** — cryptographically secure, configurable charsets, exclude look-alike characters (`0 O o 1 l I i |`)
@@ -26,6 +28,9 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 | `TWILIO_*` | — | SMS alerts |
 | `GOOGLE_CLIENT_ID` | — | Google OAuth client for the Gmail Newsletter Manager |
 | `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
+| `TOKEN_ENCRYPTION_KEY` | — | Fernet key for encrypting Gmail OAuth tokens at rest (derived from `SESSION_SECRET` if unset) |
+| `VIRUSTOTAL_API_KEY` | — | Enables VirusTotal as an extra Threat Intel source |
+| `ABUSEIPDB_API_KEY` | — | Enables AbuseIPDB as an extra Threat Intel source (IP lookups) |
 
 ### Database Setup
 
@@ -70,6 +75,7 @@ SESSION_SECRET=dev python main.py
 | DNS Security | SPF record, DMARC policy |
 | Subdomain Takeover | Dangling CNAME → unclaimed GitHub Pages, Heroku, Netlify, Azure… |
 | Directory Listing | Apache/Nginx index pages on common paths |
+| robots.txt | Sensitive paths revealed via `Disallow` entries (informational) |
 | Mixed Content | HTTP resources on HTTPS pages |
 | Open Redirect | Common redirect parameters (`?redirect=`, `?url=`, `?next=`…) |
 | HTTP/2 Support | ALPN negotiation (informational) |
