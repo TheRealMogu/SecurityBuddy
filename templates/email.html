@@ -34,6 +34,21 @@
                             Analyse
                         </button>
                     </div>
+                    <div style="margin-top:0.6rem;">
+                        <label for="dkimSelector"
+                               style="display:block;font-size:0.8rem;color:var(--color-text-muted);margin-bottom:0.25rem;">
+                            Custom DKIM selector <span style="opacity:0.7;">(optional)</span>
+                        </label>
+                        <input type="text" class="scan-input" name="dkim_selector" id="dkimSelector"
+                               value="{{ dkim_selector|default('', true) }}"
+                               placeholder="e.g. selector1, google, k1"
+                               autocomplete="off" spellcheck="false"
+                               pattern="[A-Za-z0-9._-]+"
+                               style="max-width:340px;font-size:0.9rem;">
+                        <div style="font-size:0.75rem;color:var(--color-text-muted);margin-top:0.25rem;">
+                            Checked alongside the 18 common selectors.
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -354,6 +369,19 @@
             <i data-lucide="chevron-down" class="check-chevron" style="width:16px;height:16px;"></i>
         </summary>
         <div class="check-body">
+            {% if dkim.custom_selector %}
+            <div class="ssl-info-row" style="margin-bottom:0.75rem;">
+                <div class="ssl-info-label">Custom selector</div>
+                <div class="ssl-info-value">
+                    <code>{{ dkim.custom_selector }}._domainkey.{{ r.domain }}</code>
+                    {% if dkim.custom_selector_found %}
+                    <span class="badge badge-success" style="margin-left:0.4rem;">found</span>
+                    {% else %}
+                    <span class="badge badge-warning" style="margin-left:0.4rem;">not found</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
             {% if dkim.selectors_found %}
             <div class="table-wrapper" style="margin-bottom:0.75rem;">
                 <table class="table">
@@ -361,7 +389,7 @@
                     <tbody>
                         {% for s in dkim.selectors_found %}
                         <tr>
-                            <td><code>{{ s.selector }}._domainkey.{{ r.domain }}</code></td>
+                            <td><code>{{ s.selector }}._domainkey.{{ r.domain }}</code>{% if dkim.custom_selector and s.selector == dkim.custom_selector %} <span class="badge badge-success">custom</span>{% endif %}</td>
                             <td>
                                 {% if s.key_bits %}
                                 <span class="badge {% if s.key_bits >= 2048 %}badge-success{% elif s.key_bits >= 1024 %}badge-warning{% else %}badge-danger{% endif %}">{{ s.key_bits }} bits</span>
@@ -377,7 +405,7 @@
             {% endif %}
             {% if dkim.issues %}<div class="issues-list">{% for i in dkim.issues %}<div class="issue-item">{{ i }}</div>{% endfor %}</div>{% endif %}
             {% if not dkim.valid %}
-            <p class="text-muted small">Checked {{ 18 }} common selectors (default, google, mail, selector1/2, k1, smtp, mta…). If DKIM is configured with a custom selector it will not appear here.</p>
+            <p class="text-muted small">Checked 18 common selectors (default, google, mail, selector1/2, k1, smtp, mta…){% if dkim.custom_selector %} plus your custom selector <code>{{ dkim.custom_selector }}</code>{% endif %}. If DKIM uses a different custom selector, enter it in the form above to check it directly.</p>
             {% endif %}
         </div>
     </details>

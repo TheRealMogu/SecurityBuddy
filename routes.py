@@ -385,10 +385,13 @@ def email_scan():
         flash(f'Invalid target: {error_msg}', 'error')
         return redirect(url_for('email_scan'))
 
+    custom_selector = request.form.get('dkim_selector', '').strip() or None
+
     try:
         analyzer = EmailAnalyzer()
-        results = analyzer.analyze(target)
-        return render_template('email.html', results=results, target=target)
+        results = analyzer.analyze(target, custom_selector=custom_selector)
+        return render_template('email.html', results=results, target=target,
+                               dkim_selector=custom_selector or '')
     except Exception as e:
         flash(f'Email analysis failed: {str(e)}', 'error')
         return redirect(url_for('email_scan'))
