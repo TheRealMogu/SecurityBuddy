@@ -36,6 +36,8 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [2.1.0] — 2026-06-10
+
 ### Aggiunto
 - **Gmail Newsletter Manager** (`/newsletter-manager`) — connessione Gmail via OAuth Google
   per elencare le newsletter attive e disiscriversi

@@ -1,6 +1,10 @@
 from app import app
 import routes  # noqa: F401
 import api_routes  # noqa: F401
+from api_scan import api_scan_bp
+
+# Async micro-scan API (init / workers / status polling)
+app.register_blueprint(api_scan_bp)
 
 # For Vercel deployment
 application = app

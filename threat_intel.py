@@ -5,7 +5,7 @@ import ipaddress
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import requests
+from utils.secure_http import secure_request, SSRFSecurityError
 
 TIMEOUT = 8
 
@@ -124,8 +124,8 @@ class ThreatIntelAnalyzer:
                'link': 'https://urlhaus.abuse.ch/', 'tags': [],
                'first_seen': None, 'last_seen': None}
         try:
-            r = requests.post('https://urlhaus-api.abuse.ch/v1/url/',
-                              data={'url': url}, timeout=TIMEOUT)
+            r = secure_request('https://urlhaus-api.abuse.ch/v1/url/',
+                               method='POST', data={'url': url}, timeout=TIMEOUT)
             data = r.json()
             qs = data.get('query_status')
             if qs == 'is_malware':
@@ -151,8 +151,8 @@ class ThreatIntelAnalyzer:
         src = {'name': 'URLhaus', 'status': 'unknown', 'details': {},
                'link': 'https://urlhaus.abuse.ch/', 'tags': []}
         try:
-            r = requests.post('https://urlhaus-api.abuse.ch/v1/host/',
-                              data={'host': host}, timeout=TIMEOUT)
+            r = secure_request('https://urlhaus-api.abuse.ch/v1/host/',
+                               method='POST', data={'host': host}, timeout=TIMEOUT)
             data = r.json()
             qs = data.get('query_status')
             if qs == 'is_host':
@@ -183,9 +183,10 @@ class ThreatIntelAnalyzer:
                'link': 'https://threatfox.abuse.ch/', 'tags': [],
                'first_seen': None, 'last_seen': None}
         try:
-            r = requests.post('https://threatfox-api.abuse.ch/api/v1/',
-                              json={'query': 'search_ioc', 'search_term': ioc},
-                              timeout=TIMEOUT)
+            r = secure_request('https://threatfox-api.abuse.ch/api/v1/',
+                               method='POST',
+                               json={'query': 'search_ioc', 'search_term': ioc},
+                               timeout=TIMEOUT)
             data = r.json()
             qs = data.get('query_status')
             if qs == 'ok':
@@ -220,9 +221,10 @@ class ThreatIntelAnalyzer:
                'link': 'https://bazaar.abuse.ch/', 'tags': [],
                'first_seen': None, 'last_seen': None}
         try:
-            r = requests.post('https://mb-api.abuse.ch/api/v1/',
-                              data={'query': 'get_info', 'hash': hash_value},
-                              timeout=TIMEOUT)
+            r = secure_request('https://mb-api.abuse.ch/api/v1/',
+                               method='POST',
+                               data={'query': 'get_info', 'hash': hash_value},
+                               timeout=TIMEOUT)
             data = r.json()
             qs = data.get('query_status')
             if qs == 'ok':
@@ -257,8 +259,8 @@ class ThreatIntelAnalyzer:
                'link': 'https://www.virustotal.com/', 'tags': []}
         try:
             url_id = base64.urlsafe_b64encode(url.encode()).decode().rstrip('=')
-            r = requests.get(f'https://www.virustotal.com/api/v3/urls/{url_id}',
-                             headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
+            r = secure_request(f'https://www.virustotal.com/api/v3/urls/{url_id}',
+                               headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})
                 src = self._vt_stats(src, attrs)
@@ -274,8 +276,8 @@ class ThreatIntelAnalyzer:
         src = {'name': 'VirusTotal', 'status': 'unknown', 'details': {},
                'link': f'https://www.virustotal.com/gui/domain/{domain}', 'tags': []}
         try:
-            r = requests.get(f'https://www.virustotal.com/api/v3/domains/{quote(domain, safe="")}',
-                             headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
+            r = secure_request(f'https://www.virustotal.com/api/v3/domains/{quote(domain, safe="")}',
+                               headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})
                 src = self._vt_stats(src, attrs)
@@ -292,8 +294,8 @@ class ThreatIntelAnalyzer:
         src = {'name': 'VirusTotal', 'status': 'unknown', 'details': {},
                'link': f'https://www.virustotal.com/gui/ip-address/{ip}', 'tags': []}
         try:
-            r = requests.get(f'https://www.virustotal.com/api/v3/ip_addresses/{quote(ip, safe="")}',
-                             headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
+            r = secure_request(f'https://www.virustotal.com/api/v3/ip_addresses/{quote(ip, safe="")}',
+                               headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})
                 src = self._vt_stats(src, attrs)
@@ -312,8 +314,8 @@ class ThreatIntelAnalyzer:
         src = {'name': 'VirusTotal', 'status': 'unknown', 'details': {},
                'link': f'https://www.virustotal.com/gui/file/{hash_value}', 'tags': []}
         try:
-            r = requests.get(f'https://www.virustotal.com/api/v3/files/{quote(hash_value, safe="")}',
-                             headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
+            r = secure_request(f'https://www.virustotal.com/api/v3/files/{quote(hash_value, safe="")}',
+                               headers={'x-apikey': VT_API_KEY}, timeout=TIMEOUT)
             if r.status_code == 200:
                 attrs = r.json().get('data', {}).get('attributes', {})
                 src = self._vt_stats(src, attrs)
@@ -357,7 +359,7 @@ class ThreatIntelAnalyzer:
         src = {'name': 'AbuseIPDB', 'status': 'unknown', 'details': {},
                'link': f'https://www.abuseipdb.com/check/{ip}', 'tags': []}
         try:
-            r = requests.get(
+            r = secure_request(
                 'https://api.abuseipdb.com/api/v2/check',
                 params={'ipAddress': ip, 'maxAgeInDays': 90},
                 headers={'Key': ABUSEIPDB_KEY, 'Accept': 'application/json'},

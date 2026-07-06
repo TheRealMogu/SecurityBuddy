@@ -17,8 +17,8 @@ from validators import AdvancedValidator, clean_target
 from notification_system import NotificationSystem, make_unsubscribe_token
 from email_analyzer import EmailAnalyzer
 from threat_intel import ThreatIntelAnalyzer
+from utils.secure_http import SSRFSecurityError
 from api_routes import api_bp
-from background_jobs import job_manager
 from guides_content import GUIDES, GUIDES_BY_SLUG, GUIDES_UPDATED
 import gmail_manager
 
@@ -115,9 +115,25 @@ def scan():
 
         return render_template('scan_result.html', results=results, scan_id=scan_result.id)
 
+    except SSRFSecurityError:
+        flash('Invalid or blocked target detected. Only public websites can be scanned.', 'error')
+        return redirect(url_for('index'))
     except Exception as e:
         flash(f'Scan failed: {str(e)}', 'error')
         return redirect(url_for('index'))
+
+
+@app.route('/scan/live/<public_id>')
+def scan_live(public_id):
+    """Live progressive scan page for the async micro-scan flow.
+
+    The browser fires the modular workers in parallel and polls
+    /api/scan/status/<public_id> until the scan is COMPLETED, then links to the
+    full server-rendered report.
+    """
+    scan = ScanResult.query.filter_by(public_id=public_id).first_or_404()
+    return render_template('scan_progress.html', public_id=public_id, target=scan.target)
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -350,50 +366,6 @@ def seo_scan():
         return redirect(url_for('seo_scan'))
 
 
-@app.route('/seo/crawl', methods=['POST'])
-@rate_limit(max_calls=5, window_seconds=60)
-def seo_crawl_start():
-    """Start a site-wide SEO crawl as a background job."""
-    target = request.form.get('target', '').strip()
-    if not target:
-        return jsonify({'error': 'No target provided'}), 400
-
-    target = clean_target(target)
-    validator = AdvancedValidator()
-    is_valid, error_msg = validator.validate_target(target)
-    if not is_valid:
-        return jsonify({'error': error_msg}), 400
-
-    job_id = job_manager.submit_seo_crawl_job(target, max_pages=100)
-    return jsonify({'job_id': job_id})
-
-
-@app.route('/seo/crawl/<job_id>/status')
-def seo_crawl_status(job_id):
-    """Poll the status of a site-wide SEO crawl job."""
-    status = job_manager.get_seo_crawl_status(job_id)
-    if status is None:
-        return jsonify({'error': 'Job not found'}), 404
-    return jsonify(status)
-
-
-@app.route('/seo/crawl/<job_id>/report')
-def seo_crawl_report(job_id):
-    """Show the site SEO report (or a waiting page if still running)."""
-    status = job_manager.get_seo_crawl_status(job_id)
-    if not status:
-        flash('Crawl not found or expired.', 'error')
-        return redirect(url_for('seo_scan'))
-    if status['status'] != 'completed':
-        return render_template('seo_crawl_waiting.html',
-                               job_id=job_id,
-                               target=status['target'],
-                               status=status)
-    return render_template('seo_site.html',
-                           crawl=status['result'],
-                           job_id=job_id)
-
-
 @app.route('/email', methods=['GET', 'POST'])
 @rate_limit(max_calls=10, window_seconds=60)
 def email_scan():
@@ -442,6 +414,9 @@ def threat_scan():
         analyzer = ThreatIntelAnalyzer()
         results = analyzer.search(query)
         return render_template('threat.html', results=results, query=query)
+    except SSRFSecurityError:
+        flash('Invalid or blocked lookup target detected.', 'error')
+        return redirect(url_for('threat_scan'))
     except Exception as e:
         flash(f'Search failed: {str(e)}', 'error')
         return redirect(url_for('threat_scan'))

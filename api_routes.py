@@ -364,13 +364,12 @@ def api_webhook():
                     'message': 'webhook_url must be a public HTTP/HTTPS URL'
                 }), 400
             try:
-                # Re-validate immediately before sending to shrink the
-                # DNS-rebinding window, and never follow redirects to internal hosts.
-                if not _is_safe_webhook_url(webhook_url):
-                    raise ValueError("webhook_url resolved to a non-public address")
-                import requests as req_lib
-                req_lib.post(webhook_url, json=response_data, timeout=10,
-                             allow_redirects=False)
+                # secure_request resolves, validates and pins the socket to the
+                # public IP atomically, eliminating the DNS-rebinding window, and
+                # never follows redirects to internal hosts.
+                from utils.secure_http import secure_request
+                secure_request(webhook_url, method='POST', json=response_data,
+                               timeout=10, allow_redirects=False)
             except Exception as webhook_err:
                 current_app.logger.warning(f"Webhook delivery failed to {webhook_url}: {webhook_err}")
         
