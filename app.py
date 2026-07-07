@@ -230,8 +230,41 @@ def rate_limit(max_calls: int, window_seconds: int = 60):
     return decorator
 
 
+# Content-Security-Policy.
+#
+# Backbone follows the strict self-first policy requested in DEVELOPMENT.md, but
+# a handful of directives are widened to exactly the hosts the site genuinely
+# loads — otherwise the CSP would break the app itself:
+#   * script-src needs https://unpkg.com — Lucide (every page's icons) is served
+#     from there; 'unsafe-inline' is required for the inline UI scripts, inline
+#     event handlers (e.g. the font <link onload>) and enhancements.js hooks.
+#   * the Google Ad* hosts keep AdSense working on content pages (it is gated
+#     behind cookie consent and g.show_ads). Drop them if AdSense is removed.
+#   * style-src / font-src allow Fontshare (the web fonts).
+#   * img-src allows data: (inline favicons, PageSpeed screenshots) and https:.
+# object-src/base-uri/frame-ancestors are locked down for extra hardening
+# (frame-ancestors 'none' reinforces the existing X-Frame-Options: DENY).
+_CSP = "; ".join([
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "img-src 'self' data: https:",
+    "font-src 'self' https://api.fontshare.com https://cdn.fontshare.com",
+    "style-src 'self' 'unsafe-inline' https://api.fontshare.com https://cdn.fontshare.com",
+    "script-src 'self' 'unsafe-inline' https://unpkg.com "
+    "https://pagead2.googlesyndication.com https://*.googlesyndication.com "
+    "https://adservice.google.com https://*.google.com",
+    "connect-src 'self' https://*.googlesyndication.com https://*.google.com "
+    "https://*.doubleclick.net",
+    "frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com "
+    "https://*.google.com",
+])
+
+
 @app.after_request
 def _set_security_headers(response):
+    response.headers.setdefault("Content-Security-Policy", _CSP)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -286,9 +319,17 @@ _DB_FREE_ENDPOINTS = {"index", "static"}
 
 
 def init_db_once():
-    """Create tables + run column migrations exactly once per process."""
+    """Ensure the schema is ready, exactly once per process.
+
+    ``DB_AUTO_INIT=0`` skips the (relatively expensive) ``create_all`` bootstrap
+    on cold starts, but the lightweight, idempotent column migrations ALWAYS run.
+    A new deploy that adds a column must self-heal: without this, the first
+    INSERT touching the new column 500s forever (``column does not exist``) until
+    someone migrates by hand. The migrations are a fixed set of guarded ALTERs,
+    so the cold-start cost is small and paid once per process.
+    """
     global _db_initialized
-    if _db_initialized or os.environ.get("DB_AUTO_INIT", "1") == "0":
+    if _db_initialized:
         return
     with _db_init_lock:
         if _db_initialized:
@@ -296,10 +337,11 @@ def init_db_once():
         try:
             with app.app_context():
                 import models  # noqa: F401
-                db.create_all()
+                if os.environ.get("DB_AUTO_INIT", "1") != "0":
+                    db.create_all()
                 _run_column_migrations()
             _db_initialized = True
-            logging.info("Database tables created successfully")
+            logging.info("Database schema initialized")
         except Exception as e:
             # Leave the flag unset so a transient cold-DB failure can retry.
             logging.warning(f"Database initialization error: {e}")

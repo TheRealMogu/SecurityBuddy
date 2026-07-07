@@ -201,9 +201,14 @@
   var poll, elapsed = 0, INTERVAL = 2500, MAX_MS = 120000;
   function tick() {
     fetch(statusUrl, { headers: { 'Accept': 'application/json' } })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        // Tolerate an HTML error page (500/504) without throwing on '<'.
+        var ct = r.headers.get('content-type') || '';
+        if (!r.ok || ct.indexOf('application/json') === -1) return null;
+        return r.json();
+      })
       .then(function (data) {
-        if (data.error) return;
+        if (!data || data.error) return;   // transient — keep polling
         if (data.modules) {
           MODULES.forEach(function (m) { renderModule(m.key, data.modules[m.key]); });
         }
@@ -212,7 +217,7 @@
           showFinal(data);
         }
       })
-      .catch(function () { /* keep polling */ });
+      .catch(function () { /* network blip — keep polling */ });
   }
 
   fireWorkers();

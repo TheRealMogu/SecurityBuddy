@@ -35,7 +35,7 @@ class EmailAnalyzer:
     def __init__(self):
         self.timeout = 8
 
-    def analyze(self, domain: str) -> dict:
+    def analyze(self, domain: str, custom_selector: str = None) -> dict:
         domain = re.sub(r'^https?://', '', domain).strip('/').split('/')[0].lower()
 
         result: dict = {
@@ -53,7 +53,7 @@ class EmailAnalyzer:
             checks['mx']    = self._check_mx(domain)
             checks['spf']   = self._check_spf(domain)
             checks['dmarc'] = self._check_dmarc(domain)
-            checks['dkim']  = self._check_dkim(domain)
+            checks['dkim']  = self._check_dkim(domain, custom_selector)
 
             # --- resolve MX IPs for downstream checks ---
             mx_hosts = [r['host'] for r in checks['mx'].get('records', [])]
@@ -225,8 +225,22 @@ class EmailAnalyzer:
         r['score'] = max(0, r['score'])
         return r
 
-    def _check_dkim(self, domain: str) -> dict:
-        r: dict = {'selectors_found': [], 'valid': False, 'score': 0, 'issues': []}
+    def _check_dkim(self, domain: str, custom_selector: str = None) -> dict:
+        r: dict = {
+            'selectors_found': [], 'valid': False, 'score': 0, 'issues': [],
+            'custom_selector': None, 'custom_selector_found': False,
+        }
+
+        # Build the selector list, prioritising a user-supplied custom selector.
+        selectors = list(COMMON_DKIM_SELECTORS)
+        custom = None
+        if custom_selector:
+            # Sanitise: DKIM selectors are DNS labels, keep only safe characters.
+            custom = re.sub(r'[^A-Za-z0-9._-]', '', custom_selector)[:63]
+            if custom:
+                r['custom_selector'] = custom
+                if custom not in selectors:
+                    selectors = [custom] + selectors
 
         def _try(selector):
             try:
@@ -249,24 +263,31 @@ class EmailAnalyzer:
                 return None
 
         with ThreadPoolExecutor(max_workers=8) as ex:
-            futures = {ex.submit(_try, s): s for s in COMMON_DKIM_SELECTORS}
+            futures = {ex.submit(_try, s): s for s in selectors}
             for fut in as_completed(futures):
                 res = fut.result()
                 if res:
                     r['selectors_found'].append(res)
                     r['valid'] = True
+                    if custom and res['selector'] == custom:
+                        r['custom_selector_found'] = True
                     if res['key_bits'] and res['key_bits'] < 1024:
                         r['issues'].append(
                             f'DKIM key "{res["selector"]}" is {res["key_bits"]} bits — '
                             'upgrade to ≥2048 bits'
                         )
 
+        if custom and not r['custom_selector_found']:
+            r['issues'].append(
+                f'Custom selector "{custom}" has no DKIM record for this domain'
+            )
+
         if r['valid']:
             r['score'] = 15
         else:
             r['issues'].append(
-                f'No DKIM key found for {len(COMMON_DKIM_SELECTORS)} common selectors — '
-                'DKIM may use a custom selector not checked here'
+                f'No DKIM key found for {len(selectors)} selector(s) checked — '
+                'DKIM may use a different custom selector'
             )
         return r
 

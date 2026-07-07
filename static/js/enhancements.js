@@ -129,6 +129,11 @@
     var host = ensureHeroBg();
     if (!host) return;
 
+    // Low-end device bail-out: on CPUs with ≤2 logical cores the animated WebGL
+    // shader can cause jank. The static CSS gradient on .hero-bg (injected just
+    // above) stays as the fallback — we simply skip the WebGL work below.
+    if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) { return; }
+
     var canvas = document.createElement('canvas');
     var gl = canvas.getContext('webgl', { alpha: false, antialias: false, powerPreference: 'low-power' }) ||
              canvas.getContext('experimental-webgl', { alpha: false });
