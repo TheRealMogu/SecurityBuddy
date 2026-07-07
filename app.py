@@ -319,9 +319,17 @@ _DB_FREE_ENDPOINTS = {"index", "static"}
 
 
 def init_db_once():
-    """Create tables + run column migrations exactly once per process."""
+    """Ensure the schema is ready, exactly once per process.
+
+    ``DB_AUTO_INIT=0`` skips the (relatively expensive) ``create_all`` bootstrap
+    on cold starts, but the lightweight, idempotent column migrations ALWAYS run.
+    A new deploy that adds a column must self-heal: without this, the first
+    INSERT touching the new column 500s forever (``column does not exist``) until
+    someone migrates by hand. The migrations are a fixed set of guarded ALTERs,
+    so the cold-start cost is small and paid once per process.
+    """
     global _db_initialized
-    if _db_initialized or os.environ.get("DB_AUTO_INIT", "1") == "0":
+    if _db_initialized:
         return
     with _db_init_lock:
         if _db_initialized:
@@ -329,10 +337,11 @@ def init_db_once():
         try:
             with app.app_context():
                 import models  # noqa: F401
-                db.create_all()
+                if os.environ.get("DB_AUTO_INIT", "1") != "0":
+                    db.create_all()
                 _run_column_migrations()
             _db_initialized = True
-            logging.info("Database tables created successfully")
+            logging.info("Database schema initialized")
         except Exception as e:
             # Leave the flag unset so a transient cold-DB failure can retry.
             logging.warning(f"Database initialization error: {e}")

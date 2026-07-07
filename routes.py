@@ -796,9 +796,18 @@ def cron_cleanup():
 
 @app.errorhandler(404)
 def not_found_error(error):
+    # API clients expect JSON, never an HTML page (which breaks response.json()).
+    if request.path.startswith('/api/'):
+        return jsonify(error='not_found', message='Resource not found'), 404
     return render_template('404.html'), 404
 
 @app.errorhandler(500)
 def internal_error(error):
     db.session.rollback()
+    if request.path.startswith('/api/'):
+        app.logger.exception('Unhandled API error on %s', request.path)
+        return jsonify(
+            error='internal_server_error',
+            message='The server hit an unexpected error. Please try again.',
+        ), 500
     return render_template('500.html'), 500
