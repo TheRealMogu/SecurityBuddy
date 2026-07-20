@@ -8,13 +8,23 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 - **Email Security** — MX records, SPF, DMARC, DKIM, 7 IP blacklists + 2 domain blacklists, PTR/rDNS, STARTTLS per mail server
 - **SEO Analyser** — meta tags, content quality, PageSpeed Insights (mobile + desktop), Open Graph, structured data
 - **Threat Intel Lookup** — check a domain, IP, URL or file hash against URLhaus and ThreatFox (free, no key needed), plus VirusTotal and AbuseIPDB when API keys are configured
-- **Security Guides** — built-in educational guides on web and email security
+- **Security Guides** — 10 in-depth educational guides on web, infrastructure and email security
 - **Newsletter Manager** — connect Gmail via OAuth and unsubscribe from newsletters (reads only `List-Unsubscribe` headers, never email content)
-- **Site Crawler** — crawl up to 100 pages and get a per-page SEO breakdown (www/apex link mismatch handled automatically)
-- **Password Generator** — cryptographically secure, configurable charsets, exclude look-alike characters (`0 O o 1 l I i |`)
+- **Password Generator** — cryptographically secure, configurable charsets, exclude look-alike characters (`0 O o 1 l I i |`), a passphrase mode, and a low-entropy warning
 - **REST API** — programmatic access with API keys, batch scanning and webhook callbacks
 - **Dashboard** — scan history for registered users
 - **No premium gates** — all features are free
+
+### Architecture
+
+The security scan runs as **asynchronous micro-scans** rather than one long synchronous
+request: the browser starts a scan (`POST /api/scan/init`), fires five independent worker
+requests in parallel (SSL/TLS, headers, ports & discovery, SEO, threat intel), and polls a
+status endpoint until every module completes — keeping each request well inside Vercel's
+60-second serverless function limit. All outgoing HTTP requests (scanner, SEO analyzer,
+threat intel) are routed through an SSRF-hardened wrapper that pins the validated IP and
+manually re-validates every redirect hop, closing the classic SSRF-via-redirect and
+DNS-rebinding bypasses. See [`DEVELOPMENT.md`](DEVELOPMENT.md) for the full design.
 
 ### Environment Variables
 
@@ -22,7 +32,7 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 |---|---|---|
 | `SESSION_SECRET` | ✅ | Flask session secret key |
 | `DATABASE_URL` | ✅ (prod) | PostgreSQL connection string — SQLite used locally |
-| `DB_AUTO_INIT` | — | Set to `0` **after the first deploy** to skip schema setup on every cold start (faster first request) |
+| `DB_AUTO_INIT` | — | Set to `0` **after the first deploy** to skip `db.create_all()` on cold starts (faster first request). Idempotent column migrations always run regardless, so schema changes self-heal automatically. |
 | `FLASK_DEBUG` | — | Set to `1` to enable debug mode |
 | `SENDGRID_API_KEY` | — | Email notifications |
 | `TWILIO_*` | — | SMS alerts |
@@ -35,9 +45,14 @@ A comprehensive web security and SEO scanning platform. Instant analysis for any
 ### Database Setup
 
 1. Create a PostgreSQL database ([Neon](https://neon.tech/) or [Supabase](https://supabase.com/) work well)
-2. Set `DATABASE_URL`
+2. Set `DATABASE_URL` to a **pooled** connection string (Neon's pooled endpoint, host contains
+   `-pooler`, or Supabase's transaction pooler on port 6543) — the app uses SQLAlchemy's
+   `NullPool` so each request opens its own connection rather than keeping a per-instance
+   pool, which avoids exhausting Postgres's connection limit across Vercel's ephemeral
+   Lambda instances, but only scales safely behind an external pooler
 3. Tables are created automatically on first run
-4. Once deployed and working, set `DB_AUTO_INIT=0` so cold starts skip the schema check
+4. Once deployed and working, set `DB_AUTO_INIT=0` so cold starts skip `db.create_all()`
+   (schema migrations still run automatically)
 
 > **Cold start tip:** runtime dependencies live in `requirements.txt`, kept intentionally
 > minimal — the smaller the lambda bundle, the faster the first request after idle.
