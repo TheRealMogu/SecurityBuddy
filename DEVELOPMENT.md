@@ -350,9 +350,12 @@ Rate limit: **200 req/h** per tutte le chiavi.
 
 ## API Micro-Scan Asincrona
 
-Base URL: `/api/scan/` (blueprint `api_scan.py`, non richiede API key — autenticato via
-sessione/cookie CSRF-exempt come tutto il namespace `/api/`). Usata dal frontend per il
-flusso descritto in "Architettura Micro-Scan Asincrona" qui sopra:
+Base URL: `/api/scan/` (blueprint `api_scan.py`). **Pubblica e anonima**: nessuna route ha
+`login_required` né richiede una API key — chiunque può avviare uno scan. `current_user` viene
+letto solo per attaccare opzionalmente lo scan a un utente loggato (altrimenti resta uno scan
+guest, tracciato in sessione); l'unico controllo abuso è il rate limit per IP. Come tutto il
+namespace `/api/` è CSRF-exempt. Usata dal frontend per il flusso descritto in "Architettura
+Micro-Scan Asincrona" qui sopra:
 
 ```
 POST /api/scan/init                 # Valida target, crea ScanResult, ritorna public_id
