@@ -35,6 +35,15 @@ dependencies = [
     "cryptography>=42.0.0",
 ]
 
+[project.optional-dependencies]
+# Development only — never add these to requirements.txt, which is the Vercel
+# deploy manifest. Nothing on the server touches PDFs: the PDF tools are
+# entirely client-side, and pypdf is here purely so tools/pdf_compare.py can
+# verify their output with a parser independent of pdf-lib.
+dev = [
+    "pypdf>=5.1.0",
+]
+
 [project.scripts]
 securitybuddy = "cli:main"
 

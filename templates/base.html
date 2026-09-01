@@ -110,6 +110,10 @@
                                href="{{ url_for('password_generator') }}">Password</a>
                         </li>
                         <li>
+                            <a class="nav-link{% if request.endpoint == 'pdf_tools' %} nav-link-active{% endif %}"
+                               href="{{ url_for('pdf_tools') }}">PDF</a>
+                        </li>
+                        <li>
                             <a class="nav-link{% if request.endpoint in ['guides', 'guide'] %} nav-link-active{% endif %}"
                                href="{{ url_for('guides') }}">Guides</a>
                         </li>

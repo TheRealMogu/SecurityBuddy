@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "Pinned third-party JavaScript, committed to the repo instead of loaded from a CDN.",
+    "Rationale: keeps the CSP at script-src 'self' (no widening), and stops a third party",
+    "from learning that a user opened a PDF. The cost is that these files do NOT update",
+    "themselves — they parse untrusted input, so they must be reviewed on a schedule.",
+    "Verify with:  python3 tools/verify_vendor.py",
+    "Update with:  see DEVELOPMENT.md -> 'Dipendenze vendorizzate'"
+  ],
+  "packages": [
+    {
+      "name": "pdf-lib",
+      "version": "1.17.1",
+      "published": "2021-11-06",
+      "pinned_on": "2026-09-01",
+      "license": "MIT",
+      "homepage": "https://github.com/Hopding/pdf-lib",
+      "registry": "https://registry.npmjs.org/pdf-lib",
+      "tarball": "https://registry.npmjs.org/pdf-lib/-/pdf-lib-1.17.1.tgz",
+      "tarball_integrity": "sha512-V/mpyJAoTsN4cnP31vc0wfNA1+p20evqqnap0KLoRUN0Yk/p3wN52DOEsL4oBFcLdb76hlpKPtzJIgo67j/XLw==",
+      "role": "PDF structural manipulation (read + write). Used for every operation that produces an output file.",
+      "files": [
+        {
+          "path": "pdf-lib/pdf-lib.min.js",
+          "source_in_tarball": "package/dist/pdf-lib.min.js",
+          "sha256": "0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f"
+        }
+      ],
+      "notes": [
+        "1.17.1 is the newest published release; upstream has been quiet since 2021.",
+        "Because it is unmaintained AND parses untrusted files, all parsing happens in the",
+        "browser tab only — there is no server-side path that feeds it user input."
+      ]
+    },
+    {
+      "name": "pdfjs-dist",
+      "version": "6.3.289",
+      "pinned_on": "2026-09-01",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/mozilla/pdf.js",
+      "registry": "https://registry.npmjs.org/pdfjs-dist",
+      "tarball": "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.3.289.tgz",
+      "tarball_integrity": "sha512-ZHjSVpDa3D6izMq8/04lvkhkATUmL9px6ChPaXc1k6nU2Mrhlg1/7F0bdUqCwUjw3NsPTfPZsMDUU6ZIcRaeQw==",
+      "role": "Thumbnail rendering only. Never participates in writing an output file.",
+      "files": [
+        {
+          "path": "pdfjs/pdf.min.mjs",
+          "source_in_tarball": "package/legacy/build/pdf.min.mjs",
+          "sha256": "f401927e692efc7735e0cd528c490d0dd31b7f0972c122b7040df805be45cce4"
+        },
+        {
+          "path": "pdfjs/pdf.worker.min.mjs",
+          "source_in_tarball": "package/legacy/build/pdf.worker.min.mjs",
+          "sha256": "a33cfe728c584fdba4fcc1fd54bcdc2f9f2f13889ddbb5b2bd1d0f8cbe49b84e"
+        }
+      ],
+      "notes": [
+        "The 'legacy' build is used: same code, transpiled for a wider browser baseline.",
+        "ES modules, so no bundler and no build step are required.",
+        "Worker is loaded same-origin from /static/vendor/pdfjs/pdf.worker.min.mjs, which",
+        "keeps pdf.js off its cross-origin blob: fallback (see DEVELOPMENT.md)."
+      ]
+    }
+  ]
+}

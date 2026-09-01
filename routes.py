@@ -431,6 +431,14 @@ def password_generator():
     return render_template('password_generator.html')
 
 
+@app.route('/tools/pdf')
+def pdf_tools():
+    """Client-side PDF tools. Files are opened with the File API and written back
+    out as a Blob — nothing is uploaded, stored or logged. There is deliberately
+    no server-side counterpart to this route."""
+    return render_template('pdf_tools.html')
+
+
 @app.route('/privacy')
 def privacy():
     """GDPR Art. 13 privacy notice."""
@@ -479,6 +487,7 @@ def sitemap():
         (_abs('email_scan'), '0.6'),
         (_abs('threat_scan'), '0.6'),
         (_abs('password_generator'), '0.6'),
+        (_abs('pdf_tools'), '0.6'),
         (_abs('privacy'), '0.3'),
     ]
     pages += [(_abs('guide', slug=g['slug']), '0.7') for g in GUIDES]
