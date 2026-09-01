@@ -59,6 +59,10 @@
                                 role="tab" aria-selected="false">Reorder</button>
                         <button type="button" class="pdf-tab" data-tool="rotate"
                                 role="tab" aria-selected="false">Rotate</button>
+                        <button type="button" class="pdf-tab" data-tool="fill"
+                                role="tab" aria-selected="false">Fill form</button>
+                        <button type="button" class="pdf-tab" data-tool="text"
+                                role="tab" aria-selected="false">Add text</button>
                     </div>
                     <div id="pdfToolPanel" class="pdf-panel"></div>
                     <div id="pdfError" hidden class="pdf-notice pdf-notice-block"
@@ -126,6 +130,38 @@
                     color:var(--color-text-muted); flex:none; line-height:1; }
     .pdf-icon-btn:hover:not(:disabled) { border-color:var(--color-primary); color:var(--color-primary); }
     .pdf-icon-btn:disabled { opacity:.35; cursor:default; }
+    .pdf-file-controls { display:flex; gap:.3rem; flex:none; }
+
+    /* Full-screen viewer */
+    .pdf-zoom-btn { position:absolute; top:.3rem; right:.3rem; z-index:2; width:24px; height:24px;
+                    border:1px solid var(--color-border, #d6d6d0); border-radius: var(--radius-sm);
+                    background:rgba(255,255,255,.92); cursor:pointer; font-size:.72rem;
+                    line-height:1; color:var(--color-text-muted); opacity:0; transition:opacity .12s; }
+    .pdf-page:hover .pdf-zoom-btn, .pdf-zoom-btn:focus-visible { opacity:1; }
+    .pdf-zoom-btn:hover { border-color:var(--color-primary); color:var(--color-primary); }
+    /* Touch devices have no hover, so the control must always be reachable. */
+    @media (hover: none) { .pdf-zoom-btn { opacity:1; } }
+
+    .pdf-viewer { position:fixed; inset:0; z-index:2000; display:flex; flex-direction:column;
+                  background:rgba(20,20,18,.93); backdrop-filter:blur(6px); }
+    .pdf-viewer[hidden] { display:none; }
+    .pdf-viewer-bar { display:flex; align-items:center; gap:.75rem; padding:.7rem 1rem;
+                      color:#f2f1ec; font-size:.85rem; flex:none; flex-wrap:wrap; }
+    .pdf-viewer-title { font-weight:700; }
+    .pdf-viewer-meta { color:rgba(242,241,236,.7); font-size:.8rem; }
+    .pdf-viewer-spacer { flex:1; }
+    .pdf-viewer-count { font-variant-numeric:tabular-nums; min-width:4.5rem; text-align:center; }
+    .pdf-viewer-btn { width:34px; height:34px; border-radius: var(--radius-sm); cursor:pointer;
+                      border:1px solid rgba(242,241,236,.35); background:transparent;
+                      color:#f2f1ec; font-size:.9rem; line-height:1; }
+    .pdf-viewer-btn:hover:not(:disabled) { background:rgba(242,241,236,.15); }
+    .pdf-viewer-btn:disabled { opacity:.3; cursor:default; }
+    .pdf-viewer-close { margin-left:.5rem; }
+    .pdf-viewer-stage { flex:1; display:flex; align-items:center; justify-content:center;
+                        min-height:0; padding:0 1rem; }
+    .pdf-viewer-stage canvas { background:#fff; box-shadow:0 8px 40px rgba(0,0,0,.5); max-width:100%; }
+    .pdf-viewer-hint { text-align:center; color:rgba(242,241,236,.5); font-size:.75rem;
+                       padding:.6rem 1rem .9rem; margin:0; flex:none; }
 
     .pdf-preflight { display:flex; flex-direction:column; gap:.6rem; margin-top:1rem; }
     .pdf-notice { border-radius: var(--radius-md); padding:.85rem 1rem; border-left:4px solid; }
@@ -181,6 +217,56 @@
     .pdf-split-row { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; font-size:.85rem; }
     .pdf-split-row input { padding:.4rem .6rem; border-radius: var(--radius-sm);
                            border:1px solid var(--color-border, #d6d6d0); min-width:170px; }
+
+    .pdf-fields { display:flex; flex-direction:column; gap:.9rem; margin-bottom:1rem; }
+    .pdf-field { display:grid; grid-template-columns:1fr; gap:.25rem;
+                 padding:.75rem .85rem; border:1px solid var(--color-border, #e3e3de);
+                 border-radius: var(--radius-md); border-left-width:3px; }
+    .pdf-field-warn  { border-left-color:#b7791f; background:rgba(183,121,31,.05); }
+    .pdf-field-block { border-left-color:#c0392b; background:rgba(192,57,43,.05); }
+    .pdf-field-label { font-size:.85rem; font-weight:700; }
+    .pdf-field-meta { font-size:.75rem; color:var(--color-text-muted);
+                      font-variant-numeric:tabular-nums; }
+    .pdf-field-input { margin-top:.35rem; padding:.45rem .6rem; font-size:.9rem;
+                       border:1px solid var(--color-border, #d6d6d0);
+                       border-radius: var(--radius-sm); width:100%; }
+    .pdf-field-input:focus { outline:2px solid var(--color-primary); outline-offset:1px; }
+    .pdf-field-note { display:flex; flex-direction:column; gap:.15rem; margin-top:.45rem;
+                      font-size:.8rem; line-height:1.5; color:var(--color-text-muted); }
+    .pdf-field-note strong { color:#b7791f; font-size:.8rem; }
+    .pdf-field-block .pdf-field-note strong { color:#c0392b; }
+
+    .pdf-small-btn-active { border-color:var(--color-primary); color:var(--color-primary);
+                            background:var(--color-primary-dim); }
+
+    .pdf-place-stage { position:relative; display:inline-block; margin:.25rem 0 1rem;
+                       border:1px solid var(--color-border, #e3e3de); border-radius: var(--radius-sm);
+                       max-width:100%; }
+    .pdf-place-canvas { display:block; cursor:crosshair; background:#fff; max-width:100%; }
+    .pdf-place-markers { position:absolute; inset:0; pointer-events:none; }
+    .pdf-place-marker { position:absolute; transform:translate(-50%,-50%);
+                        min-width:17px; height:17px; padding:0 3px; border-radius: var(--radius-full);
+                        background:var(--color-primary); color:#fff; font-size:.65rem;
+                        font-weight:700; line-height:17px; text-align:center;
+                        box-shadow:0 0 0 2px rgba(255,255,255,.85); }
+    .pdf-place-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+
+    .pdf-correct { margin-top:.55rem; display:flex; flex-direction:column; gap:.4rem; }
+    .pdf-origin { align-self:flex-start; font-size:.68rem; font-weight:700;
+                  text-transform:uppercase; letter-spacing:.04em;
+                  padding:.12rem .45rem; border-radius: var(--radius-full);
+                  border:1px solid currentColor; }
+    .pdf-origin-ok   { color:var(--color-primary); }
+    .pdf-origin-warn { color:#b7791f; }
+    .pdf-correct-row { display:flex; flex-wrap:wrap; align-items:flex-end; gap:.65rem; }
+    .pdf-correct-row label { display:flex; flex-direction:column; gap:.15rem;
+                             font-size:.75rem; color:var(--color-text-muted); }
+    .pdf-correct-num { width:88px; padding:.32rem .45rem; font-size:.85rem;
+                       border:1px solid var(--color-border, #d6d6d0); border-radius: var(--radius-sm); }
+    .pdf-correct-select { padding:.32rem .45rem; font-size:.85rem;
+                          border:1px solid var(--color-border, #d6d6d0); border-radius: var(--radius-sm); }
+    .pdf-correct-summary { margin:.15rem 0 0; font-size:.8rem; font-weight:600; }
+    .pdf-correct-note { margin:0; font-size:.78rem; line-height:1.5; color:var(--color-text-muted); }
 
     .pdf-run { margin-top:.5rem; }
     .pdf-run:disabled { opacity:.5; cursor:not-allowed; }
