@@ -104,6 +104,7 @@ const N = {
     Widget: PDFName.of('Widget'),
     XFA: PDFName.of('XFA'),
     A: PDFName.of('A'),
+    AA: PDFName.of('AA'),
     D: PDFName.of('D'),
     JavaScript: PDFName.of('JavaScript'),
     FT: PDFName.of('FT'),
@@ -121,11 +122,16 @@ export function createReport() {
         preserved: [],  // carried across unchanged
         rebuilt: [],    // carried across, but restructured (and why)
         dropped: [],    // could NOT be carried across (and why)
-        blocked: [],    // reasons the operation should not run at all
+        blocked: [],    // the operation must not run at all
+        confirm: [],    // the user must be told BEFORE the operation runs
     };
 }
 
-const push = (list, item, detail) => list.push({ item, detail });
+/* `prominent` marks an entry the UI must surface on its own rather than leaving
+ * inside a collapsed report — used where the output differs from the input in a
+ * way the user would otherwise only discover later. */
+const push = (list, item, detail, opts) =>
+    list.push({ item, detail, prominent: !!(opts && opts.prominent) });
 
 /* ── Loading ─────────────────────────────────────────────────────────────── */
 
@@ -138,23 +144,11 @@ const push = (list, item, detail) => list.push({ item, detail });
  * tool, and this is the point where that is enforced.
  */
 export async function loadDocument(bytes, label) {
+    let doc;
     try {
-        const doc = await PDFDocument.load(bytes, LOAD_OPTIONS);
-        return { ok: true, doc, label };
+        doc = await PDFDocument.load(bytes, LOAD_OPTIONS);
     } catch (err) {
-        if (err instanceof EncryptedPDFError || err?.name === 'EncryptedPDFError') {
-            return {
-                ok: false,
-                label,
-                reason: 'encrypted',
-                message:
-                    'This PDF is encrypted. Security Buddy does not open encrypted ' +
-                    'PDFs and does not remove PDF passwords or permissions — ' +
-                    'stripping a document\'s protection is not something a security ' +
-                    'tool should offer. Remove the protection in the application ' +
-                    'that applied it, then reopen the file here.',
-            };
-        }
+        if (isEncryptedError(err, bytes)) return encryptedResult(label);
         return {
             ok: false,
             label,
@@ -164,6 +158,56 @@ export async function loadDocument(bytes, label) {
                 'truncated, or not a PDF at all. Details: ' + (err?.message || String(err)),
         };
     }
+
+    // Belt and braces: if a build of pdf-lib ever loads an encrypted document
+    // instead of throwing, the output would be silently corrupt. Refuse here too.
+    if (doc.context.trailerInfo?.Encrypt) return encryptedResult(label);
+
+    return { ok: true, doc, label };
+}
+
+function encryptedResult(label) {
+    return {
+        ok: false,
+        label,
+        reason: 'encrypted',
+        message:
+            'This PDF is encrypted. Security Buddy does not open encrypted ' +
+            'PDFs and does not remove PDF passwords or permissions — stripping ' +
+            'a document\'s protection is not something a security tool should ' +
+            'offer. Remove the protection in the application that applied it, ' +
+            'then open the file here.',
+    };
+}
+
+/* Deciding whether a load failure was "encrypted" or "corrupt".
+ *
+ * `instanceof EncryptedPDFError` does not work: pdf-lib's minified UMD bundle
+ * loses the prototype chain of its custom errors, so what arrives is a plain
+ * Error whose .name is "Error". Relying on either check meant every
+ * password-protected PDF was reported to the user as a corrupt file — the exact
+ * confusing message this was written to avoid.
+ *
+ * So: try the class, then the name, then pdf-lib's own wording, then look for
+ * an /Encrypt entry in the bytes. The last one is a heuristic, but it is only
+ * consulted once the load has ALREADY failed, where "encrypted" is a far more
+ * likely explanation than "corrupt" and is the more useful thing to say.
+ */
+function isEncryptedError(err, bytes) {
+    if (err instanceof EncryptedPDFError) return true;
+    if (err?.name === 'EncryptedPDFError') return true;
+    if (/\bis encrypted\b/i.test(String(err?.message ?? ''))) return true;
+    return hasEncryptEntry(bytes);
+}
+
+function hasEncryptEntry(bytes) {
+    if (!bytes || typeof bytes.length !== 'number') return false;
+    // The trailer lives at the end of the file; scan a generous tail of it.
+    const tail = bytes.subarray ? bytes.subarray(Math.max(0, bytes.length - 8192))
+        : bytes.slice(Math.max(0, bytes.length - 8192));
+    let text = '';
+    for (let i = 0; i < tail.length; i += 1) text += String.fromCharCode(tail[i]);
+    return text.includes('/Encrypt');
 }
 
 /* ── Inspection ──────────────────────────────────────────────────────────── */
@@ -195,7 +239,44 @@ export function inspectDocument(doc) {
         hasPageLabels: !!cat.get(N.PageLabels),
         hasJavaScript: !!names?.get(N.JavaScript),
         hasOpenAction: !!cat.get(N.OpenAction),
+        javaScript: findJavaScript(doc),
     };
+}
+
+/* Where executable JavaScript hides in a PDF.
+ *
+ * Three places, and a document can use any of them:
+ *   - the /Names /JavaScript name tree, which runs on open;
+ *   - an /OpenAction whose action is /S /JavaScript, which also runs on open;
+ *   - /AA, the additional-actions dictionary, on the catalog (document events
+ *     such as will-close and will-print) or on a page (open/close).
+ *
+ * Reported before an operation runs, not afterwards: a user handed a PDF that
+ * executes code on open should hear about it while deciding what to do with the
+ * file, not in a summary after they have already downloaded the result. */
+function findJavaScript(doc) {
+    const cat = doc.catalog;
+    const found = [];
+
+    const names = cat.lookupMaybe(N.Names, PDFDict);
+    if (names?.get(N.JavaScript)) found.push('a document-level JavaScript name tree (runs on open)');
+
+    const openAction = cat.lookup(N.OpenAction);
+    if (openAction instanceof PDFDict && openAction.get(N.S) === PDFName.of('JavaScript')) {
+        found.push('an /OpenAction that executes JavaScript when the file is opened');
+    }
+
+    if (cat.get(N.AA)) found.push('document-level additional actions (/AA)');
+
+    let pagesWithActions = 0;
+    for (const page of doc.getPages()) {
+        if (page.node.get(N.AA)) pagesWithActions += 1;
+    }
+    if (pagesWithActions) {
+        found.push(`page-level additional actions (/AA) on ${pagesWithActions} page(s)`);
+    }
+
+    return found;
 }
 
 function countSignatureFields(doc, acroForm) {
@@ -241,6 +322,17 @@ export function assessOperation(inspection, report, label) {
             `modification — including a lossless one — invalidates it. Rather than ` +
             `hand back a document with a broken signature, this tool refuses to ` +
             `modify signed files.`);
+    }
+
+    if (inspection.javaScript.length) {
+        push(report.confirm, 'This PDF contains executable JavaScript',
+            `${where}this PDF contains ${inspection.javaScript.join(', ')}. ` +
+            `A PDF that runs code when it is opened is worth knowing about ` +
+            `regardless of what you do with it here — it is a common delivery ` +
+            `mechanism for malicious documents, though plenty of legitimate ` +
+            `forms use it too. This tool does not carry that code into the ` +
+            `output. Continue only if you know where the file came from and ` +
+            `trust it; the pages themselves are copied unchanged either way.`);
     }
 
     if (inspection.hasStructTree) {
@@ -594,6 +686,58 @@ export function createCopier(srcDoc, destDoc, correspondence, srcPageTags, keptP
         },
         get dangling() { return dangling; },
     };
+}
+
+/* Collect the optional-content groups the SELECTED pages actually use.
+ *
+ * Same lesson as the page leak: decide from the source side, from what was
+ * chosen, never from what the copier happened to touch. Without this,
+ * /OCProperties keeps listing every layer in the original document — including
+ * layers belonging to pages that were not selected. No page content escapes,
+ * but the layer NAMES do, and a layer called "Draft pricing" or "Confidential
+ * annex" tells a reader about material they were not given.
+ *
+ * Back-pointers (/Parent, /P) are skipped: following them walks out of the page
+ * into the form-field tree and from there into other pages' resources, which is
+ * exactly the path that leaked whole pages before.
+ */
+export function collectOptionalContentInUse(doc, keptPageTags) {
+    const used = new Set();
+    const seen = new Set();
+    const OCG = PDFName.of('OCG');
+    const OCMD = PDFName.of('OCMD');
+
+    const visitRef = (ref) => {
+        if (seen.has(ref.tag)) return;
+        seen.add(ref.tag);
+        const obj = doc.context.lookup(ref);
+        if (obj instanceof PDFDict) {
+            const type = obj.get(N.Type);
+            if (type === OCG || type === OCMD) used.add(ref.tag);
+        }
+        walk(obj);
+    };
+
+    const walk = (obj) => {
+        if (obj instanceof PDFStream) return walk(obj.dict);
+        if (obj instanceof PDFDict) {
+            for (const [key, value] of obj.entries()) {
+                if (key === N.Parent || key === N.P) continue;
+                if (value instanceof PDFRef) visitRef(value); else walk(value);
+            }
+            return;
+        }
+        if (obj instanceof PDFArray) {
+            for (const value of obj.asArray()) {
+                if (value instanceof PDFRef) visitRef(value); else walk(value);
+            }
+        }
+    };
+
+    for (const page of doc.getPages()) {
+        if (keptPageTags.has(page.ref.tag)) walk(page.node);
+    }
+    return used;
 }
 
 /* Index every annotation by the page it sits on.

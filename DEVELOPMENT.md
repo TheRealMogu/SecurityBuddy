@@ -31,9 +31,13 @@ notification_system.py  # Email alert (SendGrid/Twilio)
 gmail_manager.py        # GmailManager — OAuth Google + discovery newsletter (solo header)
 cache_manager.py        # Cache risultati
 cli.py                  # CLI (entry point: securitybuddy)
+static/js/pdf/          # PDF tools client-side: preserve/catalog/operations
+static/vendor/          # pdf-lib + pdf.js vendorizzate e pinnate (VENDOR.json)
+tools/pdf_compare.py    # Verificatore di fedelta PDF (pypdf, dev-only)
+tools/verify_vendor.py  # Integrita delle librerie vendorizzate
 ```
 
-> `premium_features.py`, `pdf_generator.py` e `user_guide_system.py` sono presenti nel repo
+> `premium_features.py` e `user_guide_system.py` sono presenti nel repo
 > ma non usati — le funzionalità premium sono state rimosse (nessun gate `is_premium`).
 
 ## Come avviare in locale
@@ -427,6 +431,260 @@ sender). Scope minimo: `gmail.readonly`.
   aperto in una nuova scheda dal browser.
 - Richiede `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. In Google Cloud Console funziona in
   modalità "testing" aggiungendo il proprio account come test user (nessuna verifica completa).
+
+## PDF Tools (client-side)
+
+`/tools/pdf` è un set di operazioni **strutturali** sui PDF che gira interamente nel
+browser. Non esiste una controparte server: nessun endpoint di upload, nessuno storage,
+nessun log dei contenuti. Il file entra dalla File API ed esce come Blob.
+
+> `pdf_generator.py` (reportlab, server-side) è stato **cancellato**: era codice morto e
+> creava ambiguità sul naming. Il PDF in questo repo è solo lato client.
+
+### Principio di fedeltà
+
+Un'operazione che non può essere fatta preservando il documento non viene offerta. In
+concreto: **mai rasterizzare**, **mai ridisegnare una pagina**, **mai appiattire**
+annotazioni, campi form o layer. Le pagine si copiano con `copyPages` dal documento
+originale; i content stream passano byte per byte (verificato, non assunto — vedi
+`tools/pdf_compare.py`). L'unica cosa che la rotazione cambia è l'attributo `/Rotate`,
+che è un numero, non un pixel.
+
+Ciò che non è preservabile viene **elencato all'utente**, non lasciato cadere in silenzio.
+
+### File
+
+```
+templates/pdf_tools.html      # Pagina + bootstrap delle librerie
+static/js/pdf/pdflib.js       # Unico punto di contatto col global PDFLib + opzioni load/save
+static/js/pdf/preserve.js     # Nucleo: rifiuti, ispezione, mappa di corrispondenza, copier, GC
+static/js/pdf/catalog.js      # Preservazione delle strutture del catalogo
+static/js/pdf/operations.js   # Unione, divisione/estrazione, riordino, rotazione
+tools/pdf_compare.py          # Verificatore (pypdf, dev-only)
+tests/pdf/                    # Test sintetici (node) + runner sui fixture
+```
+
+### Due opzioni di pdf-lib che sono requisiti, non preferenze
+
+| Opzione | Perché |
+|---|---|
+| `save({ updateFieldAppearances: false })` | Di default pdf-lib **rigenera l'appearance stream di ogni campo form** usando i propri font: cambia silenziosamente il rendering di un modulo compilato. |
+| `load({ updateMetadata: false })` | Di default pdf-lib riscrive `ModDate` e `Producer` al caricamento, sovrascrivendo l'identità del documento prima che possiamo copiarla. |
+
+`ignoreEncryption` è **deliberatamente assente**. Non decifra: sopprime solo il controllo e
+restituisce un documento con stringhe e stream ancora cifrati, che viene salvato come file
+corrotto ma apribile. La rimozione di password e permessi **non è una funzionalità di questo
+tool e non lo sarà**: togliere le protezioni a un documento non è una cosa che un sito di
+sicurezza debba offrire.
+
+### Cosa `copyPages` lascia indietro
+
+`copyPages` copia *pagine*, non *documenti*. Tutto ciò che vive nel catalogo resta al suo
+posto, e pdf-lib non avvisa. `catalog.js` riporta a mano: `/Info`, XMP, outline/bookmark,
+`/AcroForm`, destinazioni nominate, allegati, page label, `/OCProperties`, attributi
+documento.
+
+**`/StructTreeRoot` (PDF taggato) non è preservabile** con pdf-lib: è incrociato con i
+marked-content ID dentro i content stream e la libreria non li rimappa. L'output rende in
+modo identico ma perde la marcatura di accessibilità. È un limite dichiarato, non una
+scorciatoia — e viene riportato all'utente su ogni documento taggato.
+
+### Tre trappole trovate testando, e come sono chiuse
+
+**1. Doppia copia.** Gli oggetti raggiungibili da una pagina sono *già* stati copiati da
+`copyPages` con nuovi numeri. Copiare a fondo `/AcroForm` sopra ci costruisce un secondo
+insieme parallelo di campi: la pagina mostra il widget A, il form punta al widget B, i campi
+si vedono e non si compilano. Stessa trappola per gli OCG. `buildCorrespondence()` cammina
+in parallelo sul grafo sorgente e su quello destinazione e registra quale ref è diventato
+quale; ogni copia successiva consulta prima quella mappa.
+
+**2. Pagine non selezionate nell'output.** `copyPages` passa al proprio copier la pagina già
+dereferenziata, quindi il ref della pagina non entra mai nella cache. Da lì il copier cammina
+sul `/Parent` di un widget, attraversa l'albero dei campi, entra nel `/P` di un widget
+fratello e copia le pagine su cui vivono *quelli*. Misurato: estraendo le pagine 1–2 di un
+modulo di sei pagine, l'output conteneva una copia completa della pagina 3, content stream
+incluso — invisibile in ogni viewer, recuperabile da qualsiasi parser.
+
+**3. Nomi dei layer delle pagine escluse.** Stessa famiglia, percorso diverso:
+`/OCProperties` continuava a elencare i layer di tutto il documento. Nessun contenuto di
+pagina usciva, ma i *nomi* sì, e un layer chiamato "Bozza prezzi" racconta di materiale che
+il destinatario non ha ricevuto.
+
+La regola che chiude tutte e tre: **l'unica autorità su "questa pagina è stata tenuta?" è
+l'insieme delle pagine selezionate.** La mappa di corrispondenza risponde a "pdf-lib ha
+toccato questo oggetto", che è un'altra domanda. In più, prima del salvataggio gira un
+mark-and-sweep dal trailer (`garbageCollect()`): pdf-lib scrive ogni oggetto del contesto,
+raggiungibile o no, quindi qualunque cosa il copier abbia tirato dentro per sbaglio va
+rimossa esplicitamente. **È un controllo di riservatezza, non un'ottimizzazione.**
+
+### Segnalazioni pre-flight
+
+Prima di produrre qualsiasi output, l'utente viene avvisato. `report.blocked` ferma
+l'operazione, `report.confirm` richiede una conferma esplicita.
+
+| Caso | Esito |
+|---|---|
+| Cifrato | Rifiutato al caricamento, con spiegazione |
+| Form XFA dinamico | Bloccato — qualsiasi modifica strutturale lo invalida |
+| Firma digitale | Bloccato — la firma copre i byte del file, ogni modifica la invalida |
+| **JavaScript eseguibile** | **Conferma richiesta** — cercato in `/Names /JavaScript`, in un `/OpenAction` con `/S /JavaScript` e nelle additional actions `/AA` di documento e pagina |
+| PDF taggato | Avviso: la marcatura di accessibilità andrà persa |
+
+Il JavaScript non viene mai trasportato nell'output: è codice scritto contro la struttura
+originale, e trapiantarlo in un documento riordinato è il default sbagliato. Ma su un sito
+di sicurezza vale la pena **dirlo**, non solo gestirlo: un PDF che esegue codice all'apertura
+è un veicolo comune di documenti malevoli, anche se molti moduli legittimi lo usano.
+
+### Dipendenze vendorizzate
+
+| Libreria | Versione | Ruolo |
+|---|---|---|
+| pdf-lib | 1.17.1 (MIT) | Manipolazione: legge e scrive ogni file prodotto |
+| pdfjs-dist | 6.3.289 legacy ESM (Apache-2.0) | Solo rendering delle anteprime; non partecipa mai alla scrittura |
+
+Stanno in `static/vendor/`, servite da `@vercel/static`: **non entrano nel bundle della
+lambda Python**, quindi non pesano sul cold start. Il self-hosting tiene la CSP a
+`script-src 'self'` senza allargamenti e impedisce a una terza parte di sapere che un utente
+ha aperto un PDF.
+
+Il worker di pdf.js è puntato a un URL **same-origin**. Serve: pdf.js ricade su un worker da
+`blob:` solo quando `workerSrc` è cross-origin (`PDFWorker#initialize` controlla
+`_isSameOrigin` prima), quindi same-origin significa che quel ramo non viene mai preso e
+`default-src 'self'` basta.
+
+**Verificare:**
+
+```bash
+python3 tools/verify_vendor.py                   # SHA-256 di ogni file vs VENDOR.json
+python3 tools/verify_vendor.py --check-registry  # + segnala versioni upstream più recenti
+```
+
+**Aggiornare** (il vendoring toglie gli aggiornamenti automatici a librerie che parsano file
+non fidati: la staleness qui è una questione di sicurezza, non di manutenzione):
+
+1. Leggere il changelog upstream, in particolare le voci di sicurezza.
+2. Scaricare il tarball dal registry npm e **verificare l'integrity sha512** dichiarato dal
+   registry prima di estrarre.
+3. Copiare i file elencati in `VENDOR.json` alla voce `source_in_tarball`.
+4. Aggiornare in `VENDOR.json`: `version`, `pinned_on`, `tarball`, `tarball_integrity` e lo
+   `sha256` di ogni file.
+5. `python3 tools/verify_vendor.py` deve passare.
+6. Rilanciare `tests/pdf/` e `tools/pdf_compare.py` sui fixture: un aggiornamento di pdf-lib
+   può cambiare il comportamento del copier, che è esattamente dove stavano i tre difetti
+   sopra.
+
+### Verifica: `tools/pdf_compare.py`
+
+Dipende da **pypdf**, dipendenza **solo di sviluppo** (`pyproject.toml`, mai
+`requirements.txt`): nulla lato server tocca i PDF. pypdf è deliberatamente
+un'implementazione *indipendente* — verificare l'output di pdf-lib con pdf-lib
+condividerebbe i suoi punti ciechi e farebbe passare un file rotto.
+
+Riporta: numero pagine, dimensioni di ogni pagina in punti, font incorporati con nome,
+sottotipo e flag di subset, numero annotazioni, numero e nomi dei campi form, metadati. Più
+i due hash che colgono ciò che i nomi non colgono:
+
+- **SHA-256 del content stream di ogni pagina** — byte grezzi, ancora codificati. Decodificare
+  maschererebbe una ricompressione.
+- **SHA-256 di ogni programma di font incorporato** (`/FontFile`, `/FontFile2`, `/FontFile3`).
+  Nome e flag di subset possono restare identici mentre i byte cambiano.
+
+**Criterio d'uscita del blocco 1: questi hash devono coincidere tra input e output.** Se
+differiscono, l'operazione è sbagliata anche se il PDF si apre e sembra a posto.
+
+```bash
+python3 tools/pdf_compare.py FILE                        # descrivi
+python3 tools/pdf_compare.py IN OUT --pages 3,1,0        # confronta con mappatura pagine
+node tests/pdf/run_fixtures.mjs                          # gira le 4 operazioni sui fixture
+python3 tools/pdf_compare.py --manifest tests/fixtures/pdf/out/manifest.json
+```
+
+Il confronto dei font usa gli **insiemi** di hash distinti, non le liste: un documento può
+legittimamente incorporare lo stesso programma più volte (una copia per pagina è comune nei
+file assemblati pagina per pagina), e unire due documenti che portano lo stesso font dà due
+copie. Cambia il conteggio, non i byte. Un programma i cui **byte** cambiano, o che sparisce,
+fallisce comunque.
+
+I metadati sono confrontati in **entrambe le direzioni**: un metadato *aggiunto*
+dall'operazione conta quanto uno perso. Un tool che si scrive il proprio Title o Producer
+sopra quello del documento ne sta riscrivendo l'identità.
+
+### Fixture PDF per i test
+
+Cinque documenti in `tests/fixtures/pdf/` (in `.gitignore` — **non committarli**, e non usare
+documenti di lavoro reali). Ricette per ricrearli da zero:
+
+| # | File | Cosa mette alla prova |
+|---|---|---|
+| 1 | `01-word-export.pdf` | Font sottoinsieme reali, gerarchia di titoli, PDF taggato |
+| 2 | `02-fillable-form.pdf` | AcroForm con widget su pagine non contigue, outline |
+| 3 | `03-scanned-ocr.pdf` | Immagine a piena pagina + strato di testo OCR invisibile |
+| 4 | `04-accented-cjk.pdf` | Accentate europee e CJK, subset multi-byte |
+| 5 | `05-password-protected.pdf` | Deve essere **rifiutato**, non elaborato |
+
+**1 — Export da word processor.** In Word: un documento di 3+ pagine con titoli, grassetto,
+corsivo e una tabella → *Salva come* / *Esporta* in PDF. Senza Word, con LibreOffice:
+
+```bash
+soffice --headless --convert-to pdf --outdir tests/fixtures/pdf documento.docx
+```
+
+Serve `libreoffice-writer` installato (`libreoffice-core` da solo non ha i filtri documento).
+Un export LibreOffice non è identico a uno di Word — differiscono nella struttura dei font e
+nella marcatura — quindi se stai indagando un bug legato a Word, usa Word davvero.
+
+**2 — Modulo compilabile.** Un modulo pubblico scaricabile (per esempio dal sito
+dell'Agenzia delle Entrate) va benissimo ed è più realistico. Per generarne uno equivalente
+in locale, con `reportlab`, i campi vanno messi su pagine **non contigue** — è la
+disposizione che ha fatto emergere il difetto (2):
+
+```python
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+c = canvas.Canvas("02-fillable-form.pdf", pagesize=A4); W, H = A4
+c.bookmarkPage("p0"); c.addOutlineEntry("Applicant details", "p0", level=0)
+c.acroForm.textfield(name="applicant.name", x=160, y=H-125, width=260, height=18,
+                     borderColor=(0,0,0), forceBorder=True)
+c.showPage()
+c.bookmarkPage("p1"); c.addOutlineEntry("Guidance notes", "p1", level=0)
+c.showPage()                      # pagina senza campi, di proposito
+c.bookmarkPage("p2"); c.addOutlineEntry("Declaration", "p2", level=0)
+c.acroForm.textfield(name="declaration.date", x=160, y=H-125, width=160, height=18,
+                     borderColor=(0,0,0), forceBorder=True)
+c.showPage(); c.save()
+```
+
+**3 — Scansione con OCR.** L'ideale è una pagina stampata e riacquisita con uno scanner con
+OCR attivo. Equivalente riproducibile, che produce la stessa struttura (immagine + testo
+invisibile):
+
+```bash
+pdftoppm -r 150 -gray -png 01-word-export.pdf scan     # poppler-utils
+for f in scan-*.png; do tesseract "$f" "ocr-${f%.png}" -l eng pdf; done
+# poi concatenare gli ocr-scan-*.pdf in un unico file (pypdf PdfWriter)
+```
+
+**4 — Accentate e CJK.** Un documento con italiano/francese/tedesco/spagnolo accentati e
+paragrafi in cinese semplificato, tradizionale, giapponese e coreano, esportato come al
+punto 1. Ai paragrafi CJK va assegnato un font che li copra (per esempio *WenQuanYi Zen Hei*
+o un Noto CJK), altrimenti l'export li scrive come caselle vuote e il fixture non prova
+nulla.
+
+**5 — Protetto da password.** Creato apposta, mai un documento reale protetto:
+
+```python
+from pypdf import PdfReader, PdfWriter
+w = PdfWriter()
+for p in PdfReader("01-word-export.pdf").pages: w.add_page(p)
+w.encrypt(user_password="fixture-user", owner_password="fixture-owner",
+          algorithm="AES-256")
+with open("05-password-protected.pdf", "wb") as f: w.write(f)
+```
+
+Questo fixture ha già colto un difetto: `instanceof EncryptedPDFError` **non funziona** con il
+bundle UMD minificato di pdf-lib (la catena di prototipi si perde, arriva un `Error` con
+`.name === 'Error'`), quindi ogni PDF protetto veniva riportato all'utente come *file
+corrotto*. Il rilevamento ora incrocia più segnali — vedi `isEncryptedError()`.
 
 ## Deploy (Vercel)
 

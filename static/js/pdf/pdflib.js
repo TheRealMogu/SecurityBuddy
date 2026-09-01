@@ -33,6 +33,7 @@ export const {
     PDFRawStream,
     PDFPageLeaf,
     EncryptedPDFError,
+    degrees,
 } = window.PDFLib;
 
 /* Save options used for every document this feature writes.

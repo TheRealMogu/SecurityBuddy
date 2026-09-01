@@ -28,7 +28,7 @@ try {
     if (o instanceof PDFDict && o.get(n('Type')) === n('Page')) pageObjs++;
   console.log('/Type /Page objects:', pageObjs, '(expected 6)');
   const outl = out.catalog.lookupMaybe(n('Outlines'), PDFDict);
-  console.log('outline root Count:', outl?.lookupMaybe(n('Count'), PDFLib.PDFNumber)?.asNumber(), '(expected 4: 2 chapters x 2 docs)');
+  console.log('outline root Count:', outl?.lookupMaybe(n('Count'), PDFLib.PDFNumber)?.asNumber(), '(expected 8: /Count on the outline root is VISIBLE DESCENDANTS at all levels — 2 chapters + 2 open children, twice)');
 } catch (e) {
   console.log('THREW:', e.constructor?.name, '|', String(e.message).slice(0, 300));
   console.log('at:', (e.stack||'').split('\n').filter(l=>l.includes('/static/js/')).slice(0,4).join('\n'));

@@ -19,7 +19,7 @@ import {
 import {
     createReport, buildCorrespondence, createCopier, allPageRefTags,
     inspectDocument, assessOperation, repairStrayPageCopies, garbageCollect,
-    buildAnnotationPageIndex,
+    buildAnnotationPageIndex, collectOptionalContentInUse,
 } from './preserve.js';
 
 const N = {
@@ -40,7 +40,8 @@ const N = {
     ViewerPreferences: PDFName.of('ViewerPreferences'), Widget: PDFName.of('Widget'),
 };
 
-const push = (list, item, detail) => list.push({ item, detail });
+const push = (list, item, detail, opts) =>
+    list.push({ item, detail, prominent: !!(opts && opts.prominent) });
 
 /* ── Orchestrator ────────────────────────────────────────────────────────── */
 
@@ -74,6 +75,7 @@ export function preserveAll({ destDoc, sources, report = createReport() }) {
             srcPageTags,
             annotPage: buildAnnotationPageIndex(source.doc),
             keptPages,
+            usedOC: collectOptionalContentInUse(source.doc, keptPages),
             copier: createCopier(source.doc, destDoc, map, srcPageTags, keptPages),
             inspection: inspectDocument(source.doc),
         };
@@ -825,12 +827,14 @@ function preservePageLabels(destDoc, contexts, report) {
     tree.set(N.Nums, nums);
     destDoc.catalog.set(N.PageLabels, destDoc.context.register(tree));
 
-    push(report.rebuilt, 'Page labels (/PageLabels)',
-        `The page order changed, so the numbering rules could not be carried ` +
-        `across as rules. Each of the ${labelled} labelled page(s) keeps the ` +
-        `exact label it had, written as a literal. A reader sees identical page ` +
-        `numbers; an application that inspects the numbering rules will see ` +
-        `literals instead of ranges.`);
+    push(report.rebuilt, 'Custom page numbering converted to fixed values',
+        `This document numbered its pages with rules (for example "lowercase ` +
+        `roman from page 1, then decimal from page 3"). Reordering the pages ` +
+        `invalidates those rules, so each of the ${labelled} labelled page(s) ` +
+        `now carries its label as a fixed value instead. You will see the same ` +
+        `page numbers you saw before; an application that reads the numbering ` +
+        `rules will find fixed labels rather than ranges.`,
+        { prominent: true });
 }
 
 function readPageLabelRules(doc) {
@@ -922,47 +926,67 @@ function preserveOptionalContent(destDoc, contexts, report, isMerge) {
     const withOC = contexts.filter((c) => c.doc.catalog.get(N.OCProperties));
     if (!withOC.length) return;
 
-    if (!isMerge) {
-        const ctx = withOC[0];
-        const copied = ctx.copier.copy(ctx.doc.catalog.get(N.OCProperties));
-        if (copied === null) {
-            push(report.dropped, 'Layers (/OCProperties)',
-                'The optional-content configuration could not be copied.');
-            return;
-        }
-        destDoc.catalog.set(N.OCProperties, copied);
-        push(report.preserved, 'Layers (/OCProperties)',
-            'Layer names and default visibility carried across, still bound to ' +
-            'the optional-content groups the page content references.');
-        return;
-    }
-
     const allOCGs = PDFArray.withContext(destDoc.context);
     const on = PDFArray.withContext(destDoc.context);
     const off = PDFArray.withContext(destDoc.context);
     const order = PDFArray.withContext(destDoc.context);
+    let listed = 0;
+    let pruned = 0;
+    const carried = [];
 
     for (const ctx of withOC) {
         const src = ctx.doc.catalog.lookupMaybe(N.OCProperties, PDFDict);
         if (!src) continue;
-        const ocgs = src.lookupMaybe(N.OCGs, PDFArray);
-        if (ocgs) for (const ref of ocgs.asArray()) {
-            const copied = ctx.copier.copy(ref);
-            if (copied !== null) allOCGs.push(copied);
+
+        /* Only groups the selected pages actually reference. `usedOC` holds
+         * SOURCE refs gathered by walking the selected pages, deliberately not
+         * the correspondence map: a layer belonging to an excluded page is not
+         * in the copier's output either, but the copier would happily make a
+         * fresh copy of it here, carrying that page's layer name into a
+         * document that does not contain the page. */
+        const keep = (ref) => ref instanceof PDFRef && ctx.usedOC.has(ref.tag);
+
+        const srcOCGs = src.lookupMaybe(N.OCGs, PDFArray);
+        if (srcOCGs) {
+            for (const ref of srcOCGs.asArray()) {
+                if (!keep(ref)) { pruned += 1; continue; }
+                const copied = ctx.copier.copy(ref);
+                if (copied === null) { pruned += 1; continue; }
+                allOCGs.push(copied);
+                listed += 1;
+            }
         }
+
         const config = src.lookupMaybe(N.D, PDFDict);
         if (!config) continue;
-        for (const [key, target] of [[N.ON, on], [N.OFF, off], [N.Order, order]]) {
+
+        for (const [key, target] of [[N.ON, on], [N.OFF, off]]) {
             const array = config.lookupMaybe(key, PDFArray);
             if (!array) continue;
-            for (const item of array.asArray()) {
-                const copied = ctx.copier.copy(item);
+            for (const ref of array.asArray()) {
+                if (!keep(ref)) continue;
+                const copied = ctx.copier.copy(ref);
                 if (copied !== null) target.push(copied);
             }
         }
+
+        const srcOrder = config.lookupMaybe(N.Order, PDFArray);
+        if (srcOrder) {
+            const filtered = filterOrderArray(destDoc, ctx, srcOrder, keep, 0);
+            for (const entry of filtered) order.push(entry);
+        }
+
+        carried.push(ctx.label);
     }
 
-    if (!allOCGs.size()) return;
+    if (!allOCGs.size()) {
+        push(report.dropped, 'Layers (/OCProperties)',
+            'None of the document\'s optional-content groups are used by the ' +
+            'pages in the output, so the layer configuration was removed. ' +
+            'Keeping it would have listed layers that control nothing and named ' +
+            'content that is not in this file.');
+        return;
+    }
 
     const config = PDFDict.withContext(destDoc.context);
     if (on.size()) config.set(N.ON, on);
@@ -973,12 +997,72 @@ function preserveOptionalContent(destDoc, contexts, report, isMerge) {
     props.set(N.D, config);
     destDoc.catalog.set(N.OCProperties, destDoc.context.register(props));
 
-    push(report.rebuilt, 'Layers (/OCProperties)',
-        `Layers from ${withOC.length} documents were combined into one ` +
-        `configuration: the groups are still bound to their own page content, ` +
-        `and each keeps its default visibility. Layers that shared a name across ` +
-        `documents now appear as separate entries in the layer panel, because ` +
-        `they are genuinely different groups.`);
+    const detail = [`${listed} layer(s) carried across, still bound to the ` +
+        `optional-content groups the page content references.`];
+    if (pruned) {
+        detail.push(`${pruned} layer(s) belonging to pages that are not in the ` +
+            `output were removed — their names would otherwise have described ` +
+            `content this document does not contain.`);
+    }
+    if (isMerge) {
+        detail.push(`Layers from ${carried.length} documents were combined into ` +
+            `one configuration; groups that shared a name across documents ` +
+            `appear separately, because they are genuinely different groups.`);
+    }
+    push(pruned || isMerge ? report.rebuilt : report.preserved,
+        'Layers (/OCProperties)', detail.join(' '));
+}
+
+/* /Order is a nested array mixing group references with label strings:
+ * [ocgA, "Section", [ocgB, ocgC], ocgD]. Filtering has to keep the nesting,
+ * drop groups that are gone, drop arrays that empty out, and drop a label whose
+ * array emptied — otherwise the layer panel shows headings over nothing. */
+function filterOrderArray(destDoc, ctx, array, keep, depth) {
+    if (depth > 32) return [];
+    const out = [];
+    const items = array.asArray();
+
+    for (let i = 0; i < items.length; i += 1) {
+        const item = items[i];
+
+        if (item instanceof PDFRef) {
+            const target = ctx.doc.context.lookup(item);
+            if (target instanceof PDFArray) {
+                const nested = filterOrderArray(destDoc, ctx, target, keep, depth + 1);
+                if (nested.length) {
+                    const arr = PDFArray.withContext(destDoc.context);
+                    for (const entry of nested) arr.push(entry);
+                    out.push(arr);
+                }
+                continue;
+            }
+            if (!keep(item)) continue;
+            const copied = ctx.copier.copy(item);
+            if (copied !== null) out.push(copied);
+            continue;
+        }
+
+        if (item instanceof PDFArray) {
+            const nested = filterOrderArray(destDoc, ctx, item, keep, depth + 1);
+            if (!nested.length) continue;
+            const arr = PDFArray.withContext(destDoc.context);
+            for (const entry of nested) arr.push(entry);
+            out.push(arr);
+            continue;
+        }
+
+        if (item instanceof PDFString || item instanceof PDFHexString) {
+            // A label applies to the array that follows it; keep it only if that
+            // array survives with something in it.
+            const next = items[i + 1];
+            const nextArray = next instanceof PDFArray ? next
+                : (next instanceof PDFRef ? ctx.doc.context.lookup(next) : null);
+            if (!(nextArray instanceof PDFArray)) continue;
+            if (!filterOrderArray(destDoc, ctx, nextArray, keep, depth + 1).length) continue;
+            out.push(ctx.copier.copy(item));
+        }
+    }
+    return out;
 }
 
 /* ── Simple catalog entries ──────────────────────────────────────────────── */
