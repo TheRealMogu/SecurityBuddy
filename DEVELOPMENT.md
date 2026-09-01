@@ -657,6 +657,53 @@ Il font viene dal `/DA` del campo, risolto contro il `/DR` del form: è questo i
 di "il font già dichiarato per quella zona" per un campo di modulo. I campi non compilati non
 vengono toccati: l'intero documento passa dal percorso di copia del blocco 1.
 
+### Testo libero in overlay
+
+`static/js/pdf/overlay.js` + `textruns.js`. Il testo nuovo va in un content stream
+**aggiunto** all'array `/Contents`, mai dentro quello esistente: i byte che la pagina aveva
+restano identici e l'aggiunta è un oggetto separato e ispezionabile. `pdf_compare.py` calcola
+l'hash di **ogni stream separatamente** proprio per poterlo verificare.
+
+**Trovare il font di una zona non è "il più vicino per distanza".** Le pagine reali impilano
+ruoli tipografici a pochi punti l'uno dall'altro: il run più vicino a un click dentro un
+blocco dati è spesso l'ultima parola del titolo sopra. Si preferisce un run sulla **stessa
+riga di base** (stesso Ty entro 2.5 pt) a uno semplicemente più vicino; solo se non ce n'è si
+ricade sul più vicino entro 72 pt, poi sul font dominante della pagina, poi sul default.
+
+Due difetti emersi dal fixture `09` (titolo Times 10 pt sopra un blocco codici Courier):
+i run erano registrati come **punti** invece che segmenti — un click oltre la fine di una
+riga corta usciva dal raggio — e la dominanza di pagina contava per **nome di risorsa**,
+che molti produttori rigenerano ad ogni chiamata di disegno.
+
+**Stima della dimensione su TIPO B.** Si usa il `Tf` esplicito del layer OCR (per la scala
+verticale di `Tm` e della CTM), non la spaziatura fra le righe di base. Misurato: i valori
+`Tf` danno 11.0 pt contro gli 11.0 pt reali del documento da cui la scansione è stata fatta,
+mentre i baseline gap danno 12.9 pt perché la spaziatura di paragrafo li gonfia. Il motore OCR
+la conversione altezza→dimensione l'ha già fatta, e meglio.
+
+> ⚠️ **Lo 0% di errore è un campione solo, ed è favorevole**: scansione a 150 DPI da un
+> originale digitale pulito, senza inclinazione né artefatti. Da carta vera la stima sarà più
+> larga. Resta marcata `ESTIMATED`, mai "rilevato".
+
+Senza layer OCR: **default dichiarato di 11 pt sans**, con avviso che il documento non offre
+alcun segnale. Nessuna stima dai pixel: un'ipotesi senza segnale dietro sarebbe una supposizione
+travestita da misura.
+
+> **Lo stato di testo va resettato esplicitamente, non ereditato.** `q`/`Q` salva e ripristina
+> lo stato grafico, che **include** lo stato di testo. Misurato su un layer Tesseract: lo
+> stream fa `BT 3 Tr … ET` fuori da ogni `q`/`Q`, lasciando la modalità di rendering
+> invisibile in vigore. Il testo aggiunto sopra veniva scritto nel file e **non disegnava
+> nulla** — esattamente il difetto contro cui questo tool mette in guardia. L'overlay ora
+> azzera `Tr`, `Tz`, `Ts`, `Tc` e `Tw`: quello stesso stream lascia impostato anche `Tz`.
+
+**UI di correzione.** Ogni posizionamento mostra da dove vengono dimensione e categoria
+(`from the document` / `substitute font` / `ESTIMATED from the OCR layer` / `DEFAULT — no
+signal` / `set by you`) e permette di cambiarle **prima** di scrivere. Un valore corretto
+dall'utente viene registrato come `USER` con `reason=user-corrected`, non come una stima che
+per caso era giusta — e non genera avviso, perché non è una supposizione del sistema. Le
+coordinate del click passano da `viewport.convertToPdfPoint()` di pdf.js, che gestisce anche
+la rotazione di pagina.
+
 ### Verifica: `tools/pdf_compare.py`
 
 Dipende da **pypdf**, dipendenza **solo di sviluppo** (`pyproject.toml`, mai

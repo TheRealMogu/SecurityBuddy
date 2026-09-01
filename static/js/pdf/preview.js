@@ -89,3 +89,29 @@ export async function renderToFit(pdf, pageNumber, canvas, boxWidth, boxHeight, 
     await page.render({ canvasContext: context, viewport }).promise;
     return { width: base.width, height: base.height, rotation };
 }
+
+/* Render a page for click-to-place, returning the viewport.
+ *
+ * The viewport is the thing that matters: pdf.js can convert a point in canvas
+ * pixels straight back to PDF user space with it, including page rotation.
+ * Doing that arithmetic by hand is how a placement ends up mirrored on a
+ * rotated page.
+ */
+export async function renderForPlacement(pdf, pageNumber, canvas, maxWidth) {
+    const page = await pdf.getPage(pageNumber);
+    const rotation = ((page.rotate || 0) % 360 + 360) % 360;
+    const unscaled = page.getViewport({ scale: 1, rotation });
+    const scale = maxWidth / unscaled.width;
+    const viewport = page.getViewport({ scale, rotation });
+
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(viewport.width * ratio);
+    canvas.height = Math.floor(viewport.height * ratio);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+    const context = canvas.getContext('2d');
+    context.scale(ratio, ratio);
+    await page.render({ canvasContext: context, viewport }).promise;
+    return viewport;
+}

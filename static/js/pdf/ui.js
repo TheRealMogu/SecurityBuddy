@@ -12,10 +12,11 @@
 
 import { loadDocument, inspectDocument } from './preserve.js';
 import * as ops from './operations.js';
-import { openForPreview, renderThumbnail } from './preview.js';
+import { openForPreview, renderThumbnail, renderForPlacement } from './preview.js';
 import * as viewer from './viewer.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
-import { CATEGORIES } from './fonts.js';
+import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
+import { planOverlay, addOverlay } from './overlay.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,6 +30,9 @@ const state = {
     acknowledged: new Set(),
     outputs: [],
     fieldValues: {},
+    placements: [],
+    placementPage: 0,
+    placementSeq: 0,
 };
 
 /* ── File intake ─────────────────────────────────────────────────────────── */
@@ -71,6 +75,8 @@ function resetSelections() {
     state.rotations = {};
     state.outputs = [];
     state.fieldValues = {};
+    state.placements = [];
+    state.placementPage = 0;
 }
 
 /* ── Pre-flight gate ─────────────────────────────────────────────────────── */
@@ -293,6 +299,7 @@ function renderTool() {
         case 'reorder': renderPagePanel(panel, 'reorder'); break;
         case 'rotate': renderPagePanel(panel, 'rotate'); break;
         case 'fill': renderFillPanel(panel); break;
+        case 'text': renderTextPanel(panel); break;
         default: break;
     }
 }
@@ -302,6 +309,269 @@ function hint(text) {
     p.className = 'pdf-hint';
     p.textContent = text;
     return p;
+}
+
+/* ── Free text overlay ───────────────────────────────────────────────────── */
+
+/* Click a page to place text. Every placement shows where its size and typeface
+ * came from and lets the user change both BEFORE anything is written — an
+ * estimate the user cannot correct is just a guess they have been told about. */
+function renderTextPanel(panel) {
+    const entry = state.docs[0];
+    const pageCount = entry.doc.getPageCount();
+
+    if (state.docs.length > 1) {
+        panel.append(hint(`This tool works on one document. Using "${entry.name}".`));
+    }
+
+    if (pageCount > 1) {
+        const bar = document.createElement('div');
+        bar.className = 'pdf-actions-bar';
+        for (let i = 0; i < pageCount; i += 1) {
+            const button = smallButton(`Page ${i + 1}`, () => {
+                state.placementPage = i;
+                renderTool();
+            });
+            if (i === state.placementPage) button.classList.add('pdf-small-btn-active');
+            bar.append(button);
+        }
+        panel.append(bar);
+    }
+
+    panel.append(hint('Click the page where the text should start. The click point is '
+        + 'the left end of the text baseline.'));
+
+    const stage = document.createElement('div');
+    stage.className = 'pdf-place-stage';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'pdf-place-canvas';
+    const markers = document.createElement('div');
+    markers.className = 'pdf-place-markers';
+    stage.append(canvas, markers);
+    panel.append(stage);
+
+    paintPlacementSurface(entry, canvas, markers, stage);
+
+    const list = document.createElement('div');
+    list.className = 'pdf-fields';
+    panel.append(list);
+    renderPlacementCards(entry, list);
+
+    panel.append(runButton('Save PDF with the added text', async (button) => {
+        await runOperation(button, async () => {
+            const ready = state.placements.filter((p) => p.text && p.text.trim() !== '');
+            if (!ready.length) throw new Error('Place at least one piece of text.');
+            const { bytes, report, written } = await addOverlay(entry.doc, entry.name, ready);
+            const estimated = written.filter((w) =>
+                w.fontSource === 'ESTIMATED' || w.fontSource === 'DEFAULT').length;
+            return [{
+                name: ops.outputName(entry.name, 'text'),
+                bytes, report,
+                summary: `${written.length} text placement(s)`
+                    + (estimated ? `, ${estimated} using an estimated or default size` : ''),
+            }];
+        });
+    }));
+}
+
+async function paintPlacementSurface(entry, canvas, markers, stage) {
+    try {
+        if (!entry.pdf) entry.pdf = await openForPreview(entry.bytes);
+        const viewport = await renderForPlacement(
+            entry.pdf, state.placementPage + 1, canvas, 520);
+        stage.dataset.ready = '1';
+
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            // pdf.js converts canvas pixels back to PDF user space, rotation
+            // included; doing this arithmetic by hand is how a placement ends
+            // up mirrored on a rotated page.
+            const [x, y] = viewport.convertToPdfPoint(
+                event.clientX - rect.left, event.clientY - rect.top);
+            state.placementSeq += 1;
+            state.placements.push({
+                id: state.placementSeq,
+                pageIndex: state.placementPage,
+                x: Math.round(x * 10) / 10,
+                y: Math.round(y * 10) / 10,
+                text: '',
+            });
+            renderTool();
+        });
+
+        drawMarkers(markers, viewport);
+    } catch {
+        stage.append(hint('This page could not be rendered for placement.'));
+    }
+}
+
+function drawMarkers(container, viewport) {
+    container.textContent = '';
+    for (const placement of state.placements) {
+        if (placement.pageIndex !== state.placementPage) continue;
+        const [vx, vy] = viewport.convertToViewportPoint(placement.x, placement.y);
+        const dot = document.createElement('span');
+        dot.className = 'pdf-place-marker';
+        dot.style.left = `${vx}px`;
+        dot.style.top = `${vy}px`;
+        dot.textContent = String(placement.id);
+        container.append(dot);
+    }
+}
+
+/* One card per placement: the text, and the two values the user may override. */
+function renderPlacementCards(entry, list) {
+    list.textContent = '';
+    if (!state.placements.length) return;
+
+    let plans = [];
+    let blocked = [];
+    try {
+        ({ plans, blocked } = planOverlay(
+            entry.doc, state.placements.filter((p) => p.text && p.text.trim() !== '')));
+    } catch { /* an unreadable page simply yields no plan */ }
+
+    const planFor = new Map(plans.map((p) => [p.placement.id, p]));
+    const blockedFor = new Map(blocked.map((b) => [b.placement.id, b]));
+
+    for (const placement of state.placements) {
+        const plan = planFor.get(placement.id);
+        const stop = blockedFor.get(placement.id);
+
+        const card = document.createElement('div');
+        card.className = 'pdf-field';
+        if (stop) card.classList.add('pdf-field-block');
+        else if (plan && (plan.source === 'ESTIMATED' || plan.source === 'DEFAULT'
+                          || plan.source === 'SUBSTITUTE')) card.classList.add('pdf-field-warn');
+
+        const head = document.createElement('div');
+        head.className = 'pdf-place-head';
+        const title = document.createElement('span');
+        title.className = 'pdf-field-label';
+        title.textContent = `#${placement.id} — page ${placement.pageIndex + 1} `
+            + `at ${placement.x}, ${placement.y}`;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'pdf-icon-btn';
+        remove.textContent = '✕';
+        remove.setAttribute('aria-label', `Remove placement ${placement.id}`);
+        remove.addEventListener('click', () => {
+            state.placements = state.placements.filter((p) => p.id !== placement.id);
+            renderTool();
+        });
+        head.append(title, remove);
+        card.append(head);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'pdf-field-input';
+        input.value = placement.text;
+        input.placeholder = 'Text to add';
+        input.addEventListener('input', () => {
+            placement.text = input.value;
+            renderPlacementCards(entry, list);
+        });
+        card.append(input);
+
+        if (stop) {
+            card.append(verdictBox('Cannot write this text here', stop.explain));
+            list.append(card);
+            continue;
+        }
+
+        if (plan) card.append(correctionControls(entry, list, placement, plan));
+        list.append(card);
+    }
+
+    // Keep focus where the user was typing.
+    const active = list.querySelector('input[data-focus="1"]');
+    if (active) active.focus();
+}
+
+/* The controls that make an estimate correctable rather than merely announced. */
+function correctionControls(entry, list, placement, plan) {
+    const wrap = document.createElement('div');
+    wrap.className = 'pdf-correct';
+
+    const ORIGIN = {
+        original: ['from the document', 'ok'],
+        SUBSTITUTE: ['substitute font', 'warn'],
+        ESTIMATED: ['ESTIMATED from the OCR layer', 'warn'],
+        DEFAULT: ['DEFAULT — no signal in the document', 'warn'],
+        USER: ['set by you', 'ok'],
+    };
+    const [originLabel, tone] = ORIGIN[plan.source] ?? [plan.source, 'warn'];
+
+    const badge = document.createElement('span');
+    badge.className = `pdf-origin pdf-origin-${tone}`;
+    badge.textContent = originLabel;
+    wrap.append(badge);
+
+    const row = document.createElement('div');
+    row.className = 'pdf-correct-row';
+
+    const sizeLabel = document.createElement('label');
+    sizeLabel.textContent = 'Size';
+    const size = document.createElement('input');
+    size.type = 'number';
+    size.min = '4';
+    size.max = '96';
+    size.step = '0.5';
+    size.className = 'pdf-correct-num';
+    size.value = String(placement.sizeOverride ?? plan.size);
+    size.addEventListener('change', () => {
+        const value = parseFloat(size.value);
+        placement.sizeOverride = Number.isFinite(value) ? value : undefined;
+        renderPlacementCards(entry, list);
+    });
+    sizeLabel.append(size);
+
+    const catLabel = document.createElement('label');
+    catLabel.textContent = 'Typeface';
+    const category = document.createElement('select');
+    category.className = 'pdf-correct-select';
+    for (const key of CHOOSABLE_CATEGORIES) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = CATEGORIES[key].label;
+        option.selected = key === (placement.categoryOverride ?? plan.category);
+        category.append(option);
+    }
+    category.addEventListener('change', () => {
+        placement.categoryOverride = category.value;
+        renderPlacementCards(entry, list);
+    });
+    catLabel.append(category);
+
+    row.append(sizeLabel, catLabel);
+
+    if (placement.sizeOverride !== undefined || placement.categoryOverride !== undefined) {
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'pdf-small-btn';
+        reset.textContent = 'Use the document\'s value';
+        reset.addEventListener('click', () => {
+            delete placement.sizeOverride;
+            delete placement.categoryOverride;
+            renderPlacementCards(entry, list);
+        });
+        row.append(reset);
+    }
+    wrap.append(row);
+
+    const summary = document.createElement('p');
+    summary.className = 'pdf-correct-summary';
+    summary.textContent = `Will be written in ${plan.face ?? plan.font?.name} `
+        + `at ${plan.size}pt (${CATEGORIES[plan.category]?.label ?? plan.category}).`;
+    wrap.append(summary);
+
+    if (plan.explain) {
+        const note = document.createElement('p');
+        note.className = 'pdf-correct-note';
+        note.textContent = plan.explain;
+        wrap.append(note);
+    }
+    return wrap;
 }
 
 /* ── Fill form ───────────────────────────────────────────────────────────── */
