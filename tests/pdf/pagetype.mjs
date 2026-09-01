@@ -9,7 +9,7 @@ const { classifyDocument } = await import('../../static/js/pdf/pagetype.js');
 const DIR = path.resolve(import.meta.dirname, '../fixtures/pdf');
 const files = (await readdir(DIR)).filter(f => f.endsWith('.pdf')).sort();
 
-const EXPECTED = { '03-scanned-ocr.pdf': 'B' };   // everything else is TYPE A
+const EXPECTED = { '03-scanned-ocr.pdf': 'B', '10-scanned-no-ocr.pdf': 'B' };  // rest TYPE A
 
 let fail = 0;
 for (const file of files) {

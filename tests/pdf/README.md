@@ -11,7 +11,23 @@ node merge.mjs       # two-document merge, collision reporting
 node ocg.mjs         # optional-content groups survive extraction
 node pagetype.mjs    # TYPE A / TYPE B classification vs the pypdf measurements
 node fill.mjs        # form filling: original font, forced substitution, untouched fields
+node roles.mjs       # baseline-first font lookup at a typographic role boundary
+node overlay.mjs     # free text: original / SUBSTITUTE / ESTIMATED / DEFAULT / USER
 ```
+
+Fixture builders, run once each before the tests that use them:
+`mk-subset-form.mjs` (08), `mk-roles.mjs` (09), `mk-noocr.mjs` (10 — needs
+`pdftoppm` output in the scratch directory).
+
+`roles.mjs` covers the case a nearest-by-distance search gets wrong: a Times
+heading sitting 10pt above a Courier code block. A click inside the codes is
+geometrically closest to the heading's last word; the baseline-first rule picks
+Courier. It also prints what a naive search would have answered, so the
+difference is visible rather than asserted.
+
+`overlay.mjs` checks the invariant that keeps the fidelity story intact while
+adding content: every original content stream must survive byte-identical and
+exactly one stream may be appended.
 
 `mk-subset-form.mjs` builds `08-subset-font-form.pdf`, a form whose `/DA` points at the
 DejaVuSans **subset** already embedded in `01-word-export.pdf`. That subset can write 41

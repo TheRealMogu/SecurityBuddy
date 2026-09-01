@@ -87,6 +87,31 @@ def content_stream_hash(page) -> str:
     return digest.hexdigest()
 
 
+def content_stream_hashes(page) -> list[str]:
+    """Each content stream of a page hashed separately.
+
+    The combined hash cannot distinguish "the page was rewritten" from "a stream
+    was appended". Overlay text is appended as an extra stream precisely so the
+    original bytes survive, and that claim is only checkable per stream.
+    """
+    contents = page.get("/Contents")
+    if contents is None:
+        return []
+    contents = resolve(contents)
+    streams = contents if isinstance(contents, list) else [contents]
+    out = []
+    for stream in streams:
+        stream = resolve(stream)
+        raw = getattr(stream, "_data", None)
+        if raw is None:
+            try:
+                raw = stream.get_data()
+            except Exception:  # noqa: BLE001
+                raw = b""
+        out.append(sha256(raw or b""))
+    return out
+
+
 def collect_fonts(reader: PdfReader) -> dict:
     """Every embedded font in the document, keyed by base font name.
 
@@ -301,6 +326,7 @@ def describe(path: Path) -> dict:
             "rotation": int(page.get("/Rotate", 0) or 0),
             "annotations": len(annots),
             "content_sha256": content_stream_hash(page),
+            "content_streams": content_stream_hashes(page),
         })
 
     metadata = {}
@@ -380,7 +406,8 @@ def print_description(info: dict) -> None:
 
 
 def compare(before: dict, after: dict, mapping: list[int] | None,
-            written: list[dict] | None = None) -> list[str]:
+            written: list[dict] | None = None,
+            overlay: list[dict] | None = None) -> list[str]:
     """Return a list of differences. Empty list means structurally identical.
 
     `written` names the fields an operation declared it would change, with how
@@ -411,10 +438,22 @@ def compare(before: dict, after: dict, mapping: list[int] | None,
         dst = after["pages"][out_index]
 
         if src["content_sha256"] != dst["content_sha256"]:
-            problems.append(
-                f"page content CHANGED: input page {in_index} -> output page "
-                f"{out_index} ({src['content_sha256'][:16]} != "
-                f"{dst['content_sha256'][:16]})")
+            # An overlay is allowed to APPEND a stream; it is never allowed to
+            # alter one. Every original stream must still be there, byte for
+            # byte, with the additions alongside.
+            overlaid = {entry["page"] for entry in (overlay or [])}
+            src_streams = src.get("content_streams", [])
+            dst_streams = dst.get("content_streams", [])
+            if out_index in overlaid and all(h in dst_streams for h in src_streams):
+                added = len(dst_streams) - len(src_streams)
+                problems.append(
+                    f"NOTE page {out_index}: {added} content stream(s) added for the "
+                    f"overlay; the original stream(s) survive byte-identical")
+            else:
+                problems.append(
+                    f"page content CHANGED: input page {in_index} -> output page "
+                    f"{out_index} ({src['content_sha256'][:16]} != "
+                    f"{dst['content_sha256'][:16]})")
 
         if (src["width_pt"], src["height_pt"]) != (dst["width_pt"], dst["height_pt"]):
             problems.append(
@@ -592,7 +631,8 @@ def run_manifest(manifest_path: Path) -> int:
         operated_on.add(entry["input"])
         before = load(entry["input"])
         after = load(entry["output"])
-        problems = compare(before, after, entry.get("pages"), entry.get("written"))
+        problems = compare(before, after, entry.get("pages"),
+                           entry.get("written"), entry.get("overlay"))
         real = [p for p in problems if not p.startswith("NOTE")]
         label = f"{entry['input']} -> {entry['op']}"
 
@@ -607,6 +647,24 @@ def run_manifest(manifest_path: Path) -> int:
                     missing = "".join(record.get("missing") or [])
                     extra = f"  missing={missing!r}" if missing else ""
                     print(f"          reason={record['reason']}{extra}")
+            for record in entry.get("overlay") or []:
+                print(f"    overlay p{record['page']} @{record['x']},{record['y']}"
+                      f"{'':<8} doc={record['docType']}  "
+                      f"font={record['fontSource']:<10} category={record['category']:<10} "
+                      f"face={record['face']:<14} size={record['size']}")
+                bits = []
+                if record.get("reason") and record["reason"] != "original":
+                    bits.append(f"reason={record['reason']}")
+                if record.get("missing"):
+                    bits.append(f"missing={''.join(record['missing'])!r}")
+                if record.get("ocrRuns"):
+                    bits.append(f"runs={record['ocrRuns']}")
+                if record.get("basis"):
+                    bits.append(f"basis={record['basis']}")
+                if record.get("correctedFrom"):
+                    bits.append(f"was={record['correctedFrom']}")
+                if bits:
+                    print(f"          {'  '.join(bits)}")
         else:
             failed += 1
             print(f"{label:<46} {len(real)} DIFFERENCE(S)")

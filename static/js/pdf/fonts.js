@@ -41,20 +41,51 @@ import {
  * be rare. When a CJK glyph is missing the operation stops with an explanation
  * rather than quietly writing the wrong script. */
 export const CATEGORIES = {
-    serif: { label: 'serif', regular: StandardFonts.TimesRoman, bold: StandardFonts.TimesRomanBold,
-             italic: StandardFonts.TimesRomanItalic },
-    sans: { label: 'sans-serif', regular: StandardFonts.Helvetica, bold: StandardFonts.HelveticaBold,
-            italic: StandardFonts.HelveticaOblique },
-    monospace: { label: 'monospace', regular: StandardFonts.Courier, bold: StandardFonts.CourierBold,
-                 italic: StandardFonts.CourierOblique },
-    cjk: { label: 'CJK', regular: null, bold: null, italic: null },
+    serif: {
+        label: 'serif', regular: StandardFonts.TimesRoman, bold: StandardFonts.TimesRomanBold,
+        italic: StandardFonts.TimesRomanItalic, boldItalic: StandardFonts.TimesRomanBoldItalic,
+    },
+    sans: {
+        label: 'sans-serif', regular: StandardFonts.Helvetica, bold: StandardFonts.HelveticaBold,
+        italic: StandardFonts.HelveticaOblique, boldItalic: StandardFonts.HelveticaBoldOblique,
+    },
+    monospace: {
+        label: 'monospace', regular: StandardFonts.Courier, bold: StandardFonts.CourierBold,
+        italic: StandardFonts.CourierOblique, boldItalic: StandardFonts.CourierBoldOblique,
+    },
+    symbol: {
+        label: 'symbol', regular: StandardFonts.Symbol, bold: StandardFonts.Symbol,
+        italic: StandardFonts.Symbol, boldItalic: StandardFonts.Symbol,
+    },
+    // No substitute by decision: there is no standard PDF CJK face, and
+    // embedding one would add megabytes for a rare case.
+    cjk: { label: 'CJK', regular: null, bold: null, italic: null, boldItalic: null },
 };
 
+/* The categories a user may pick from when correcting an estimate. CJK is
+ * absent because there is nothing to switch to. */
+export const CHOOSABLE_CATEGORIES = ['sans', 'serif', 'monospace'];
+
+/* Latin faces whose names contain a word that also signals CJK. Checked first,
+ * or "Century Gothic" and "Franklin Gothic" would be classified as Japanese. */
+const CJK_FALSE_FRIENDS =
+    /(century|franklin|news|trade|copperplate|highway|alternate|agency|bank)\s*gothic/i;
+
+/* Name patterns, checked in this order. The order matters more than it looks:
+ * "Noto Serif CJK" is CJK, not serif; "DejaVu Sans Mono" is monospace, not
+ * sans; "Roboto Slab" is a serif, not the sans that shares its name.
+ *
+ * This list is deliberately long. Substitution can only ever draw on the 14
+ * standard PDF faces — nothing else exists without embedding a font file — so
+ * the one thing that genuinely widens coverage on ordinary documents is
+ * recognising more of the names those documents actually use, and putting each
+ * in the right family. */
 const NAME_HINTS = [
-    // CJK first: a face called "Noto Serif CJK" is CJK, not serif.
-    [/(ming|song|sung|hei|kai|gothic|mincho|batang|gulim|dotum|wenquanyi|sourcehan|notosans?cjk|notoserifcjk|msyh|simsun|simhei|pingfang|hiragino|meiryo|yugothic|malgun|nanum)/i, 'cjk'],
-    [/(mono|courier|consolas|menlo|inconsolata|monaco|typewriter|hack|firacode|sourcecodepro)/i, 'monospace'],
-    [/(serif|times|georgia|garamond|baskerville|caslon|palatino|cambria|minion|bookman|century|roman|didot|bodoni)/i, 'serif'],
+    [/(ming|songti|simsun|simhei|nsimsun|fangsong|kaiti|dfkai|mingliu|pmingliu|batang|gungsuh|dotum|gulim|malgun|nanum|meiryo|yugothic|msgothic|msmincho|mincho|hgothic|ipagothic|ipamincho|hiragino|osaka|pingfang|heitisc|heititc|songtisc|wenquanyi|sourcehan|notosanscjk|notoserifcjk|notosanssc|notosanstc|notosansjp|notosanskr|cjk|hanazono|zenhei|ukai|uming|arplu|msyahei|microsoftyahei|microsoftjhenghei|jhenghei|yahei|kozuka|ryumin|gothicbbb|shinseikai)/i, 'cjk'],
+    [/(mono|courier|consolas|menlo|monaco|inconsolata|typewriter|hack|firacode|firamono|jetbrains|plexmono|sourcecodepro|robotomono|ubuntumono|andale|lucidaconsole|ptmono|spacemono|cousine|anonymouspro|iosevka|cascadia|terminal|ocra|ocrb|prestige|letergothic|nimbusmono|freemono|dejavusansmono|liberationmono|overpassmono|redhatmono|victormono|hasklig|monoid|sudo|terminus)/i, 'monospace'],
+    [/(serif|times|georgia|garamond|baskerville|caslon|palatino|bookantiqua|bookman|cambria|constantia|minion|century(?!gothic)|didot|bodoni|rockwell|slab|merriweather|ptserif|sourceserif|notoserif|liberationserif|dejavuserif|nimbusroman|freeserif|charter|utopia|charis|crimson|spectral|lora|playfair|cormorant|ebgaramond|librebaskerville|tinos|droidserif|zillaslab|vollkorn|alegreya|cardo|gentium|junicode|sitka|sylfaen|newcenturyschlbk|schoolbook|clarendon|egyptienne|scala|sabon|janson|plantin|ehrhardt|bembo|dante|arno|warnock|freight|tiempos|lyon|publico|guardian|miller|chronicle|mercury)/i, 'serif'],
+    [/(symbol|dingbat|wingding|webding|marlett|bookshelf)/i, 'symbol'],
+    [/(helvetica|arial|calibri|verdana|tahoma|segoe|roboto|lato|opensans|notosans|sourcesans|ptsans|liberationsans|dejavusans|nimbussans|freesans|franklin|futura|gillsans|univers|frutiger|myriad|optima|trebuchet|centurygothic|avantgarde|candara|corbel|aptos|inter|poppins|montserrat|nunito|raleway|ubuntu|firasans|worksans|rubik|karla|manrope|barlow|mulish|oswald|cabin|quicksand|asap|heebo|assistant|arimo|droidsans|microsoftsans|geneva|impact|haettenschweiler|eurostile|antiquesans|akzidenz|neuehaas|interstate|whitney|proximanova|avenir|circular|graphik|plexsans|overpass|redhat|figtree|outfit|sora|epilogue)/i, 'sans'],
 ];
 
 /* A subset prefix is six uppercase letters and a plus: ABCDEF+Helvetica. */
@@ -150,8 +181,12 @@ function isStandard14(name) { return STANDARD_14.has(name); }
 function categoriseFont(name, flags, ordering, dict, doc) {
     // 1. CJK — the CID ordering is authoritative when present.
     if (ordering && /^(GB1|CNS1|Japan1|Korea1|KR)$/i.test(ordering)) return 'cjk';
+
+    const compact = name.replace(/[\s\-_,]/g, '');
+    const isFalseFriend = CJK_FALSE_FRIENDS.test(name);
     for (const [pattern, category] of NAME_HINTS) {
-        if (pattern.test(name.replace(/[\s-]/g, ''))) return category;
+        if (category === 'cjk' && isFalseFriend) continue;
+        if (pattern.test(compact)) return category;
     }
 
     // 2. Monospace — every advance width identical is a strong, name-free signal.
@@ -382,6 +417,7 @@ export function planText(doc, font, text) {
 export function substituteFor(category, { bold = false, italic = false } = {}) {
     const entry = CATEGORIES[category] ?? CATEGORIES.sans;
     if (!entry.regular) return null;
+    if (bold && italic) return entry.boldItalic;
     if (bold) return entry.bold;
     if (italic) return entry.italic;
     return entry.regular;
