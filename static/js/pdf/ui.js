@@ -14,6 +14,8 @@ import { loadDocument, inspectDocument } from './preserve.js';
 import * as ops from './operations.js';
 import { openForPreview, renderThumbnail } from './preview.js';
 import * as viewer from './viewer.js';
+import { listTextFields, planFill, fillForm } from './fill.js';
+import { CATEGORIES } from './fonts.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +28,7 @@ const state = {
     rotations: {},
     acknowledged: new Set(),
     outputs: [],
+    fieldValues: {},
 };
 
 /* ── File intake ─────────────────────────────────────────────────────────── */
@@ -67,6 +70,7 @@ function resetSelections() {
     state.order = Array.from({ length: count }, (_, i) => i);
     state.rotations = {};
     state.outputs = [];
+    state.fieldValues = {};
 }
 
 /* ── Pre-flight gate ─────────────────────────────────────────────────────── */
@@ -288,6 +292,7 @@ function renderTool() {
         case 'extract': renderPagePanel(panel, 'extract'); break;
         case 'reorder': renderPagePanel(panel, 'reorder'); break;
         case 'rotate': renderPagePanel(panel, 'rotate'); break;
+        case 'fill': renderFillPanel(panel); break;
         default: break;
     }
 }
@@ -297,6 +302,144 @@ function hint(text) {
     p.className = 'pdf-hint';
     p.textContent = text;
     return p;
+}
+
+/* ── Fill form ───────────────────────────────────────────────────────────── */
+
+/* Each field carries its own font verdict, updated as the user types. The
+ * warning belongs beside the field it applies to — a substitution announced in
+ * a summary at the bottom is a substitution the user will not connect to
+ * anything. */
+function renderFillPanel(panel) {
+    const entry = state.docs[0];
+
+    if (state.docs.length > 1) {
+        panel.append(hint(`This tool works on one document. Using "${entry.name}"; `
+            + 'remove the others or switch to Merge.'));
+    }
+
+    let fields = [];
+    try {
+        fields = listTextFields(entry.doc);
+    } catch (err) {
+        panel.append(hint('The form in this document could not be read: ' + err.message));
+        return;
+    }
+
+    if (!fields.length) {
+        panel.append(hint('This PDF has no fillable text fields. '
+            + 'Free text anywhere on the page is a separate tool, not yet available.'));
+        return;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'pdf-fields';
+
+    for (const field of fields) {
+        const row = document.createElement('div');
+        row.className = 'pdf-field';
+
+        const label = document.createElement('label');
+        label.className = 'pdf-field-label';
+        label.setAttribute('for', `fld-${field.name}`);
+        label.textContent = field.name;
+
+        const meta = document.createElement('span');
+        meta.className = 'pdf-field-meta';
+        const face = field.font?.name ?? 'no font declared';
+        const category = CATEGORIES[field.font?.category]?.label ?? 'unknown';
+        meta.textContent = `page ${field.pageIndex + 1} · ${face} · ${category}`
+            + (field.font?.subset ? ' · subset' : '');
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = `fld-${field.name}`;
+        input.className = 'pdf-field-input';
+        input.value = state.fieldValues[field.name] ?? field.currentValue ?? '';
+        input.placeholder = field.currentValue ? '' : 'Leave empty to keep unchanged';
+
+        const verdict = document.createElement('div');
+        verdict.className = 'pdf-field-verdict';
+
+        input.addEventListener('input', () => {
+            state.fieldValues[field.name] = input.value;
+            updateVerdicts(entry, list);
+        });
+
+        row.append(label, meta, input, verdict);
+        row.dataset.field = field.name;
+        list.append(row);
+    }
+
+    panel.append(list);
+    updateVerdicts(entry, list);
+
+    panel.append(runButton('Save filled PDF', async (button) => {
+        await runOperation(button, async () => {
+            const values = Object.fromEntries(
+                Object.entries(state.fieldValues).filter(([, v]) => v && v.trim() !== ''));
+            if (!Object.keys(values).length) throw new Error('Type a value into at least one field.');
+            const { bytes, report, written } = await fillForm(entry.doc, entry.name, values);
+            const substituted = written.filter((w) => w.fontSource === 'SUBSTITUTE').length;
+            return [{
+                name: ops.outputName(entry.name, 'filled'),
+                bytes, report,
+                summary: `${written.length} field(s) filled`
+                    + (substituted ? `, ${substituted} with a substitute font` : ''),
+            }];
+        });
+    }));
+}
+
+/* Recompute every field's verdict against what is currently typed. */
+function updateVerdicts(entry, list) {
+    const values = Object.fromEntries(
+        Object.entries(state.fieldValues).filter(([, v]) => v && v.trim() !== ''));
+
+    let plan = { plans: [], blocked: [] };
+    try {
+        plan = planFill(entry.doc, values);
+    } catch {
+        return;
+    }
+
+    const byField = new Map(plan.plans.map((p) => [p.name, p]));
+    const blockedBy = new Map(plan.blocked.map((b) => [b.field, b]));
+
+    for (const row of list.querySelectorAll('.pdf-field')) {
+        const name = row.dataset.field;
+        const verdict = row.querySelector('.pdf-field-verdict');
+        verdict.textContent = '';
+        row.classList.remove('pdf-field-warn', 'pdf-field-block');
+
+        const blocked = blockedBy.get(name);
+        if (blocked) {
+            row.classList.add('pdf-field-block');
+            verdict.append(verdictBox('Cannot write this text', blocked.detail));
+            continue;
+        }
+
+        const decision = byField.get(name);
+        if (!decision || decision.usedOriginal) continue;
+
+        row.classList.add('pdf-field-warn');
+        const category = CATEGORIES[decision.category]?.label ?? decision.category;
+        verdict.append(verdictBox(
+            `Substitute font used here — ${category}`,
+            `${decision.explain} It will be written in ${decision.substituteFace} instead, `
+            + `which is legible but will not match the rest of the document exactly.`));
+    }
+}
+
+function verdictBox(title, detail) {
+    const box = document.createElement('div');
+    box.className = 'pdf-field-note';
+    const head = document.createElement('strong');
+    head.textContent = title;
+    const body = document.createElement('span');
+    body.textContent = detail;
+    box.append(head, body);
+    return box;
 }
 
 function runButton(label, handler) {

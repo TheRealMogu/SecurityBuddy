@@ -161,6 +161,78 @@ def collect_fonts(reader: PdfReader) -> dict:
     return fonts
 
 
+def field_fingerprints(reader: PdfReader) -> dict:
+    """Per-field /V and /AP bytes, so an untouched field can be proven untouched.
+
+    A filling operation is allowed to change exactly the fields it was asked to
+    change. Everything else in the form must come across byte for byte — both
+    the value a program reads (/V) and the appearance a person sees (/AP).
+    """
+    try:
+        acro = resolve(reader.trailer["/Root"].get("/AcroForm"))
+    except Exception:  # noqa: BLE001
+        return {}
+    if acro is None:
+        return {}
+
+    # Which page each widget sits on, so a field that vanished can be told
+    # apart from a field that was pruned with its page.
+    widget_page: dict[int, int] = {}
+    for index, page in enumerate(reader.pages):
+        for annot in resolve(page.get("/Annots")) or []:
+            widget_page[id(resolve(annot))] = index
+
+    out: dict[str, dict] = {}
+    seen: set[int] = set()
+
+    def ap_hash(node) -> str:
+        ap = resolve(node.get("/AP"))
+        if ap is None:
+            return "(no /AP)"
+        digest = hashlib.sha256()
+        for key in sorted(str(k) for k in ap.keys()):
+            entry = resolve(ap.get(key))
+            raw = getattr(entry, "_data", None)
+            if raw is None:
+                try:
+                    raw = entry.get_data()
+                except Exception:  # noqa: BLE001
+                    raw = b""
+            digest.update(key.encode())
+            digest.update(raw or b"")
+        return digest.hexdigest()
+
+    def walk(ref, prefix: str) -> None:
+        node = resolve(ref)
+        if not hasattr(node, "get") or id(node) in seen:
+            return
+        seen.add(id(node))
+        partial = node.get("/T")
+        name = f"{prefix}.{partial}" if prefix and partial else (partial or prefix)
+        kids = resolve(node.get("/Kids")) or []
+        child_fields = [k for k in kids
+                        if hasattr(resolve(k), "get") and resolve(k).get("/T") is not None]
+        if child_fields:
+            for kid in child_fields:
+                walk(kid, str(name) if name else "")
+            return
+        if not name:
+            return
+        value = node.get("/V")
+        widget = resolve(kids[0]) if kids else node
+        out[str(name)] = {
+            "value": str(value) if value is not None else None,
+            "value_sha256": sha256(str(value).encode()) if value is not None else "(unset)",
+            "ap_sha256": ap_hash(widget if hasattr(widget, "get") else node),
+            "da": str(node.get("/DA")) if node.get("/DA") else None,
+            "page": widget_page.get(id(widget), widget_page.get(id(node), -1)),
+        }
+
+    for field in resolve(acro.get("/Fields")) or []:
+        walk(field, "")
+    return out
+
+
 def collect_form_fields(reader: PdfReader) -> list[str]:
     """Fully qualified field names, in document order."""
     try:
@@ -251,6 +323,7 @@ def describe(path: Path) -> dict:
         "annotation_count": count_annotations(reader),
         "form_field_count": len(fields),
         "form_field_names": fields,
+        "field_fingerprints": field_fingerprints(reader),
         "metadata": metadata,
         "has_outlines": "/Outlines" in root,
         "has_acroform": "/AcroForm" in root,
@@ -306,8 +379,14 @@ def print_description(info: dict) -> None:
             print(f"    {key:<16} {value[:60]}")
 
 
-def compare(before: dict, after: dict, mapping: list[int] | None) -> list[str]:
-    """Return a list of differences. Empty list means structurally identical."""
+def compare(before: dict, after: dict, mapping: list[int] | None,
+            written: list[dict] | None = None) -> list[str]:
+    """Return a list of differences. Empty list means structurally identical.
+
+    `written` names the fields an operation declared it would change, with how
+    it wrote them. Those are exempt from the untouched check and are reported;
+    every other field must be byte-identical.
+    """
     problems: list[str] = []
 
     if before.get("encrypted") or after.get("encrypted"):
@@ -412,8 +491,18 @@ def compare(before: dict, after: dict, mapping: list[int] | None) -> list[str]:
 
     for key in ("has_outlines", "has_acroform", "has_ocproperties",
                 "has_page_labels", "has_xmp"):
-        if before[key] and not after[key]:
-            problems.append(f"{key.replace('has_', '')} present in input, absent in output")
+        if not (before[key] and not after[key]):
+            continue
+        if key == "has_acroform" and before.get("field_fingerprints"):
+            # The form dictionary is removed when every field belonged to a page
+            # that is not in the output; keeping it would list fields that
+            # control nothing.
+            surviving = [f for f in before["field_fingerprints"].values()
+                         if f.get("page", -1) in (set(mapping or []))]
+            if not surviving:
+                problems.append("NOTE acroform removed because no field's page is in the output")
+                continue
+        problems.append(f"{key.replace('has_', '')} present in input, absent in output")
 
     lost_names = set(before["names_entries"]) - set(after["names_entries"])
     for entry in sorted(lost_names):
@@ -425,6 +514,44 @@ def compare(before: dict, after: dict, mapping: list[int] | None) -> list[str]:
                             "(the tool never transports document JavaScript)")
         else:
             problems.append(f"/Names /{entry} present in input, absent in output")
+
+    # Form fields: only the declared ones may differ.
+    changed_names = {entry["field"] for entry in (written or [])}
+    kept_pages = set(mapping or [])
+    for name, old in before.get("field_fingerprints", {}).items():
+        new = after.get("field_fingerprints", {}).get(name)
+        if new is None:
+            # A field whose page was not kept is SUPPOSED to be gone: block 1
+            # prunes it deliberately rather than leaving a widget pointing at a
+            # page that is not in the file. A field whose page IS in the output
+            # and vanished anyway is a real defect.
+            if old.get("page", -1) >= 0 and old["page"] not in kept_pages:
+                problems.append(
+                    f"NOTE form field {name} was dropped with its page "
+                    f"(page {old['page'] + 1} is not in the output)")
+            else:
+                problems.append(f"form field lost from the output: {name}")
+            continue
+        if name in changed_names:
+            continue
+        if old["value_sha256"] != new["value_sha256"]:
+            problems.append(
+                f"UNTOUCHED field {name} had its value changed: "
+                f"{old['value']!r} -> {new['value']!r}")
+        if old["ap_sha256"] != new["ap_sha256"]:
+            problems.append(
+                f"UNTOUCHED field {name} had its appearance stream rewritten "
+                f"({old['ap_sha256'][:12]} != {new['ap_sha256'][:12]})")
+
+    for entry in written or []:
+        name = entry["field"]
+        new = after.get("field_fingerprints", {}).get(name)
+        if new is None:
+            problems.append(f"declared-written field is missing from the output: {name}")
+            continue
+        old_hash = before.get("field_fingerprints", {}).get(name, {}).get("value_sha256")
+        if new["value_sha256"] == old_hash:
+            problems.append(f"field {name} was declared written but its value did not change")
 
     if before["has_struct_tree"] and not after["has_struct_tree"]:
         problems.append("NOTE struct_tree dropped (known pdf-lib limitation, "
@@ -465,13 +592,21 @@ def run_manifest(manifest_path: Path) -> int:
         operated_on.add(entry["input"])
         before = load(entry["input"])
         after = load(entry["output"])
-        problems = compare(before, after, entry.get("pages"))
+        problems = compare(before, after, entry.get("pages"), entry.get("written"))
         real = [p for p in problems if not p.startswith("NOTE")]
         label = f"{entry['input']} -> {entry['op']}"
 
         if not real:
             notes = f"  ({len(problems)} note)" if problems else ""
             print(f"{label:<46} OK{notes}")
+            for record in entry.get("written") or []:
+                print(f"    field {record['field']!r:<24} doc={record['docType']}  "
+                      f"font={record['fontSource']:<10} category={record['category']:<10} "
+                      f"face={record['face']}")
+                if record.get("reason") and record["reason"] != "original":
+                    missing = "".join(record.get("missing") or [])
+                    extra = f"  missing={missing!r}" if missing else ""
+                    print(f"          reason={record['reason']}{extra}")
         else:
             failed += 1
             print(f"{label:<46} {len(real)} DIFFERENCE(S)")

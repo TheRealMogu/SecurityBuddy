@@ -6,9 +6,17 @@ pdf-lib bundle as the `window.PDFLib` global the browser would provide.
 
 ```bash
 cd tests/pdf
-node leak.mjs      # page-leak and content-stream identity checks
-node merge.mjs     # two-document merge, collision reporting
+node leak.mjs        # page-leak and content-stream identity checks
+node merge.mjs       # two-document merge, collision reporting
+node ocg.mjs         # optional-content groups survive extraction
+node pagetype.mjs    # TYPE A / TYPE B classification vs the pypdf measurements
+node fill.mjs        # form filling: original font, forced substitution, untouched fields
 ```
+
+`mk-subset-form.mjs` builds `08-subset-font-form.pdf`, a form whose `/DA` points at the
+DejaVuSans **subset** already embedded in `01-word-export.pdf`. That subset can write 41
+characters and none of them is `V`, so filling it with "Verifica" is the forced-substitution
+case. Run it once before `fill.mjs`.
 
 No dependencies to install — everything comes from `static/vendor/`.
 

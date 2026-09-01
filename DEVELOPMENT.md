@@ -573,6 +573,90 @@ non fidati: la staleness qui è una questione di sicurezza, non di manutenzione)
    può cambiare il comportamento del copier, che è esattamente dove stavano i tre difetti
    sopra.
 
+### Classificazione dei documenti: TIPO A e TIPO B
+
+**TIPO A** — la pagina disegna testo con un font che esiste nel documento: nome, categoria e
+disponibilità dei glifi sono ispezionabili. **TIPO B** — la pagina è una scansione: non c'è un
+font da leggere, solo un aspetto da stimare.
+
+> **Il criterio non è "la pagina ha del testo".**
+>
+> Uno scansionato con OCR ne ha moltissimo. Misurato su un output Tesseract: **368 operazioni
+> di testo per pagina**, un font incorporato vero, e un `/ToUnicode` che dichiara **55.506
+> caratteri scrivibili**. Ciò che non ha è quel testo **visibile** — ogni operazione gira in
+> render mode 3 — né un font con contorni: il programma è di 572 byte e non disegna nulla.
+>
+> Un controllo basato su "c'è testo?" o "il glifo è nel subset?" promuove quella pagina a
+> TIPO A, scrive con il font glyphless e produce testo che l'utente non può vedere. Per
+> questo la pagina viene classificata **prima**, da come è disegnata, e solo dopo si pone
+> qualsiasi domanda sui font.
+
+Segnali, in `static/js/pdf/pagetype.js`:
+
+| Segnale | Soglia |
+|---|---|
+| Tutto il testo in modalità invisibile (`Tr` 3 o 7) | `visibleTextOps == 0 && textOps > 0` |
+| Immagine singola che copre la pagina | copertura ≥ 0.85 via CTM |
+| Programma di font troppo piccolo per contenere contorni | < 2048 byte |
+| Nessun testo affatto sotto un'immagine a piena pagina | — |
+
+TIPO B se (invisibile **e** coperta) oppure (nessun testo **e** coperta) oppure (font
+glyphless **e** coperta). Il nome `GlyphLessFont` **non** viene usato come criterio: è la
+convenzione di Tesseract, altri motori OCR ne usano altre.
+
+### Classificazione dei font
+
+> **`/FontDescriptor /Flags` non è utilizzabile come fonte primaria.** Misurato: ogni font
+> incorporato prodotto da LibreOffice nel corpus riporta `Flags=4` (Symbolic) e nient'altro —
+> incluso `LiberationSerif`, che è un serif, e `WenQuanYiZenHei`, che è CJK. Classificare per
+> `/Flags` li chiama entrambi sans.
+
+Cascata effettiva (`static/js/pdf/fonts.js`), **nome prima dei flag**:
+
+1. **CJK** — `CIDSystemInfo /Ordering` in `{GB1, CNS1, Japan1, Korea1}`, oppure nome
+   (`Ming, Song, Hei, Kai, Gothic, Mincho, Batang, WenQuanYi, SourceHan, Noto*CJK…`).
+2. **Monospace** — bit `FixedPitch`, nome (`Mono, Courier, Consolas…`), oppure tutti i valori
+   di `/Widths` uguali (segnale strutturale, indipendente dal nome).
+3. **Serif** — nome (`Serif, Times, Georgia, Garamond, Palatino…`). Bit Serif solo come conferma.
+4. **Sans** — default.
+
+Sostituti: i **font standard PDF** (Times / Helvetica / Courier), che non richiedono
+incorporamento e non aggiungono peso. **Il CJK non ha sostituto**: non esiste un font CJK
+standard PDF e incorporarne uno costerebbe megabyte. Quando un glifo CJK manca l'operazione
+**si blocca con un messaggio esplicito** invece di scrivere in uno script diverso.
+
+### Disponibilità dei glifi
+
+> **`/Widths` non dice quali *caratteri* può scrivere un subset.** I font sottoinsieme
+> rimappano i codici su un intervallo denso `0..N` con encoding interno: `FirstChar=0
+> LastChar=42` descrive 43 slot arbitrari, non un intervallo di caratteri.
+
+Due meccanismi distinti, e confonderli è come si scrive un carattere che il font non contiene:
+
+| Tipo di font | Oracolo |
+|---|---|
+| Subset incorporato | `/ToUnicode` **letto al contrario** (carattere → codice) |
+| Standard 14 | tabella di encoding (WinAnsi + `/Differences`) |
+
+Nessun parser di font, nessuna dipendenza aggiuntiva. Esempio reale: il subset DejaVuSans in
+`01-word-export.pdf` può scrivere **41 caratteri** —
+`,-.0123456789:;IPSabcdefghilmnopqrstuwxy`. Scrivere "Verifica" fallisce sulla `V`.
+
+### Compilazione dei campi form
+
+`static/js/pdf/fill.js`. Il valore va scritto **due volte**: in `/V`, che è ciò che legge un
+programma, e in un appearance stream, che è ciò che vede una persona.
+
+L'appearance viene costruito a mano perché le due scorciatoie sono entrambe sbagliate qui:
+lasciar rigenerare pdf-lib significa lasciargli **scegliere il font** (ed è il comportamento
+disattivato in `pdflib.js`); impostare `/NeedAppearances` passa la stessa scelta al viewer,
+con una risposta diversa per ciascuno — e i browser spesso ignorano il flag mostrando un campo
+vuoto sopra un valore che c'è davvero.
+
+Il font viene dal `/DA` del campo, risolto contro il `/DR` del form: è questo il significato
+di "il font già dichiarato per quella zona" per un campo di modulo. I campi non compilati non
+vengono toccati: l'intero documento passa dal percorso di copia del blocco 1.
+
 ### Verifica: `tools/pdf_compare.py`
 
 Dipende da **pypdf**, dipendenza **solo di sviluppo** (`pyproject.toml`, mai
@@ -771,11 +855,12 @@ realmente globale richiederebbe uno store condiviso (Redis).
   (Word non era disponibile in ambiente di sviluppo). Font mapping, XMP/`/Info` e
   marcatura di Word differiscono e non sono mai stati esercitati — vedi l'avvertenza in
   "Fixture PDF per i test". Da rifare con un export Word autentico.
-- **Blocco 2 (overlay di testo/immagini, compilazione campi) non iniziato.** Un caso già
-  emerso e da decidere prima di partire: nel fixture del modulo i campi usano **Helvetica
-  non incorporata** (font standard PDF). La regola "estrai il font dal documento e
-  riusalo" lì non ha nulla da estrarre: è un caso da bloccare esplicitamente, non da
-  aggirare con un fallback.
+- **Overlay di testo libero (blocco 2, passo 3) non iniziato.** La compilazione dei campi
+  form esistenti è fatta; resta il testo libero in un punto qualsiasi della pagina, sia su
+  TIPO A che su TIPO B. Per il TIPO B servirà la stima visiva (dimensione approssimativa,
+  serif o sans) con l'avviso obbligatorio che è una **stima**, non un font recuperato.
+- **Nessun font CJK vendorizzato.** Decisione presa: quando un glifo CJK manca dal subset
+  l'operazione si blocca. Rivedibile se emerge un caso d'uso reale.
 
 
 ### SEO Crawler
