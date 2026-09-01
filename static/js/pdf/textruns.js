@@ -43,29 +43,47 @@ export const BASELINE_TOLERANCE_PT = 2.5;
  * bounded enough that it does not reach across a page. */
 export const LINE_REACH_PT = 144;
 
-function pageContentText(doc, page) {
+/* The page's drawing operators as one string, plus the map back to the stream
+ * each byte came from.
+ *
+ * Content streams concatenate into ONE logical stream — graphics state carries
+ * across the join — so they must be parsed together. But a replacement has to
+ * be written back into a specific stream, which needs the offset translated. */
+export function pageContentText(doc, page) {
     const contents = page.node.lookup(N.Contents);
-    const streams = contents instanceof PDFArray
-        ? contents.asArray().map((ref) => doc.context.lookup(ref))
-        : [contents];
+    const refs = contents instanceof PDFArray ? contents.asArray() : [page.node.get(N.Contents)];
     let text = '';
-    for (const stream of streams) {
-        if (!(stream instanceof PDFStream)) continue;
+    const bounds = [];
+    refs.forEach((ref, index) => {
+        const stream = doc.context.lookup(ref);
+        if (!(stream instanceof PDFStream)) return;
         try {
             const bytes = stream instanceof PDFRawStream
                 ? decodePDFRawStream(stream).decode()
                 : stream.getContents();
-            text += `${new TextDecoder('latin1').decode(bytes)}\n`;
+            const decoded = new TextDecoder('latin1').decode(bytes);
+            bounds.push({ index, ref, start: text.length, end: text.length + decoded.length });
+            text += `${decoded}\n`;
         } catch {
             // Unreadable stream: the page simply contributes no runs.
         }
+    });
+    return { text, bounds };
+}
+
+/* Which stream does an offset in the concatenated text belong to? */
+export function locateOffset(bounds, offset) {
+    for (const bound of bounds) {
+        if (offset >= bound.start && offset < bound.end) {
+            return { ...bound, local: offset - bound.start };
+        }
     }
-    return text;
+    return null;
 }
 
 /* Every text-showing operation on the page, with position, font and size. */
 export function extractRuns(doc, page) {
-    const text = pageContentText(doc, page);
+    const { text, bounds } = pageContentText(doc, page);
     const runs = [];
 
     // Resource names are per-producer and often unique per drawing call, so
@@ -102,13 +120,16 @@ export function extractRuns(doc, page) {
     // mistaken for an operator.
     const pattern = /\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>|(-?\d*\.?\d+)|(\/[^\s/<>\[\]()]+)|([A-Za-z'"*]+)/g;
     let operands = [];
+    let operandStart = -1;
     let match;
 
     while ((match = pattern.exec(text)) !== null) {
         const [token, number, name, operator] = match;
+        if (operands.length === 0) operandStart = match.index;
         if (number !== undefined) { operands.push(parseFloat(number)); continue; }
         if (name !== undefined) { operands.push(name); continue; }
         if (operator === undefined) { operands.push(token); continue; }
+        const opEnd = match.index + token.length;
 
         switch (operator) {
             case 'q': stack.push([...ctm]); break;
@@ -166,7 +187,17 @@ export function extractRuns(doc, page) {
                 // real size in the matrix.
                 const scale = Math.hypot(device[2], device[3]) || 1;
                 const size = Number((fontSize * scale).toFixed(2));
+                // The exact span of this drawing operation in the concatenated
+                // text: everything a replacement has to overwrite, operator
+                // included, so a new string can take its place verbatim.
+                const span = operandStart >= 0
+                    ? { start: operandStart, end: opEnd, operator }
+                    : null;
                 runs.push({
+                    span,
+                    operands: operands.filter((o) => typeof o === 'string'
+                        && (o.startsWith('(') || o.startsWith('<') || Array.isArray(o))),
+                    rawOperands: [...operands],
                     x: device[4],
                     y: device[5],
                     // Average Latin advance is near half an em; this is a
@@ -182,7 +213,9 @@ export function extractRuns(doc, page) {
             default: break;
         }
         operands = [];
+        operandStart = -1;
     }
+    runs.bounds = bounds;
     return runs;
 }
 

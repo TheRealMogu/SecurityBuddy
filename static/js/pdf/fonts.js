@@ -241,6 +241,69 @@ function decodeStream(stream) {
     }
 }
 
+/* Read a /ToUnicode CMap forwards: code -> the character it draws.
+ *
+ * The inverse of buildWritableMap. Needed to show a user the text that is
+ * ALREADY on the page: a subset font's codes are arbitrary slot numbers, so
+ * without this the existing text reads as control characters. */
+export function buildReadableMap(doc, font) {
+    if (!font) return new Map();
+
+    const toUnicode = font.dict.lookup(N.ToUnicode);
+    if (toUnicode instanceof PDFStream) {
+        const forward = parseToUnicodeForward(decodeStream(toUnicode));
+        if (forward.size) return forward;
+    }
+
+    // No /ToUnicode: the encoding table read the other way round.
+    const map = new Map();
+    for (const [char, code] of encodingMap(doc, font)) {
+        if (!map.has(code)) map.set(code, char);
+    }
+    return map;
+}
+
+function parseToUnicodeForward(text) {
+    const map = new Map();
+    const fromHex = (hex) => {
+        let out = '';
+        for (let i = 0; i + 3 < hex.length; i += 4) out += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
+        return out || String.fromCharCode(parseInt(hex, 16));
+    };
+    for (const block of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+        for (const [, src, dst] of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+            map.set(parseInt(src, 16), fromHex(dst));
+        }
+    }
+    for (const block of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+        for (const [, lo, hi, dst] of
+             block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+            const start = parseInt(lo, 16);
+            const end = parseInt(hi, 16);
+            const base = parseInt(dst.slice(-4), 16);
+            for (let i = 0; i <= Math.min(end - start, 65535); i += 1) {
+                map.set(start + i, String.fromCharCode(base + i));
+            }
+        }
+    }
+    return map;
+}
+
+/* Advance widths by character code, for judging whether a replacement will
+ * still fit the space the original occupied. */
+export function widthMap(doc, font) {
+    const widths = new Map();
+    if (!font) return widths;
+    const first = font.dict.lookupMaybe(N.FirstChar, PDFNumber)?.asNumber();
+    const array = font.dict.lookupMaybe(N.Widths, PDFArray);
+    if (first !== undefined && array) {
+        array.asArray().forEach((value, index) => {
+            if (value instanceof PDFNumber) widths.set(first + index, value.asNumber());
+        });
+    }
+    return widths;
+}
+
 /* Read a /ToUnicode CMap backwards: character -> the code that draws it. */
 function invertToUnicode(text) {
     const map = new Map();

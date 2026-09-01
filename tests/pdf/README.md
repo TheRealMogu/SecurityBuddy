@@ -13,7 +13,13 @@ node pagetype.mjs    # TYPE A / TYPE B classification vs the pypdf measurements
 node fill.mjs        # form filling: original font, forced substitution, untouched fields
 node roles.mjs       # baseline-first font lookup at a typographic role boundary
 node overlay.mjs     # free text: original / SUBSTITUTE / ESTIMATED / DEFAULT / USER
+node replace.mjs     # editing text already on the page
 ```
+
+`replace.mjs` covers the one operation that rewrites a content stream. Its most
+important assertion is not that the new text is present but that the OLD text is
+gone: a replacement that painted over the original would leave it recoverable by
+copy-and-paste, which on a security tool is a redaction that does not redact.
 
 Fixture builders, run once each before the tests that use them:
 `mk-subset-form.mjs` (08), `mk-roles.mjs` (09), `mk-noocr.mjs` (10 — needs

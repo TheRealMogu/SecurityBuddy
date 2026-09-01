@@ -63,6 +63,8 @@
                                 role="tab" aria-selected="false">Fill form</button>
                         <button type="button" class="pdf-tab" data-tool="text"
                                 role="tab" aria-selected="false">Add text</button>
+                        <button type="button" class="pdf-tab" data-tool="edit"
+                                role="tab" aria-selected="false">Edit text</button>
                     </div>
                     <div id="pdfToolPanel" class="pdf-panel"></div>
                     <div id="pdfError" hidden class="pdf-notice pdf-notice-block"
@@ -250,6 +252,12 @@
                         font-weight:700; line-height:17px; text-align:center;
                         box-shadow:0 0 0 2px rgba(255,255,255,.85); }
     .pdf-place-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+
+    .pdf-edit-marker { position:absolute; transform:translate(0,-100%);
+                       width:60px; height:12px; border:2px solid var(--color-primary);
+                       border-radius:2px; background:var(--color-primary-dim); }
+    .pdf-edit-before { margin:.3rem 0 0; font-size:.82rem; color:var(--color-text-muted);
+                       text-decoration:line-through; word-break:break-word; }
 
     .pdf-correct { margin-top:.55rem; display:flex; flex-direction:column; gap:.4rem; }
     .pdf-origin { align-self:flex-start; font-size:.68rem; font-weight:700;

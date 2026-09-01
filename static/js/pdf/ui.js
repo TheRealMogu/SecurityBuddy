@@ -17,6 +17,7 @@ import * as viewer from './viewer.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
 import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
 import { planOverlay, addOverlay } from './overlay.js';
+import { readableRuns, runAtPoint, planReplacement, replaceText } from './replace.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,6 +34,8 @@ const state = {
     placements: [],
     placementPage: 0,
     placementSeq: 0,
+    edits: {},
+    editPage: 0,
 };
 
 /* ── File intake ─────────────────────────────────────────────────────────── */
@@ -77,6 +80,8 @@ function resetSelections() {
     state.fieldValues = {};
     state.placements = [];
     state.placementPage = 0;
+    state.edits = {};
+    state.editPage = 0;
 }
 
 /* ── Pre-flight gate ─────────────────────────────────────────────────────── */
@@ -300,6 +305,7 @@ function renderTool() {
         case 'rotate': renderPagePanel(panel, 'rotate'); break;
         case 'fill': renderFillPanel(panel); break;
         case 'text': renderTextPanel(panel); break;
+        case 'edit': renderEditPanel(panel); break;
         default: break;
     }
 }
@@ -309,6 +315,182 @@ function hint(text) {
     p.className = 'pdf-hint';
     p.textContent = text;
     return p;
+}
+
+/* ── Editing text already on the page ────────────────────────────────────── */
+
+/* Click a word to change it. This is the one tool that rewrites the page's own
+ * content stream, and the one where a substitute font is refused rather than
+ * offered: half a line in a different face would not match the words either
+ * side of it. */
+function renderEditPanel(panel) {
+    const entry = state.docs[0];
+    const pageCount = entry.doc.getPageCount();
+
+    if (pageCount > 1) {
+        const bar = document.createElement('div');
+        bar.className = 'pdf-actions-bar';
+        for (let i = 0; i < pageCount; i += 1) {
+            const button = smallButton(`Page ${i + 1}`, () => {
+                state.editPage = i;
+                renderTool();
+            });
+            if (i === state.editPage) button.classList.add('pdf-small-btn-active');
+            bar.append(button);
+        }
+        panel.append(bar);
+    }
+
+    let runs = [];
+    try {
+        runs = readableRuns(entry.doc, entry.doc.getPage(state.editPage));
+    } catch {
+        panel.append(hint('The text on this page could not be read.'));
+        return;
+    }
+
+    if (!runs.length) {
+        panel.append(hint('No editable text was found on this page. A scanned page has no '
+            + 'text to change — use "Add text" to write over it instead.'));
+        return;
+    }
+
+    panel.append(hint('Click a piece of text to change it. The replacement is drawn from the '
+        + 'same place in the same font, and nothing after it moves — so a longer '
+        + 'replacement runs on, and a shorter one leaves a gap.'));
+
+    const stage = document.createElement('div');
+    stage.className = 'pdf-place-stage';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'pdf-place-canvas';
+    const markers = document.createElement('div');
+    markers.className = 'pdf-place-markers';
+    stage.append(canvas, markers);
+    panel.append(stage);
+    paintEditSurface(entry, canvas, markers, stage, runs);
+
+    const list = document.createElement('div');
+    list.className = 'pdf-fields';
+    panel.append(list);
+    renderEditCards(entry, list, runs);
+
+    panel.append(runButton('Save PDF with the changed text', async (button) => {
+        await runOperation(button, async () => {
+            const edits = Object.entries(state.edits)
+                .filter(([, value]) => value && value.text && value.text.trim() !== '')
+                .map(([id, value]) => ({
+                    pageIndex: value.pageIndex, runId: Number(id), newText: value.text,
+                }));
+            if (!edits.length) throw new Error('Change the wording of at least one piece of text.');
+            const { bytes, report, written } = await replaceText(entry.doc, entry.name, edits);
+            return [{
+                name: ops.outputName(entry.name, 'edited'),
+                bytes, report,
+                summary: `${written.length} piece(s) of text replaced`,
+            }];
+        });
+    }));
+}
+
+async function paintEditSurface(entry, canvas, markers, stage, runs) {
+    try {
+        if (!entry.pdf) entry.pdf = await openForPreview(entry.bytes);
+        const viewport = await renderForPlacement(entry.pdf, state.editPage + 1, canvas, 520);
+
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const [x, y] = viewport.convertToPdfPoint(
+                event.clientX - rect.left, event.clientY - rect.top);
+            const run = runAtPoint(runs, x, y);
+            if (!run) return;
+            if (!state.edits[run.id]) {
+                state.edits[run.id] = { pageIndex: state.editPage, text: run.text, original: run.text };
+            }
+            renderTool();
+        });
+
+        markers.textContent = '';
+        for (const id of Object.keys(state.edits)) {
+            const run = runs.find((r) => r.id === Number(id));
+            if (!run) continue;
+            const [vx, vy] = viewport.convertToViewportPoint(run.x, run.y);
+            const box = document.createElement('span');
+            box.className = 'pdf-edit-marker';
+            box.style.left = `${vx}px`;
+            box.style.top = `${vy}px`;
+            markers.append(box);
+        }
+    } catch {
+        stage.append(hint('This page could not be rendered.'));
+    }
+}
+
+function renderEditCards(entry, list, runs) {
+    list.textContent = '';
+    const page = entry.doc.getPage(state.editPage);
+
+    for (const [id, edit] of Object.entries(state.edits)) {
+        if (edit.pageIndex !== state.editPage) continue;
+        const run = runs.find((r) => r.id === Number(id));
+        if (!run) continue;
+
+        const card = document.createElement('div');
+        card.className = 'pdf-field';
+
+        const head = document.createElement('div');
+        head.className = 'pdf-place-head';
+        const title = document.createElement('span');
+        title.className = 'pdf-field-label';
+        title.textContent = `${run.font.name} · ${run.size}pt`;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'pdf-icon-btn';
+        remove.textContent = '✕';
+        remove.setAttribute('aria-label', 'Leave this text unchanged');
+        remove.addEventListener('click', () => {
+            delete state.edits[id];
+            renderTool();
+        });
+        head.append(title, remove);
+        card.append(head);
+
+        const before = document.createElement('p');
+        before.className = 'pdf-edit-before';
+        before.textContent = edit.original;
+        card.append(before);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'pdf-field-input';
+        input.value = edit.text;
+        input.addEventListener('input', () => {
+            edit.text = input.value;
+            renderEditCards(entry, list, runs);
+        });
+        card.append(input);
+
+        let plan = null;
+        try { plan = planReplacement(entry.doc, page, run, edit.text); } catch { /* ignore */ }
+
+        if (plan?.blocked) {
+            card.classList.add('pdf-field-block');
+            card.append(verdictBox('This font cannot write that text', plan.explain));
+        } else if (plan) {
+            const summary = document.createElement('p');
+            summary.className = 'pdf-correct-summary';
+            summary.textContent = `Stays in ${plan.face} at ${plan.size}pt · `
+                + `${plan.oldWidth}pt wide before, ${plan.newWidth}pt after`;
+            card.append(summary);
+            for (const note of plan.notes) {
+                card.classList.add('pdf-field-warn');
+                const p = document.createElement('p');
+                p.className = 'pdf-correct-note';
+                p.textContent = note;
+                card.append(p);
+            }
+        }
+        list.append(card);
+    }
 }
 
 /* ── Free text overlay ───────────────────────────────────────────────────── */
