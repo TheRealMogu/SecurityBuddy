@@ -44,3 +44,12 @@ five reference documents, and use `tools/pdf_compare.py` against them.
 
 Passing here means the logic is sound. It does not mean an operation is safe on
 an arbitrary document.
+
+## Known gap in the fixture set
+
+`01-word-export.pdf` was produced with **LibreOffice, not Microsoft Word** — Word
+was not available in the development environment. Word differs in font mapping,
+in the XMP and `/Info` metadata it writes, and in how it generates the structure
+tree, and all three are things the block-1 checks make claims about. Nothing
+Word-specific has ever been exercised. If you have Word, regenerate that fixture
+from a real export and re-run; see the warning in `DEVELOPMENT.md`.

@@ -10,7 +10,7 @@
             <span class="section-label">Free Tool</span>
             <h1 class="hero-headline" style="font-size:clamp(1.5rem,4vw,2.1rem);margin-bottom:.5rem;">PDF Tools</h1>
             <p class="hero-subtext" style="margin-bottom:0;font-size:.92rem;">
-                Structural PDF operations that run entirely in your browser.
+                Merge, split, reorder and rotate PDFs entirely in your browser.
                 Your file is never uploaded, stored or logged.
             </p>
         </div>
@@ -18,52 +18,78 @@
 </section>
 
 <section style="padding:1.25rem 0 3rem;">
-    <div class="container" style="max-width:820px;">
+    <div class="container" style="max-width:980px;">
 
+        <div id="pdfEngineError" hidden class="pdf-notice pdf-notice-block">
+            <div class="pdf-notice-head">The PDF engine failed to load</div>
+            <p class="pdf-notice-detail" id="pdfEngineErrorText"></p>
+        </div>
+
+        <!-- Intake -->
         <div class="card">
             <div class="card-body" style="padding:1.35rem 1.5rem;">
-                <div id="pdfBootStatus" class="pdf-status pdf-status-pending">
-                    <i data-lucide="loader" style="width:18px;height:18px;"></i>
-                    <span>Loading the PDF engine…</span>
+                <div id="pdfDropZone" class="pdf-drop">
+                    <i data-lucide="file-plus" style="width:26px;height:26px;"></i>
+                    <p class="pdf-drop-title">Drop PDFs here, or choose files</p>
+                    <p class="pdf-drop-sub">Everything happens in this tab. Nothing is sent anywhere.</p>
+                    <label class="btn btn-secondary pdf-choose">
+                        Choose files
+                        <input type="file" id="pdfFileInput" accept="application/pdf,.pdf"
+                               multiple hidden>
+                    </label>
                 </div>
-
-                <div id="pdfBootReady" hidden>
-                    <h2 style="font-size:1rem;margin:0 0 .5rem;">Engine ready</h2>
-                    <p style="font-size:.88rem;color:var(--color-text-muted);margin:0 0 1rem;">
-                        The PDF libraries loaded and are running locally in this tab.
-                        The operations themselves are not wired up yet — this page
-                        currently only verifies that the engine works and that
-                        nothing leaves your browser.
-                    </p>
-                    <dl class="pdf-facts" id="pdfFacts"></dl>
-                </div>
-
-                <div id="pdfBootFailed" hidden class="pdf-status pdf-status-error">
-                    <i data-lucide="alert-triangle" style="width:18px;height:18px;"></i>
-                    <span id="pdfBootError"></span>
-                </div>
+                <div id="pdfBusy" hidden class="pdf-hint" style="margin-top:.75rem;">Reading…</div>
+                <div id="pdfFileList" class="pdf-files"></div>
             </div>
         </div>
 
+        <!-- Everything the user must see BEFORE running anything -->
+        <div id="pdfPreflight" class="pdf-preflight" hidden></div>
+
+        <!-- Workspace -->
+        <div id="pdfWorkspace" hidden>
+            <div class="card" style="margin-top:1rem;">
+                <div class="card-body" style="padding:0;">
+                    <div class="pdf-tabs" role="tablist">
+                        <button type="button" class="pdf-tab pdf-tab-active" data-tool="merge"
+                                role="tab" aria-selected="true">Merge</button>
+                        <button type="button" class="pdf-tab" data-tool="extract"
+                                role="tab" aria-selected="false">Extract &amp; split</button>
+                        <button type="button" class="pdf-tab" data-tool="reorder"
+                                role="tab" aria-selected="false">Reorder</button>
+                        <button type="button" class="pdf-tab" data-tool="rotate"
+                                role="tab" aria-selected="false">Rotate</button>
+                    </div>
+                    <div id="pdfToolPanel" class="pdf-panel"></div>
+                    <div id="pdfError" hidden class="pdf-notice pdf-notice-block"
+                         style="margin:0 1.5rem 1.5rem;"></div>
+                </div>
+            </div>
+
+            <div id="pdfResults" class="pdf-results" hidden></div>
+        </div>
+
+        <!-- Standing statement of how the tool behaves -->
         <div class="card" style="margin-top:1rem;">
             <div class="card-body" style="padding:1.35rem 1.5rem;">
                 <h2 style="font-size:1rem;margin:0 0 .6rem;">How this tool treats your document</h2>
-                <ul style="font-size:.88rem;line-height:1.65;color:var(--color-text-muted);margin:0;padding-left:1.1rem;">
-                    <li><strong>Nothing is uploaded.</strong> The file is read with the
-                        browser's File API and written back out as a Blob. There is no
-                        upload endpoint, no storage and no logging of file contents.</li>
-                    <li><strong>Pages are copied, never redrawn.</strong> Content streams
-                        come across byte for byte. Nothing is rasterised and no page is
-                        rebuilt from scratch.</li>
-                    <li><strong>Annotations, form fields and layers stay live objects.</strong>
-                        Nothing is flattened, and the form-field appearance regeneration
-                        that would silently restyle a filled form is switched off.</li>
-                    <li><strong>Anything that cannot be preserved is listed.</strong> Every
-                        operation reports what was carried across, what had to be
-                        restructured and what could not come along — rather than dropping
-                        it silently.</li>
-                    <li><strong>Encrypted PDFs are refused, not unlocked.</strong> This tool
-                        does not remove PDF passwords or permissions.</li>
+                <ul class="pdf-principles">
+                    <li><strong>Nothing is uploaded.</strong> The file is read with the browser's
+                        File API and written back out as a Blob. There is no upload endpoint, no
+                        storage, and no logging of file contents.</li>
+                    <li><strong>Pages are copied, never redrawn.</strong> Content streams come
+                        across byte for byte — verified with SHA-256 against real documents.
+                        Nothing is rasterised.</li>
+                    <li><strong>Nothing is flattened.</strong> Annotations, form fields and layers
+                        stay live objects, and the form-field appearance regeneration that would
+                        silently restyle a filled form is switched off.</li>
+                    <li><strong>Rotation changes a number, not a picture.</strong> Only the page's
+                        rotation attribute is altered.</li>
+                    <li><strong>Anything that cannot be preserved is named.</strong> Every result
+                        lists what was carried across, what had to be rebuilt, and what could not
+                        come along.</li>
+                    <li><strong>Encrypted PDFs are refused, not unlocked.</strong> This tool does
+                        not remove PDF passwords or permissions.</li>
                 </ul>
             </div>
         </div>
@@ -74,68 +100,142 @@
 
 {% block scripts %}
 <style>
-    .pdf-status { display:flex; align-items:center; gap:.6rem; font-size:.9rem; }
-    .pdf-status-pending { color: var(--color-text-muted); }
-    .pdf-status-error { color: var(--color-danger, #c0392b); }
-    .pdf-facts { display:grid; grid-template-columns:auto 1fr; gap:.35rem 1rem;
-                 font-size:.82rem; margin:0; }
-    .pdf-facts dt { color: var(--color-text-muted); }
-    .pdf-facts dd { margin:0; font-variant-numeric: tabular-nums; }
+    .pdf-drop { border:2px dashed var(--color-border, #d6d6d0); border-radius: var(--radius-lg);
+                padding:2rem 1rem; text-align:center; transition:border-color .15s, background .15s; }
+    .pdf-drop-over { border-color: var(--color-primary); background: var(--color-primary-dim); }
+    .pdf-drop-title { font-weight:700; margin:.6rem 0 .2rem; font-size:.95rem; }
+    .pdf-drop-sub { font-size:.82rem; color:var(--color-text-muted); margin:0 0 .9rem; }
+    .pdf-choose { cursor:pointer; }
+
+    .pdf-files:not(:empty) { margin-top:1rem; display:flex; flex-direction:column; gap:.5rem; }
+    .pdf-file { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem;
+                border:1px solid var(--color-border, #e3e3de); border-radius: var(--radius-md);
+                padding:.7rem .85rem; }
+    .pdf-file-rejected { border-color:#c0392b; background:rgba(192,57,43,.06); }
+    .pdf-file-main { display:flex; flex-direction:column; gap:.2rem; min-width:0; }
+    .pdf-file-meta { font-size:.8rem; color:var(--color-text-muted); }
+    .pdf-tags { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.25rem; }
+    .pdf-tag { font-size:.7rem; padding:.12rem .45rem; border-radius: var(--radius-full);
+               border:1px solid currentColor; }
+    .pdf-tag-neutral { color:var(--color-text-muted); }
+    .pdf-tag-warn    { color:#b7791f; }
+    .pdf-tag-danger  { color:#c0392b; }
+
+    .pdf-icon-btn { border:1px solid var(--color-border, #d6d6d0); background:transparent;
+                    border-radius: var(--radius-sm); width:26px; height:26px; cursor:pointer;
+                    color:var(--color-text-muted); flex:none; line-height:1; }
+    .pdf-icon-btn:hover:not(:disabled) { border-color:var(--color-primary); color:var(--color-primary); }
+    .pdf-icon-btn:disabled { opacity:.35; cursor:default; }
+
+    .pdf-preflight { display:flex; flex-direction:column; gap:.6rem; margin-top:1rem; }
+    .pdf-notice { border-radius: var(--radius-md); padding:.85rem 1rem; border-left:4px solid; }
+    .pdf-notice-block   { border-color:#c0392b; background:rgba(192,57,43,.07); }
+    .pdf-notice-confirm { border-color:#b7791f; background:rgba(183,121,31,.09); }
+    .pdf-notice-head { font-weight:700; font-size:.9rem; }
+    .pdf-notice-file { font-size:.75rem; color:var(--color-text-muted); margin-top:.1rem; }
+    .pdf-notice-detail { font-size:.85rem; line-height:1.55; margin:.4rem 0 0;
+                         color:var(--color-text-muted); }
+    .pdf-ack { display:flex; align-items:center; gap:.45rem; margin-top:.6rem;
+               font-size:.85rem; font-weight:600; cursor:pointer; }
+
+    .pdf-tabs { display:flex; border-bottom:1px solid var(--color-border, #e3e3de); overflow-x:auto; }
+    .pdf-tab { flex:1 0 auto; padding:.85rem 1rem; background:transparent; border:0;
+               border-bottom:2px solid transparent; cursor:pointer; font-size:.88rem;
+               font-weight:600; color:var(--color-text-muted); white-space:nowrap; }
+    .pdf-tab-active { color:var(--color-primary); border-bottom-color:var(--color-primary); }
+    .pdf-panel { padding:1.35rem 1.5rem; }
+    .pdf-hint { font-size:.85rem; color:var(--color-text-muted); line-height:1.55; margin:.5rem 0; }
+
+    .pdf-actions-bar { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:1rem; }
+    .pdf-small-btn { font-size:.78rem; padding:.32rem .7rem; border-radius: var(--radius-full);
+                     border:1px solid var(--color-border, #d6d6d0); background:transparent;
+                     cursor:pointer; color:var(--color-text); }
+    .pdf-small-btn:hover { border-color:var(--color-primary); color:var(--color-primary); }
+
+    .pdf-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+                gap:.9rem; margin-bottom:1rem; }
+    .pdf-page { position:relative; display:flex; flex-direction:column; align-items:center;
+                gap:.35rem; padding:.5rem; border:1px solid var(--color-border, #e3e3de);
+                border-radius: var(--radius-md); cursor:default; }
+    label.pdf-page { cursor:pointer; }
+    .pdf-page:has(.pdf-page-check:checked) { border-color:var(--color-primary);
+                                             background:var(--color-primary-dim); }
+    .pdf-page-rotated { border-color:#b7791f; }
+    .pdf-page-frame { position:relative; display:flex; align-items:center; justify-content:center;
+                      min-height:100px; }
+    .pdf-thumb { border:1px solid var(--color-border, #e3e3de); background:#fff;
+                 transform:rotate(var(--pdf-rot, 0deg)); transition:transform .18s; max-width:100%; }
+    .pdf-page-label { font-size:.75rem; color:var(--color-text-muted); font-variant-numeric:tabular-nums; }
+    .pdf-page-check { position:absolute; top:.45rem; left:.45rem; z-index:2; }
+    .pdf-move { display:flex; gap:.25rem; }
+    .pdf-rot-badge { position:absolute; bottom:2px; right:2px; font-size:.68rem; font-weight:700;
+                     background:#b7791f; color:#fff; padding:.05rem .3rem; border-radius: var(--radius-sm); }
+
+    .pdf-merge-order { margin:0 0 1rem; padding-left:1.2rem; font-size:.87rem; }
+    .pdf-merge-order li { display:flex; justify-content:space-between; align-items:center;
+                          gap:1rem; padding:.35rem 0; }
+
+    .pdf-split { margin-top:1.75rem; padding-top:1.25rem;
+                 border-top:1px solid var(--color-border, #e3e3de); }
+    .pdf-split h3 { font-size:.92rem; margin:0 0 .6rem; }
+    .pdf-split-row { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; font-size:.85rem; }
+    .pdf-split-row input { padding:.4rem .6rem; border-radius: var(--radius-sm);
+                           border:1px solid var(--color-border, #d6d6d0); min-width:170px; }
+
+    .pdf-run { margin-top:.5rem; }
+    .pdf-run:disabled { opacity:.5; cursor:not-allowed; }
+
+    /* The site navbar is sticky, so scrollIntoView() would tuck the result
+       under it. scroll-margin keeps the heading clear of the header. */
+    .pdf-results { margin-top:1rem; display:flex; flex-direction:column; gap:.85rem;
+                   scroll-margin-top:5rem; }
+    .pdf-preflight { scroll-margin-top:5rem; }
+    .pdf-results h2 { font-size:1rem; margin:.5rem 0 0; }
+    .pdf-output { border:1px solid var(--color-border, #e3e3de); border-radius: var(--radius-lg);
+                  padding:1rem 1.15rem; background:var(--color-surface, transparent); }
+    .pdf-output-head { display:flex; flex-wrap:wrap; gap:.75rem; align-items:center;
+                       justify-content:space-between; }
+    .pdf-output-head > div { display:flex; flex-direction:column; gap:.15rem; min-width:0; }
+    .pdf-download { flex:none; }
+
+    .pdf-report { margin-top:.85rem; font-size:.83rem; }
+    .pdf-report > summary { cursor:pointer; font-weight:600; color:var(--color-text-muted); }
+    .pdf-report-group { margin-top:.7rem; }
+    .pdf-report-title { font-size:.78rem; text-transform:uppercase; letter-spacing:.05em;
+                        margin:0 0 .3rem; }
+    .pdf-report-danger { color:#c0392b; }
+    .pdf-report-warn   { color:#b7791f; }
+    .pdf-report-ok     { color:var(--color-primary); }
+    .pdf-report ul { margin:0; padding-left:1.1rem; line-height:1.6; color:var(--color-text-muted); }
+    .pdf-report li { margin-bottom:.3rem; }
+    .pdf-report li strong { color:var(--color-text); }
+
+    .pdf-principles { font-size:.88rem; line-height:1.65; color:var(--color-text-muted);
+                      margin:0; padding-left:1.1rem; }
+
+    @media (max-width: 560px) {
+        .pdf-grid { grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); }
+    }
 </style>
 
-<!-- pdf-lib is a UMD bundle and installs window.PDFLib; it must come before any
+<!-- pdf-lib is a UMD bundle installing window.PDFLib; it must load before any
      module that imports static/js/pdf/pdflib.js. Both libraries are served from
-     this origin, so the page needs no CSP widening. -->
+     this origin, so no CSP directive needs widening and pdf.js never reaches
+     for its cross-origin blob: worker fallback. -->
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}"></script>
+<script>
+    window.__SB_PDFJS_SRC__ = "{{ url_for('static', filename='vendor/pdfjs/pdf.min.mjs') }}";
+    window.__SB_PDFJS_WORKER__ = "{{ url_for('static', filename='vendor/pdfjs/pdf.worker.min.mjs') }}";
+</script>
 
 <script type="module">
-    import { PDFDocument } from "{{ url_for('static', filename='js/pdf/pdflib.js') }}";
-
-    const statusEl = document.getElementById('pdfBootStatus');
-    const readyEl = document.getElementById('pdfBootReady');
-    const failedEl = document.getElementById('pdfBootFailed');
-    const factsEl = document.getElementById('pdfFacts');
-
-    function fail(message) {
-        statusEl.hidden = true;
-        failedEl.hidden = false;
-        document.getElementById('pdfBootError').textContent = message;
-    }
-
-    function fact(term, value) {
-        const dt = document.createElement('dt');
-        dt.textContent = term;
-        const dd = document.createElement('dd');
-        dd.textContent = value;
-        factsEl.append(dt, dd);
-    }
-
+    import { init } from "{{ url_for('static', filename='js/pdf/ui.js') }}";
     try {
-        const pdfjs = await import("{{ url_for('static', filename='vendor/pdfjs/pdf.min.mjs') }}");
-
-        /* The worker is pinned to a same-origin URL on purpose.
-         *
-         * pdf.js only falls back to a blob: worker when workerSrc is
-         * cross-origin (PDFWorker#initialize checks _isSameOrigin first). Keeping
-         * it same-origin means the blob: path is never taken, so the page stays
-         * inside the existing default-src 'self' policy with no CSP change. */
-        pdfjs.GlobalWorkerOptions.workerSrc =
-            "{{ url_for('static', filename='vendor/pdfjs/pdf.worker.min.mjs') }}";
-
-        // Round-trip a document built in memory: proves pdf-lib can both write
-        // and read without touching the network.
-        const probe = await PDFDocument.create();
-        probe.addPage([200, 200]);
-        const reloaded = await PDFDocument.load(await probe.save(), { updateMetadata: false });
-
-        statusEl.hidden = true;
-        readyEl.hidden = false;
-        fact('pdf-lib', 'loaded (' + reloaded.getPageCount() + '-page round trip OK)');
-        fact('pdf.js', 'v' + pdfjs.version);
-        fact('Worker', 'same-origin module worker, no blob: fallback');
-        fact('Network', 'no requests are made with your file');
+        init();
     } catch (err) {
-        fail('The PDF engine failed to load: ' + (err && err.message ? err.message : err));
+        document.getElementById('pdfEngineError').hidden = false;
+        document.getElementById('pdfEngineErrorText').textContent =
+            err && err.message ? err.message : String(err);
     }
 </script>
 {% endblock %}

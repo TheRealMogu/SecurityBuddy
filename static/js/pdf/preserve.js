@@ -336,7 +336,10 @@ export function assessOperation(inspection, report, label) {
     }
 
     if (inspection.hasStructTree) {
-        push(report.dropped, 'Tagged PDF structure (/StructTreeRoot)',
+        // In `confirm`, not `dropped`: the user has to see this while deciding
+        // whether to run the operation, not in a summary afterwards. Losing the
+        // accessibility tagging may well be a reason not to proceed at all.
+        push(report.confirm, 'Accessibility tagging will be lost',
             `${where}the logical structure tree cannot be carried across by ` +
             `pdf-lib. It is cross-linked with marked-content identifiers inside ` +
             `the content streams, and pdf-lib does not remap them. The output ` +

@@ -616,7 +616,7 @@ documenti di lavoro reali). Ricette per ricrearli da zero:
 
 | # | File | Cosa mette alla prova |
 |---|---|---|
-| 1 | `01-word-export.pdf` | Font sottoinsieme reali, gerarchia di titoli, PDF taggato |
+| 1 | `01-word-export.pdf` | Font sottoinsieme reali, gerarchia di titoli, PDF taggato — **vedi avvertenza sotto** |
 | 2 | `02-fillable-form.pdf` | AcroForm con widget su pagine non contigue, outline |
 | 3 | `03-scanned-ocr.pdf` | Immagine a piena pagina + strato di testo OCR invisibile |
 | 4 | `04-accented-cjk.pdf` | Accentate europee e CJK, subset multi-byte |
@@ -630,8 +630,27 @@ soffice --headless --convert-to pdf --outdir tests/fixtures/pdf documento.docx
 ```
 
 Serve `libreoffice-writer` installato (`libreoffice-core` da solo non ha i filtri documento).
-Un export LibreOffice non è identico a uno di Word — differiscono nella struttura dei font e
-nella marcatura — quindi se stai indagando un bug legato a Word, usa Word davvero.
+
+> ### ⚠️ Copertura mancante: l'export di Word non è mai stato provato
+>
+> Il fixture `01-word-export.pdf` con cui il blocco 1 è stato verificato è stato prodotto
+> con **LibreOffice**, non con Microsoft Word: nell'ambiente di sviluppo Word non era
+> disponibile. Le due cose non sono intercambiabili, e le differenze cadono esattamente
+> dove il blocco 1 fa le sue affermazioni:
+>
+> - **Mapping dei font.** Word incorpora sottoinsiemi TrueType/CFF con convenzioni di
+>   naming, encoding e prefissi di subset proprie, e usa i font CID diversamente da
+>   LibreOffice. È il terreno del blocco 2 (riuso del font incorporato), ma tocca anche
+>   il blocco 1: `pdf_compare.py` confronta nomi dei font e flag di subset.
+> - **Metadati.** Word scrive un pacchetto XMP e un `/Info` con campi propri (incluse
+>   proprietà personalizzate del documento) che LibreOffice non produce.
+> - **Marcatura.** Le due suite generano `/StructTreeRoot` in modi diversi, e la perdita
+>   dell'albero di struttura è già un limite dichiarato.
+>
+> **Nulla di specifico di Word è quindi coperto dai test attuali.** Chi riprende il
+> progetto e ha accesso a Word dovrebbe rigenerare il fixture 1 con un export vero e
+> rilanciare `node tests/pdf/run_fixtures.mjs` più `tools/pdf_compare.py --manifest`.
+> Non è un problema noto: è una zona non esplorata.
 
 **2 — Modulo compilabile.** Un modulo pubblico scaricabile (per esempio dal sito
 dell'Agenzia delle Entrate) va benissimo ed è più realistico. Per generarne uno equivalente
@@ -746,6 +765,18 @@ realmente globale richiederebbe uno store condiviso (Redis).
 | `DB_AUTO_INIT` | `0` per saltare `create_all` + migrazioni al cold start (default: attivo) |
 
 ## Aree di miglioramento
+
+### PDF Tools
+- **L'export di Word non è coperto dai test.** Il fixture 1 è un export LibreOffice
+  (Word non era disponibile in ambiente di sviluppo). Font mapping, XMP/`/Info` e
+  marcatura di Word differiscono e non sono mai stati esercitati — vedi l'avvertenza in
+  "Fixture PDF per i test". Da rifare con un export Word autentico.
+- **Blocco 2 (overlay di testo/immagini, compilazione campi) non iniziato.** Un caso già
+  emerso e da decidere prima di partire: nel fixture del modulo i campi usano **Helvetica
+  non incorporata** (font standard PDF). La regola "estrai il font dal documento e
+  riusalo" lì non ha nulla da estrarre: è un caso da bloccare esplicitamente, non da
+  aggirare con un fallback.
+
 
 ### SEO Crawler
 - **Feature rimossa**: il crawler multi-pagina (`/seo/crawl*`, `BackgroundJobManager`) è stato

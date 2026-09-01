@@ -258,6 +258,13 @@ def describe(path: Path) -> dict:
         "has_ocproperties": "/OCProperties" in root,
         "has_xmp": "/Metadata" in root,
         "has_names": "/Names" in root,
+        # What /Names actually held. "/Names is gone" is too blunt a fact: the
+        # tool deliberately never transports document JavaScript, so a document
+        # whose /Names held nothing else legitimately loses the whole node,
+        # while losing /Dests or /EmbeddedFiles would be a real defect.
+        "names_entries": sorted(
+            str(k).lstrip("/") for k in (resolve(root.get("/Names")) or {}).keys()
+        ) if "/Names" in root else [],
         "has_page_labels": "/PageLabels" in root,
     }
 
@@ -336,6 +343,15 @@ def compare(before: dict, after: dict, mapping: list[int] | None) -> list[str]:
                 f"{src['width_pt']}x{src['height_pt']} -> output {out_index} "
                 f"{dst['width_pt']}x{dst['height_pt']}")
 
+        if src["rotation"] != dst["rotation"]:
+            # Rotation is the one page attribute an operation may legitimately
+            # change, so this is a note, not a failure. It is reported because
+            # the alternative is a rotate that silently did nothing and still
+            # passed every check.
+            problems.append(
+                f"NOTE rotation on input page {in_index} -> output page "
+                f"{out_index}: {src['rotation']} -> {dst['rotation']} degrees")
+
         if src["annotations"] != dst["annotations"]:
             problems.append(
                 f"annotation count on page {in_index} -> {out_index}: "
@@ -395,9 +411,20 @@ def compare(before: dict, after: dict, mapping: list[int] | None) -> list[str]:
             problems.append(f"metadata /{key}: {old!r} -> {new!r}")
 
     for key in ("has_outlines", "has_acroform", "has_ocproperties",
-                "has_page_labels", "has_names", "has_xmp"):
+                "has_page_labels", "has_xmp"):
         if before[key] and not after[key]:
             problems.append(f"{key.replace('has_', '')} present in input, absent in output")
+
+    lost_names = set(before["names_entries"]) - set(after["names_entries"])
+    for entry in sorted(lost_names):
+        if entry == "JavaScript":
+            # Stated policy, not an accident: executable code written against the
+            # original page structure is never carried into a rearranged
+            # document. Reported so it stays visible, but it is not a defect.
+            problems.append("NOTE /Names /JavaScript not carried across "
+                            "(the tool never transports document JavaScript)")
+        else:
+            problems.append(f"/Names /{entry} present in input, absent in output")
 
     if before["has_struct_tree"] and not after["has_struct_tree"]:
         problems.append("NOTE struct_tree dropped (known pdf-lib limitation, "
@@ -417,7 +444,8 @@ def run_manifest(manifest_path: Path) -> int:
             cache[rel] = describe(root / rel)
         return cache[rel]
 
-    total = failed = refused = 0
+    verified = failed = refused = errored = 0
+    operated_on: set[str] = set()
     print(f"{'operation':<46} {'result'}")
     print("-" * 74)
 
@@ -427,13 +455,14 @@ def run_manifest(manifest_path: Path) -> int:
             print(f"{entry['input']:<46} refused at load: {entry['refused']}")
             continue
         if entry.get("error"):
-            failed += 1
+            errored += 1
             print(f"{entry['input']} {entry['op']:<20} ERROR: {entry['error']}")
             continue
         if not entry.get("output"):
             continue
 
-        total += 1
+        verified += 1
+        operated_on.add(entry["input"])
         before = load(entry["input"])
         after = load(entry["output"])
         problems = compare(before, after, entry.get("pages"))
@@ -449,10 +478,24 @@ def run_manifest(manifest_path: Path) -> int:
             for problem in real:
                 print(f"    - {problem}")
 
+    # Two different kinds of result, deliberately not added together.
+    #
+    # A verified operation and a correctly refused input are both good outcomes,
+    # but they are not the same evidence: one says an operation preserved a
+    # document, the other says a document never reached an operation. Merging
+    # them into a single "n/n passed" would overstate how much was exercised.
     print("-" * 74)
-    print(f"{total} comparison(s), {failed} with differences, "
-          f"{refused} input(s) refused at load.")
-    return 1 if failed else 0
+    print("SUMMARY")
+    print(f"  Operations verified   {verified - failed} of {verified} "
+          f"clean, across {len(operated_on)} input document(s)")
+    if failed:
+        print(f"  Operations DIFFERING  {failed}  <-- these need explaining")
+    if errored:
+        print(f"  Operations that threw {errored}")
+    print(f"  Inputs refused        {refused} "
+          f"(refused correctly = the tool declined to process them; "
+          f"no operation was exercised on these)")
+    return 1 if (failed or errored) else 0
 
 
 def main() -> int:
