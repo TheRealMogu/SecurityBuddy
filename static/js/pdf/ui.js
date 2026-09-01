@@ -13,6 +13,7 @@
 import { loadDocument, inspectDocument } from './preserve.js';
 import * as ops from './operations.js';
 import { openForPreview, renderThumbnail } from './preview.js';
+import * as viewer from './viewer.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -124,6 +125,17 @@ function renderFiles() {
         }
         main.append(tags);
 
+        const preview = document.createElement('button');
+        preview.type = 'button';
+        preview.className = 'pdf-icon-btn';
+        preview.textContent = '⛶';
+        preview.title = `Preview ${entry.name}`;
+        preview.setAttribute('aria-label', `Preview ${entry.name} full screen`);
+        preview.addEventListener('click', () => {
+            const all = Array.from({ length: entry.doc.getPageCount() }, (_, i) => i);
+            openViewerAt(entry, 'preview', all, 0);
+        });
+
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.className = 'pdf-icon-btn';
@@ -137,7 +149,10 @@ function renderFiles() {
             renderThumbnails();
         });
 
-        item.append(main, remove);
+        const controls = document.createElement('div');
+        controls.className = 'pdf-file-controls';
+        controls.append(preview, remove);
+        item.append(main, controls);
         list.append(item);
     }
 
@@ -533,6 +548,23 @@ function buildGrid(grid, mode, entry, pageCount) {
         canvas.className = 'pdf-thumb';
         canvas.dataset.page = String(pageIndex + 1);
         frame.append(canvas);
+
+        // Available in every mode: a thumbnail is enough to recognise a page,
+        // not enough to decide anything about it.
+        const zoom = document.createElement('button');
+        zoom.type = 'button';
+        zoom.className = 'pdf-zoom-btn';
+        zoom.textContent = '⛶';
+        zoom.title = `Preview page ${pageIndex + 1} full screen`;
+        zoom.setAttribute('aria-label', `Preview page ${pageIndex + 1} full screen`);
+        zoom.addEventListener('click', (event) => {
+            // On the extract tab the cell is a <label>; without this the click
+            // would toggle the checkbox instead of opening the viewer.
+            event.preventDefault();
+            event.stopPropagation();
+            openViewerAt(entry, mode, sequence, position);
+        });
+        frame.append(zoom);
         cell.append(frame);
 
         const caption = document.createElement('span');
@@ -606,6 +638,25 @@ function buildGrid(grid, mode, entry, pageCount) {
 }
 
 function refreshGridState() { /* renderTool() rebuilds the grid; kept for call sites. */ }
+
+/* Open the viewer over the sequence the tool is currently showing, so a
+ * reordered document is walked in the user's order and a page with a pending
+ * rotation is previewed rotated. */
+async function openViewerAt(entry, mode, sequence, position) {
+    try {
+        if (!entry.pdf) entry.pdf = await openForPreview(entry.bytes);
+    } catch {
+        return;
+    }
+    const pages = sequence.map((pageIndex, index) => ({
+        pageIndex,
+        label: mode === 'reorder'
+            ? `Position ${index + 1} — was page ${pageIndex + 1}`
+            : `Page ${pageIndex + 1}`,
+        rotation: mode === 'rotate' ? (state.rotations[pageIndex] || 0) : 0,
+    }));
+    viewer.open(entry.pdf, pages, position, entry.name);
+}
 
 /* ── Thumbnails ──────────────────────────────────────────────────────────── */
 

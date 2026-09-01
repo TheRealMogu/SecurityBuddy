@@ -64,3 +64,28 @@ export async function renderThumbnail(pdf, pageNumber, canvas, maxWidth = 150) {
     await page.render({ canvasContext: context, viewport }).promise;
     return { width: viewport.width, height: viewport.height };
 }
+
+/* Render a page at the largest size that fits a box, for the full-screen
+ * viewer. Same renderer as the thumbnails — the difference is only scale, so a
+ * page never looks different up close than it did small. */
+export async function renderToFit(pdf, pageNumber, canvas, boxWidth, boxHeight, rotationDelta = 0) {
+    const page = await pdf.getPage(pageNumber);
+    const base = page.getViewport({ scale: 1 });
+    // The viewer must show the page as the operation will leave it, so a
+    // pending rotation is applied to the preview too.
+    const rotation = (((page.rotate || 0) + rotationDelta) % 360 + 360) % 360;
+    const rotated = page.getViewport({ scale: 1, rotation });
+    const scale = Math.min(boxWidth / rotated.width, boxHeight / rotated.height);
+    const viewport = page.getViewport({ scale, rotation });
+
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(viewport.width * ratio);
+    canvas.height = Math.floor(viewport.height * ratio);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+    const context = canvas.getContext('2d');
+    context.scale(ratio, ratio);
+    await page.render({ canvasContext: context, viewport }).promise;
+    return { width: base.width, height: base.height, rotation };
+}
