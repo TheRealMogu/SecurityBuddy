@@ -44,3 +44,6 @@ logs/
 
 # Distribution
 *.whl
+
+# PDF test fixtures — real documents, never committed
+tests/fixtures/pdf/
