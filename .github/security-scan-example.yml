@@ -1,8 +1,16 @@
 # Example: run Security Buddy on every push to main and on a weekly schedule.
-# Copy this file into your own repository's .github/workflows/ directory.
 #
-# Required secrets:
-#   SECURITY_BUDDY_API_KEY — your Pro API key from https://securitybuddy.app/api-keys
+# This file lives here (.github/) rather than .github/workflows/ on purpose:
+# it is a copy-paste TEMPLATE for other repositories, not an active workflow
+# for SecurityBuddy's own repo. If it were under .github/workflows/, GitHub
+# Actions would run it for real — scanning the placeholder "example.com" with
+# a SECURITY_BUDDY_API_KEY secret this repo doesn't set — and fail on every
+# push, every Monday, forever.
+#
+# To use it in YOUR repository:
+#   1. Copy this file into your repo's .github/workflows/ directory.
+#   2. Replace `target: example.com` below with your own domain.
+#   3. Add a SECURITY_BUDDY_API_KEY secret (get one at https://securitybuddy.app/api-keys).
 
 name: Security Scan
 

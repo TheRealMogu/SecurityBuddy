@@ -80,6 +80,16 @@ Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
   SEO per singola pagina (`/seo`).
 
 ### Corretto
+- **CI che falliva ad ogni push su `main`, email di notifica ripetute** — il file
+  `.github/workflows/security-scan-example.yml` era un template pensato per essere copiato
+  in un altro repository ("Copy this file into your own repository's .github/workflows/
+  directory", come diceva il suo stesso commento), ma era finito nella cartella
+  `.github/workflows/` di **questo** repo — dove GitHub Actions lo esegue per davvero. Il
+  workflow scansionava il dominio placeholder `example.com` usando un secret
+  `SECURITY_BUDDY_API_KEY` mai impostato in questo repo, quindi falliva ad ogni push su
+  `main`, ogni lunedì, generando un'email di fallimento ogni volta. Spostato in `.github/`
+  (fuori da `workflows/`, dove GitHub Actions non lo esegue più) come esempio di sola
+  consultazione.
 - **500 su `/api/scan/init` in produzione (colonne mancanti)** — la tabella `scan_result`
   esistente non aveva le nuove colonne micro-scan perché `db.create_all()` non altera
   tabelle esistenti e le migrazioni di colonna erano gated dietro `DB_AUTO_INIT`, disattivato

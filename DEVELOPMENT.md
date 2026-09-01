@@ -801,10 +801,56 @@ realmente globale richiederebbe uno store condiviso (Redis).
   poll (es. dopo N minuti considerare il modulo "failed" anche senza risposta) chiuderebbe
   questo caso limite.
 
+### Caching
+- **`cache_manager.py` (`ScanCache`) è codice morto** — non è importato da nessuna route.
+  `/api/scan/init` crea sempre una riga `ScanResult` nuova e rilancia tutti e 5 i worker
+  anche se lo stesso target è stato scansionato pochi minuti prima. Wiring proposto: prima
+  di creare la riga, cercare uno scan `COMPLETED` recente (stessa logica già presente in
+  `ScanCache.get_cached_result`, finestra configurabile via `cache_duration_hours`) per lo
+  stesso `target` + `user_id`/guest, e riusare quello invece di rieseguire gli scan di rete
+  (handshake TLS, probe porte, PageSpeed, threat intel — tutte chiamate costose). Da
+  decidere: se esporre comunque un modo per forzare un rescan (bypass cache) dalla UI.
+  In alternativa, se il riuso dei risultati non è desiderato, rimuovere il modulo morto.
+- **`/guides` e `/guides/<slug>` non hanno `Cache-Control`** — sono contenuto Python statico
+  (`guides_content.py`, cambia solo al deploy), esattamente come `/sitemap.xml`, `/robots.txt`
+  e `/ads.txt` che invece impostano già `public, max-age=86400`. Aggiungere lo stesso header
+  alle route guide è un fix a basso rischio, stesso pattern già in uso nel codebase.
+
 ### Password Generator
 - **Wordlist passphrase**: il pool di parole per la modalità Passphrase è una lista compatta
   hardcoded (non la EFF Long List completa a 7776 parole). Sostituirla con la lista completa
   aumenterebbe l'entropia per parola e la resistenza a dizionari di attacco specifici.
+- **Modalità "Verifica password" (check di una password esistente, non generazione)**:
+  riuserebbe l'entropia in bit / crack time già calcolati per il generatore, con una
+  visualizzazione a 4 stadi (graffetta → lucchetto → chiavistello → caveau) invece della
+  barra piatta attuale. Vincoli del progetto da rispettare: niente GSAP o altre dipendenze
+  nuove (`CONTRIBUTING.md` — no build step, no bundler); l'equivalente nativo è
+  `Element.animate()` (Web Animations API) o uno scrubber su `stroke-dashoffset` di un SVG,
+  entrambi in grado di andare avanti *e indietro* nella timeline (utile per il caso "utente
+  cancella un carattere → l'animazione si smonta", non solo si resetta). La password non
+  deve mai lasciare il browser — stesso principio già seguito dal generatore esistente.
+  Punto aperto: se integrarla come tab nella pagina esistente (`/tools/password`) o come
+  pagina separata.
+
+### UI — pattern "valore + range atteso"
+Diversi check hanno già il dato ma sepolto nel testo dell'accordion: `ssl.days_until_expiry`,
+`hsts_quality.max_age`, `dkim.selectors_found[].key_bits`, `spf.lookup_count`,
+`dmarc.pct`. Ridisegnare quei check specifici in `scan_result.html`/`email.html` con un
+valore grande, il range atteso in piccolo sopra, e un bordo/icona di warning quando il
+valore è fuori range renderebbe leggibile a colpo d'occhio ciò che oggi richiede di aprire
+l'accordion e leggere la frase. Da scoping su 3-4 check inizialmente, non su tutti — un
+redesign totale delle ~20 card è un progetto a parte, non un miglioramento incrementale.
+
+### Idee valutate e scartate
+- **Filtri a chip + contatore risultati stile directory** (pattern "SHOWING N OF M"): unico
+  candidato nel progetto sarebbero le 10 guide in `/guides`, categorizzate. Scartato: quel
+  pattern (ricerca client-side, chip per categoria, contatore) rende con 50-200 elementi,
+  non con 10 — costruirlo oggi sarebbe over-engineering rispetto al beneficio.
+- **Receipt/scontrino animato** per un riepilogo scan condivisibile/stampabile: fattibile
+  tecnicamente (clip-path che scende dall'alto, bordo a zigzag via SVG mask, rispetto di
+  `prefers-reduced-motion`), ma è uno stile skeuomorfico-giocoso in contrasto con il design
+  minimale teal esistente (nessun altro elemento del sito ha quel linguaggio visivo). Non è
+  un problema tecnico ma una decisione di tono prodotto — da validare prima di implementare.
 
 ### Visual Enhancements
 - **Pagine app interne** (dashboard, account, API keys): `.page-header` è troppo compatto per lo shader; una sottile barra gradiente CSS (`border-bottom` o pseudo-elemento `::after` con `conic-gradient`) darebbe coerenza visiva senza usare WebGL.
