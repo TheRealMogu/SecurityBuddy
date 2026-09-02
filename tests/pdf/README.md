@@ -112,9 +112,13 @@ a rule or a form-field border crossing a box's scan lines counts as escaped ink
 without being a character the box failed to cover.
 
 Every fixture now passes both checks: no box cuts off its own text, and no ink
-escapes a rectangle beyond an antialiasing fringe. Read `pdf_boxes_ink.py`'s
-per-box figure rather than its page-level share on `02-fillable-form.pdf`, whose
-form-field borders cross the boxes' scan lines.
+escapes a rectangle beyond an antialiasing fringe.
+
+`boxes.mjs` also emits the page's annotation rectangles, and `pdf_boxes_ink.py`
+counts ink inside them separately. A widget paints its own frame and fill on the
+same scan lines as the label beside it: on `02-fillable-form.pdf` that ink was
+38% of the page-level total and none of it was a character. It is now reported
+on its own line and the page reads 100%.
 
 A standard-14 font used without embedding carries no `/Widths` array — the
 metrics live in the font program every viewer has. `widthMap()` fills those

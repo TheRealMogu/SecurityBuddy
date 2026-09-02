@@ -257,25 +257,31 @@
        click. The rectangle is the run's MEASURED width (from the font's own
        /Widths) and a height derived from the type size for drawing only —
        see runBox() in replace.js. */
-    .pdf-run-box { position:absolute; box-sizing:border-box; border-radius:2px;
+    /* outline, not border: the rectangle traces a run that can be 10px tall at
+       10pt, and a 2px border would eat four of those ten pixels and read as a
+       filled block rather than an outline. An outline is drawn outside the box,
+       so the ink inside stays legible whatever the type size. */
+    .pdf-run-box { position:absolute; border-radius:2px;
                    pointer-events:auto; cursor:pointer;
-                   border:1px dashed rgba(1,105,111,.30);
-                   transition:background .12s, border-color .12s; }
-    .pdf-run-box:hover { border-color:var(--color-primary);
+                   outline:1px dashed rgba(1,105,111,.30); outline-offset:1px;
+                   transition:background .12s, outline-color .12s; }
+    .pdf-run-box:hover { outline-color:var(--color-primary);
                          background:var(--color-primary-dim); }
-    .pdf-run-box-add { border-style:dotted; border-color:rgba(183,121,31,.38); }
-    .pdf-run-box-add:hover { border-color:#b7791f; background:rgba(183,121,31,.12); }
-    .pdf-run-box-sel { border:2px solid var(--color-primary);
+    .pdf-run-box-add { outline-style:dotted; outline-color:rgba(183,121,31,.38); }
+    .pdf-run-box-add:hover { outline-color:#b7791f; background:rgba(183,121,31,.12); }
+    .pdf-run-box-sel { outline:2px solid var(--color-primary); outline-offset:1px;
                        background:var(--color-primary-dim); }
-    .pdf-run-box-add.pdf-run-box-sel { border:2px dashed #b7791f;
+    .pdf-run-box-add.pdf-run-box-sel { outline:2px dashed #b7791f;
                                        background:rgba(183,121,31,.12); }
     /* The tag names the mechanism on the selected run, so "replaces" and
-       "adds on top" are never left to be inferred from the outline alone. */
+       "adds on top" are never left to be inferred from the outline alone. It is
+       kept under 12px tall so it fits the leading of 10pt body text instead of
+       covering the line above it. */
     .pdf-run-box-sel[data-tag]::after {
-        content:attr(data-tag); position:absolute; left:-2px; top:-16px;
-        font-size:.62rem; font-weight:700; letter-spacing:.05em;
-        text-transform:uppercase; white-space:nowrap; line-height:1.5;
-        padding:.05rem .35rem; border-radius:3px 3px 0 0;
+        content:attr(data-tag); position:absolute; left:-1px; bottom:100%;
+        margin-bottom:2px; font-size:.53rem; font-weight:700; letter-spacing:.04em;
+        text-transform:uppercase; white-space:nowrap; line-height:1.35;
+        padding:0 .3rem; border-radius:3px; pointer-events:none;
         background:var(--color-primary); color:#fff; }
     .pdf-run-box-add.pdf-run-box-sel[data-tag]::after { background:#b7791f; }
 

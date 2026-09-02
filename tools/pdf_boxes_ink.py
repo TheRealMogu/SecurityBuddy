@@ -86,6 +86,19 @@ def main():
             base = y * w
             covered[base + x0:base + x1] = b'\x01' * max(0, x1 - x0)
 
+    # An annotation paints its own frame and fill, often on the same scan lines
+    # as the label beside it. That ink is not a character any box failed to
+    # cover, so it is counted apart rather than blamed on the rectangles.
+    annot = bytearray(w * h)
+    for a in data.get('annotations', []):
+        ax0 = max(0, int(a['x'] * scale))
+        ax1 = min(w, int((a['x'] + a['width']) * scale + 0.5))
+        ay0 = max(0, int((data['pageHeight'] - a['bottom'] - a['height']) * scale))
+        ay1 = min(h, int((data['pageHeight'] - a['bottom']) * scale + 0.5))
+        for y in range(ay0, ay1):
+            base = y * w
+            annot[base + ax0:base + ax1] = b'\x01' * max(0, ax1 - ax0)
+
     # Only the scan lines a box occupies are judged: ink elsewhere on the page
     # (images, rules, a paragraph nobody drew a box for) is not this check's
     # business.
@@ -93,7 +106,7 @@ def main():
     for _, _, _, y0, y1 in rects:
         rows.update(range(y0, y1))
 
-    inside = outside = 0
+    inside = outside = in_annot = 0
     escaped_rows = {}
     for y in rows:
         base = y * w
@@ -102,19 +115,24 @@ def main():
                 continue
             if covered[base + x]:
                 inside += 1
+            elif annot[base + x]:
+                in_annot += 1
             else:
                 outside += 1
                 escaped_rows[y] = escaped_rows.get(y, 0) + 1
 
     total = inside + outside
-    print(f'{args.pdf}  page {page_no}  {args.dpi} dpi  {len(rects)} rectangle(s)')
+    print(f'{args.pdf}  page {page_no}  {args.dpi} dpi  {len(rects)} rectangle(s), '
+          f'{len(data.get("annotations", []))} annotation(s)')
     print(f'  ink on box scan lines: {total}px  '
           f'inside {inside} ({100 * inside / total if total else 100:.2f}%)  '
           f'escaped {outside} ({100 * outside / total if total else 0:.2f}%)')
-    # The page-level share is a rough figure: anything else that happens to
-    # cross a box's scan lines — a rule, a form-field border, an image — counts
-    # as escaped ink without being a text character the box failed to cover.
-    # The per-box "escaping to the right" figure below is the one to read.
+    if in_annot:
+        print(f'  a further {in_annot}px on those lines is inside an annotation '
+              f'rectangle — a widget\'s own frame and fill, not text')
+    # Annotations are accounted for above, but a rule or an image crossing a
+    # box's scan lines still counts as escaped ink without being a character
+    # the box failed to cover. The per-box figure below is the precise one.
     if escaped_rows:
         worst = sorted(escaped_rows.items(), key=lambda kv: -kv[1])[:4]
         print('  rows with the most escaped ink: '
@@ -131,7 +149,7 @@ def main():
         for y in range(y0, y1):
             base = y * w
             for x in range(x1, min(w, x1 + int(40 * scale))):
-                if pix[base + x] < DARK and not covered[base + x]:
+                if pix[base + x] < DARK and not covered[base + x] and not annot[base + x]:
                     esc += 1
         # A few pixels past the right edge are the antialiased tail of the last
         # glyph. A clipped character costs hundreds.
