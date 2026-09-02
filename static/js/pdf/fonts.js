@@ -100,6 +100,7 @@ const N = {
     FontDescriptor: PDFName.of('FontDescriptor'), DescendantFonts: PDFName.of('DescendantFonts'),
     Flags: PDFName.of('Flags'), ToUnicode: PDFName.of('ToUnicode'),
     Encoding: PDFName.of('Encoding'), Differences: PDFName.of('Differences'),
+    DescendantFonts: PDFName.of('DescendantFonts'), W: PDFName.of('W'), DW: PDFName.of('DW'),
     BaseEncoding: PDFName.of('BaseEncoding'), Widths: PDFName.of('Widths'),
     FirstChar: PDFName.of('FirstChar'), CIDSystemInfo: PDFName.of('CIDSystemInfo'),
     Ordering: PDFName.of('Ordering'), Font: PDFName.of('Font'), Type: PDFName.of('Type'),
@@ -374,6 +375,8 @@ export function widthMap(doc, font, readable) {
         });
     }
 
+    if (font.subtype === 'Type0') return cidWidths(doc, font, widths);
+
     if (!font.standard14 || !readable) return widths;
     const metrics = metricsFor(font.name);
     if (!metrics) return widths;
@@ -386,6 +389,60 @@ export function widthMap(doc, font, readable) {
         // visible as a fallback instead of masquerading as a real metric.
         if (width !== null) widths.set(code, width);
     }
+    return widths;
+}
+
+/* Widths for a composite (Type0) font, which keeps them on its descendant
+ * CIDFont as /W with /DW for everything /W does not mention.
+ *
+ * The map this feature uses is keyed by the CODE that appears in the content
+ * stream, while /W is keyed by CID. Those are the same number under Identity-H
+ * and Identity-V and not otherwise, so any other CMap is left unmeasured rather
+ * than assumed: a width taken from the wrong CID is a wrong answer that looks
+ * like a right one. This is what makes an OCR layer measurable — Tesseract's
+ * GlyphLessFont carries no /W at all, only /DW 500, and every one of its runs
+ * was unmeasurable until this read it.
+ */
+function cidWidths(doc, font, widths) {
+    const encoding = font.dict.get(N.Encoding);
+    const name = String(encoding ?? '').replace(/^\//, '');
+    if (name !== 'Identity-H' && name !== 'Identity-V') return widths;
+
+    const descendants = font.dict.lookupMaybe(N.DescendantFonts, PDFArray);
+    const cid = descendants ? doc.context.lookup(descendants.get(0)) : null;
+    if (!(cid instanceof PDFDict)) return widths;
+
+    const array = cid.lookupMaybe(N.W, PDFArray);
+    if (array) {
+        const items = array.asArray().map((v) => doc.context.lookup(v));
+        let i = 0;
+        while (i < items.length) {
+            const first = items[i];
+            if (!(first instanceof PDFNumber)) { i += 1; continue; }
+            const next = items[i + 1];
+            if (next instanceof PDFArray) {
+                // c [w1 w2 ...] — consecutive CIDs starting at c.
+                next.asArray().forEach((value, offset) => {
+                    const w = doc.context.lookup(value);
+                    if (w instanceof PDFNumber) widths.set(first.asNumber() + offset, w.asNumber());
+                });
+                i += 2;
+            } else if (next instanceof PDFNumber && items[i + 2] instanceof PDFNumber) {
+                // cFirst cLast w — one width for the whole range.
+                const lo = first.asNumber();
+                const hi = next.asNumber();
+                const w = items[i + 2].asNumber();
+                // A malformed range must not hang the tab.
+                for (let c = lo; c <= Math.min(hi, lo + 65535); c += 1) widths.set(c, w);
+                i += 3;
+            } else i += 1;
+        }
+    }
+
+    // /DW is the width of every CID /W did not mention. Recorded as the map's
+    // fallback so callers still see one source of truth per code.
+    const dw = cid.lookupMaybe(N.DW, PDFNumber)?.asNumber();
+    widths.defaultWidth = dw === undefined ? 1000 : dw;
     return widths;
 }
 

@@ -273,17 +273,6 @@
                        background:var(--color-primary-dim); }
     .pdf-run-box-add.pdf-run-box-sel { outline:2px dashed #b7791f;
                                        background:rgba(183,121,31,.12); }
-    /* The tag names the mechanism on the selected run, so "replaces" and
-       "adds on top" are never left to be inferred from the outline alone. It is
-       kept under 12px tall so it fits the leading of 10pt body text instead of
-       covering the line above it. */
-    .pdf-run-box-sel[data-tag]::after {
-        content:attr(data-tag); position:absolute; left:-1px; bottom:100%;
-        margin-bottom:2px; font-size:.53rem; font-weight:700; letter-spacing:.04em;
-        text-transform:uppercase; white-space:nowrap; line-height:1.35;
-        padding:0 .3rem; border-radius:3px; pointer-events:none;
-        background:var(--color-primary); color:#fff; }
-    .pdf-run-box-add.pdf-run-box-sel[data-tag]::after { background:#b7791f; }
 
     .pdf-context-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem;
                        margin:.15rem 0 .55rem; }
@@ -315,8 +304,31 @@
     /* Dashed: the size was estimated or defaulted, not read from the file. */
     .pdf-prov-est { color:#b7791f; border-color:rgba(183,121,31,.36);
                     background:rgba(183,121,31,.10); border-style:dashed; }
-    .pdf-edit-before { margin:.3rem 0 0; font-size:.82rem; color:var(--color-text-muted);
-                       text-decoration:line-through; word-break:break-word; }
+    /* The in-place editor. The field sits on the page over the run it edits,
+       so the caret is where the words are instead of in a form below. */
+    .pdf-edit-layer { position:absolute; inset:0; pointer-events:none; }
+    .pdf-edit-field {
+        position:absolute; box-sizing:border-box; pointer-events:auto;
+        margin:0; padding:0 1px; border:0; border-radius:2px;
+        background:#fff; color:var(--color-text, #1a1a18);
+        font-family: ui-sans-serif, system-ui, sans-serif; line-height:1;
+        outline:2px solid var(--color-primary); outline-offset:1px;
+        caret-color:var(--color-primary); }
+    .pdf-edit-field:focus { outline:2px solid var(--color-primary); }
+    /* Once the page underneath has been redrawn from the real engine output,
+       the field stops painting its own copy of the text and leaves the caret:
+       what is on screen is then the PDF itself, not a browser approximation of
+       it. Any keystroke removes this class again, because the rendering behind
+       is one character out of date until the next redraw lands. */
+    .pdf-edit-field-live { background:transparent; color:transparent;
+                           outline-color:rgba(1,105,111,.55); }
+    .pdf-edit-field-live::selection { background:rgba(1,105,111,.22); color:transparent; }
+
+    .pdf-edit-notes { display:flex; flex-direction:column; gap:.4rem; margin-top:.2rem; }
+    .pdf-edit-notes .pdf-field-note { margin-top:0; }
+    .pdf-edit-note-block strong { color:#c0392b; }
+    .pdf-edit-note-warn strong  { color:#b7791f; }
+    .pdf-edit-note-info strong  { color:var(--color-primary); }
 
     .pdf-correct { margin-top:.55rem; display:flex; flex-direction:column; gap:.4rem; }
     .pdf-origin { align-self:flex-start; font-size:.68rem; font-weight:700;

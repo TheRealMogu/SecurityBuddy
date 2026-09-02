@@ -194,10 +194,15 @@ export function measureRun(run) {
     return measure(run.codes, run.widths, run.size);
 }
 
-/* Approximate drawn width, in points, from the font's own advance widths. */
+/* Drawn width, in points, from the font's own advance widths.
+ *
+ * defaultWidth is set when the document itself declares one — a composite
+ * font's /DW covers every CID its /W does not mention — so it is a stated
+ * width, not a fallback. The 500 behind it is the fallback, and it is only
+ * reached by a font that states neither. */
 function measure(codes, widths, size) {
     let total = 0;
-    for (const code of codes) total += widths.get(code) ?? 500;
+    for (const code of codes) total += widths.get(code) ?? widths.defaultWidth ?? 500;
     return (total / 1000) * size;
 }
 
@@ -348,21 +353,36 @@ export async function replaceText(doc, label, edits) {
 
 /* Rewrite the affected content streams with the new strings in place. */
 function applyPatches(destDoc, page, patches, bounds) {
+    rewriteSpans(destDoc, page, bounds, patches.map((patch) => ({
+        start: patch.run.span.start,
+        end: patch.run.span.end,
+        replacement: `${encodeCodes(patch.plan, patch.run)} Tj`,
+    })));
+}
+
+/* Replace byte ranges of a page's content streams.
+ *
+ * Spans are offsets into the concatenated text pageContentText() returns, which
+ * is how every scanner in this feature reports positions. Shared with the crop
+ * tool, which deletes drawing operations rather than rewriting them: both need
+ * the same "edit the stream the page already has, do not rebuild it" path.
+ */
+export function rewriteSpans(destDoc, page, bounds, spans) {
     const { text } = pageContentText(destDoc, page);
 
     // Group by stream, and apply from the end backwards so that each edit's
     // offsets are still valid when it is made.
     const perStream = new Map();
-    for (const patch of patches) {
-        const located = locateOffset(bounds, patch.run.span.start);
+    for (const span of spans) {
+        const located = locateOffset(bounds, span.start);
         if (!located) continue;
         if (!perStream.has(located.index)) {
             perStream.set(located.index, { bound: located, edits: [] });
         }
         perStream.get(located.index).edits.push({
-            start: patch.run.span.start - located.start,
-            end: patch.run.span.end - located.start,
-            replacement: `${encodeCodes(patch.plan, patch.run)} Tj`,
+            start: span.start - located.start,
+            end: span.end - located.start,
+            replacement: span.replacement ?? '',
         });
     }
 
