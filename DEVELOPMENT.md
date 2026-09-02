@@ -704,6 +704,39 @@ per caso era giusta — e non genera avviso, perché non è una supposizione del
 coordinate del click passano da `viewport.convertToPdfPoint()` di pdf.js, che gestisce anche
 la rotazione di pagina.
 
+### Ritaglio della pagina
+
+`static/js/pdf/crop.js`. Ritagliare un PDF si fa normalmente scrivendo un `/CropBox`, e qui
+sarebbe la cosa sbagliata: sposta il bordo che il viewer disegna e lascia nel file ogni parola
+e ogni immagine tolte, recuperabili da chiunque lo apra con qualcosa che non sia un viewer. Uno
+strumento che su un sito di sicurezza scrive "ritagliato" mentre il contenuto è ancora lì è
+peggio di nessuno strumento.
+
+Quindi il ritaglio **cancella le operazioni di disegno**, e quando non può si rifiuta invece di
+fingere. Le regole:
+
+* Ciò di cui non si riesce a calcolare l'estensione **non è rimovibile**. Mai cancellare su una
+  supposizione.
+* Ciò che **attraversa** il bordo non è rimovibile qui: tagliare una Bézier o ricodificare metà
+  immagine è un lavoro diverso e molto più grosso. La risposta onesta è nominare cosa
+  resterebbe e fermarsi.
+* Un percorso usato come **clip** non si cancella mai: toglierlo cambierebbe cosa si vede nella
+  parte di pagina che l'utente ha chiesto di tenere.
+* Il **testo invisibile si rimuove come quello visibile**. Un layer OCR è esattamente ciò che
+  un ritaglio deve togliere, e nessun viewer mostrerà mai all'utente che è ancora lì.
+* Una riga tagliata di lato si accorcia su un confine di carattere e viene riemessa con uno
+  spostamento `TJ`, non con un `Td`: un `Td` sposterebbe tutto ciò che è posizionato
+  relativamente a quella riga più avanti.
+
+Senza accettazione esplicita l'operazione **si rifiuta**. Con l'accettazione, il report porta
+una voce in evidenza che dice che l'output non è redatto.
+
+> **Come si verifica.** `pdftotext` non serve: rispetta il `/CropBox`, quindi riporta come
+> assente ciò che è soltanto nascosto — misura la visibilità, non la rimozione, che è proprio
+> la distinzione per cui questo strumento esiste. `tests/pdf/crop.mjs` legge l'output con
+> pypdf, che decodifica il content stream e ignora il riquadro di pagina. Su
+> `03-scanned-ocr.pdf` le parole ricavabili passano da 368 a 190.
+
 ### Modifica del testo esistente
 
 `static/js/pdf/replace.js`. **È l'unica operazione che riscrive un content stream.** Tutte le

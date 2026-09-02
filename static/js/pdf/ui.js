@@ -18,6 +18,7 @@ import { listTextFields, planFill, fillForm } from './fill.js';
 import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
 import { planOverlay, addOverlay } from './overlay.js';
 import { classifyPage } from './pagetype.js';
+import { planCrop, cropPages } from './crop.js';
 import {
     readableRuns, runAtPoint, planReplacement, replaceText, runBox,
 } from './replace.js';
@@ -39,6 +40,9 @@ const state = {
     placementSeq: 0,
     edits: {},
     editPage: 0,
+    cropPage: 0,
+    cropRect: null,      // in PDF points, bottom-left origin
+    cropAccepted: false,
 };
 
 /* ── File intake ─────────────────────────────────────────────────────────── */
@@ -284,6 +288,7 @@ function renderTool() {
     // it goes too: a pending preview would otherwise redraw a detached canvas
     // and hold its pdf.js document open.
     closeSession();
+    closeCropSession();
     for (const button of document.querySelectorAll('[data-tool]')) {
         const active = button.dataset.tool === state.tool;
         button.classList.toggle('pdf-tab-active', active);
@@ -313,6 +318,7 @@ function renderTool() {
         case 'fill': renderFillPanel(panel); break;
         case 'text': renderTextPanel(panel); break;
         case 'edit': renderEditPanel(panel); break;
+        case 'crop': renderCropPanel(panel); break;
         default: break;
     }
 }
@@ -485,6 +491,329 @@ function renderEditPanel(panel) {
             }];
         });
     }));
+}
+
+/* ── Cropping ────────────────────────────────────────────────────────────── */
+
+/* Drag a rectangle over the page; everything outside it is DELETED from the
+ * file, not hidden behind a smaller page box. The list of what cannot be
+ * deleted is computed while the rectangle moves and shown before anything is
+ * written, because "cropped" and "still in the file" have to be told apart
+ * before the user downloads something and believes it is clean. */
+let cropSession = null;
+
+function closeCropSession() {
+    if (!cropSession) return;
+    clearTimeout(cropSession.timer);
+    cropSession = null;
+}
+
+function renderCropPanel(panel) {
+    const entry = state.docs[0];
+    const pageCount = entry.doc.getPageCount();
+
+    if (pageCount > 1) {
+        const bar = document.createElement('div');
+        bar.className = 'pdf-actions-bar';
+        for (let i = 0; i < pageCount; i += 1) {
+            const button = smallButton(`Page ${i + 1}`, () => {
+                state.cropPage = i;
+                state.cropRect = null;
+                state.cropAccepted = false;
+                renderTool();
+            });
+            if (i === state.cropPage) button.classList.add('pdf-small-btn-active');
+            bar.append(button);
+        }
+        panel.append(bar);
+    }
+
+    const contextBar = document.createElement('div');
+    contextBar.className = 'pdf-context-bar';
+    panel.append(contextBar);
+
+    panel.append(hint('Drag a rectangle over the page to choose what to keep. Everything '
+        + 'outside it is deleted from the file — not hidden behind a smaller page, which is '
+        + 'what "crop" normally means and what would leave every removed word recoverable. '
+        + 'Anything that cannot be deleted is listed below before you save.'));
+
+    const stage = document.createElement('div');
+    stage.className = 'pdf-place-stage';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'pdf-place-canvas pdf-crop-canvas';
+    const layer = document.createElement('div');
+    layer.className = 'pdf-crop-layer';
+    stage.append(canvas, layer);
+    panel.append(stage);
+
+    const findings = document.createElement('div');
+    findings.className = 'pdf-edit-notes';
+    panel.append(findings);
+
+    const accept = document.createElement('label');
+    accept.className = 'pdf-crop-accept';
+    accept.hidden = true;
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = state.cropAccepted;
+    box.addEventListener('change', () => {
+        state.cropAccepted = box.checked;
+        paintCrop();
+    });
+    const label = document.createElement('span');
+    accept.append(box, label);
+    panel.append(accept);
+
+    const save = runButton('Save the cropped PDF', async (button) => {
+        await runOperation(button, async () => {
+            if (!state.cropRect) throw new Error('Drag a rectangle over the page first.');
+            const { bytes, report, written } = await cropPages(
+                entry.doc, entry.name,
+                [{ pageIndex: state.cropPage, rect: state.cropRect }],
+                { acceptUnremovable: state.cropAccepted });
+            const left = written.reduce((n, w) => n + w.leftBehind, 0);
+            return [{
+                name: ops.outputName(entry.name, 'cropped'),
+                bytes, report,
+                summary: `${written[0].removed} drawing(s) deleted, `
+                    + `${written[0].split} line(s) shortened`
+                    + (left ? `, ${left} thing(s) outside could not be removed` : ''),
+            }];
+        });
+    });
+    panel.append(save);
+
+    cropSession = {
+        entry, canvas, layer, stage, contextBar, findings, accept, box, label, save,
+        pageIndex: state.cropPage, viewport: null, plan: null, timer: 0, drag: null,
+    };
+    startCropSession();
+}
+
+async function startCropSession() {
+    const s = cropSession;
+    try {
+        if (!s.entry.pdf) s.entry.pdf = await openForPreview(s.entry.bytes);
+        s.viewport = await renderForPlacement(s.entry.pdf, s.pageIndex + 1, s.canvas, 520);
+    } catch {
+        s.stage.append(hint('This page could not be rendered.'));
+        return;
+    }
+    if (cropSession !== s) return;
+
+    s.layer.addEventListener('pointerdown', onCropPointerDown);
+    paintCrop();
+    schedulePlan();
+}
+
+/* Page points <-> canvas pixels, both ways, through pdf.js so a rotated page
+ * is handled by the same code that drew it. */
+function rectToPixels(rect) {
+    const s = cropSession;
+    const [x1, y1] = s.viewport.convertToViewportPoint(rect.x, rect.y + rect.height);
+    const [x2, y2] = s.viewport.convertToViewportPoint(rect.x + rect.width, rect.y);
+    return {
+        left: Math.min(x1, x2), top: Math.min(y1, y2),
+        width: Math.abs(x2 - x1), height: Math.abs(y2 - y1),
+    };
+}
+
+function pixelsToRect(left, top, width, height) {
+    const s = cropSession;
+    const [x1, y1] = s.viewport.convertToPdfPoint(left, top);
+    const [x2, y2] = s.viewport.convertToPdfPoint(left + width, top + height);
+    return {
+        x: Math.min(x1, x2), y: Math.min(y1, y2),
+        width: Math.abs(x2 - x1), height: Math.abs(y2 - y1),
+    };
+}
+
+function onCropPointerDown(event) {
+    const s = cropSession;
+    const rect = s.layer.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const handle = event.target.dataset?.handle;
+    const current = state.cropRect ? rectToPixels(state.cropRect) : null;
+
+    s.drag = handle === 'move' && current
+        ? { mode: 'move', x, y, start: current }
+        : handle && current
+            ? { mode: handle, start: current }
+            : { mode: 'draw', originX: x, originY: y };
+
+    s.layer.setPointerCapture(event.pointerId);
+    s.layer.addEventListener('pointermove', onCropPointerMove);
+    s.layer.addEventListener('pointerup', onCropPointerUp, { once: true });
+    event.preventDefault();
+    if (s.drag.mode === 'draw') {
+        state.cropRect = pixelsToRect(x, y, 0, 0);
+        paintCrop();
+    }
+}
+
+function onCropPointerMove(event) {
+    const s = cropSession;
+    if (!s?.drag) return;
+    const bounds = s.layer.getBoundingClientRect();
+    const x = clamp(event.clientX - bounds.left, 0, bounds.width);
+    const y = clamp(event.clientY - bounds.top, 0, bounds.height);
+    const d = s.drag;
+    let box;
+
+    if (d.mode === 'draw') {
+        box = {
+            left: Math.min(d.originX, x), top: Math.min(d.originY, y),
+            width: Math.abs(x - d.originX), height: Math.abs(y - d.originY),
+        };
+    } else if (d.mode === 'move') {
+        const dx = clamp(d.start.left + (x - d.x), 0, bounds.width - d.start.width);
+        const dy = clamp(d.start.top + (y - d.y), 0, bounds.height - d.start.height);
+        box = { left: dx, top: dy, width: d.start.width, height: d.start.height };
+    } else {
+        const right = d.start.left + d.start.width;
+        const bottom = d.start.top + d.start.height;
+        const left = d.mode.includes('w') ? Math.min(x, right - 4) : d.start.left;
+        const top = d.mode.includes('n') ? Math.min(y, bottom - 4) : d.start.top;
+        box = {
+            left, top,
+            width: (d.mode.includes('e') ? Math.max(x, left + 4) : right) - left,
+            height: (d.mode.includes('s') ? Math.max(y, top + 4) : bottom) - top,
+        };
+    }
+
+    state.cropRect = pixelsToRect(box.left, box.top, box.width, box.height);
+    state.cropAccepted = false;
+    paintCrop();
+    schedulePlan();
+}
+
+function onCropPointerUp() {
+    const s = cropSession;
+    if (!s) return;
+    s.layer.removeEventListener('pointermove', onCropPointerMove);
+    s.drag = null;
+    // A stray click leaves a rectangle too small to mean anything.
+    if (state.cropRect && (state.cropRect.width < 2 || state.cropRect.height < 2)) {
+        state.cropRect = null;
+    }
+    paintCrop();
+    schedulePlan();
+}
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* Re-planning walks the whole content stream, so it waits for the drag to
+ * settle rather than running on every pointer move. */
+function schedulePlan() {
+    const s = cropSession;
+    clearTimeout(s.timer);
+    s.timer = setTimeout(() => {
+        if (!cropSession || cropSession !== s) return;
+        try {
+            s.plan = state.cropRect
+                ? planCrop(s.entry.doc, s.entry.doc.getPage(s.pageIndex), state.cropRect)
+                : null;
+        } catch {
+            s.plan = null;
+        }
+        paintCrop();
+    }, 180);
+}
+
+function paintCrop() {
+    const s = cropSession;
+    if (!s?.viewport) return;
+
+    s.layer.textContent = '';
+    if (state.cropRect) {
+        const box = rectToPixels(state.cropRect);
+        const shade = document.createElement('div');
+        shade.className = 'pdf-crop-shade';
+        // The kept area is punched out of the shading, so what is dark is
+        // exactly what is about to be deleted.
+        shade.style.clipPath = `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0,
+            ${box.left}px ${box.top}px,
+            ${box.left}px ${box.top + box.height}px,
+            ${box.left + box.width}px ${box.top + box.height}px,
+            ${box.left + box.width}px ${box.top}px,
+            ${box.left}px ${box.top}px)`;
+        s.layer.append(shade);
+
+        const frame = document.createElement('div');
+        frame.className = 'pdf-crop-frame';
+        frame.dataset.handle = 'move';
+        frame.style.left = `${box.left}px`;
+        frame.style.top = `${box.top}px`;
+        frame.style.width = `${box.width}px`;
+        frame.style.height = `${box.height}px`;
+        for (const corner of ['nw', 'ne', 'se', 'sw']) {
+            const handle = document.createElement('span');
+            handle.className = `pdf-crop-handle pdf-crop-handle-${corner}`;
+            handle.dataset.handle = corner;
+            frame.append(handle);
+        }
+        s.layer.append(frame);
+    }
+
+    s.contextBar.textContent = '';
+    const chip = document.createElement('span');
+    chip.className = 'pdf-mech pdf-mech-rep';
+    chip.textContent = 'Deletes what is outside';
+    chip.title = 'The drawing operations outside the rectangle are removed from the page\'s '
+               + 'content stream. This is not a /CropBox, which would only change where the '
+               + 'page edge is drawn and leave the content in the file.';
+    s.contextBar.append(chip);
+
+    const idle = document.createElement('span');
+    idle.className = 'pdf-context-idle';
+    if (!state.cropRect) {
+        idle.textContent = 'Drag a rectangle over the page to choose what to keep';
+    } else if (!s.plan) {
+        idle.textContent = `${Math.round(state.cropRect.width)} × `
+            + `${Math.round(state.cropRect.height)} pt — working out what can be removed…`;
+    } else {
+        idle.textContent = `${Math.round(state.cropRect.width)} × `
+            + `${Math.round(state.cropRect.height)} pt · ${s.plan.remove.length} to delete, `
+            + `${s.plan.split.length} to shorten`;
+    }
+    s.contextBar.append(idle);
+
+    paintCropFindings();
+}
+
+function paintCropFindings() {
+    const s = cropSession;
+    s.findings.textContent = '';
+    const blocked = s.plan?.blocked ?? [];
+
+    // One line per reason, with a count: fifty identical refusals about the
+    // same OCR layer are one fact, not fifty.
+    const grouped = new Map();
+    for (const item of blocked) {
+        if (!grouped.has(item.reason)) grouped.set(item.reason, { count: 0, detail: item.detail });
+        grouped.get(item.reason).count += 1;
+    }
+    for (const [, { count, detail }] of grouped) {
+        const note = document.createElement('div');
+        note.className = 'pdf-field-note pdf-edit-note-block';
+        const head = document.createElement('strong');
+        head.textContent = count === 1
+            ? '1 thing outside the crop cannot be removed'
+            : `${count} things outside the crop cannot be removed`;
+        const body = document.createElement('span');
+        body.textContent = detail;
+        note.append(head, body);
+        s.findings.append(note);
+    }
+
+    s.accept.hidden = blocked.length === 0;
+    s.box.checked = state.cropAccepted;
+    s.label.textContent = blocked.length
+        ? `I understand that ${blocked.length} thing(s) outside the crop stay in the file and `
+        + 'can be recovered from it. This output is not redacted.'
+        : '';
+    s.save.disabled = !state.cropRect || (blocked.length > 0 && !state.cropAccepted);
 }
 
 /* ── The in-place editor ─────────────────────────────────────────────────── */
