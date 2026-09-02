@@ -17,7 +17,9 @@ import * as viewer from './viewer.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
 import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
 import { planOverlay, addOverlay } from './overlay.js';
-import { readableRuns, runAtPoint, planReplacement, replaceText } from './replace.js';
+import {
+    readableRuns, runAtPoint, planReplacement, replaceText, runBox,
+} from './replace.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -317,6 +319,87 @@ function hint(text) {
     return p;
 }
 
+/* ── Recognised-text outlines ────────────────────────────────────────────── */
+
+/* Draw a light box around every run the extractor found, before any click.
+ *
+ * This replaces "click somewhere and hope there is text nearby" with a direct
+ * answer to "what does this tool see on the page". The geometry comes from
+ * runBox(): a MEASURED width from the font's own /Widths, and a height derived
+ * from the type size for drawing only.
+ *
+ * `mode` decides what a box means. In 'edit' a box is a target — clicking it
+ * replaces those words. In 'add' a box is a warning — the text there stays, and
+ * anything typed lands on top of it.
+ */
+function drawRunBoxes(container, viewport, runs, mode, selectedId) {
+    for (const run of runs) {
+        const box = runBox(run);
+        if (box.width <= 0) continue;
+
+        const [x1, y1] = viewport.convertToViewportPoint(box.x, box.top);
+        const [x2, y2] = viewport.convertToViewportPoint(box.x + box.width, box.bottom);
+
+        const el = document.createElement('span');
+        el.className = `pdf-run-box pdf-run-box-${mode}`;
+        if (run.id === selectedId) el.classList.add('pdf-run-box-sel');
+        el.style.left = `${Math.min(x1, x2)}px`;
+        el.style.top = `${Math.min(y1, y2)}px`;
+        el.style.width = `${Math.abs(x2 - x1)}px`;
+        el.style.height = `${Math.abs(y2 - y1)}px`;
+        el.title = mode === 'edit'
+            ? `${run.text} — ${run.font.name} ${run.size}pt`
+            : `Existing text: ${run.text}`;
+        if (run.id === selectedId) {
+            el.dataset.tag = mode === 'edit' ? 'Replaces this text' : 'Adds on top';
+        }
+        container.append(el);
+    }
+}
+
+/* The provenance badge, mapped one-to-one onto the states the engine produces.
+ * No state is invented here: a badge that said something the engine did not
+ * would be exactly the guessed "Arial 9pt" this is meant to replace. */
+const PROVENANCE = {
+    original:   { label: 'from the document', tone: 'doc' },
+    USER:       { label: 'set by you',        tone: 'doc' },
+    SUBSTITUTE: { label: 'substitute',        tone: 'sub' },
+    ESTIMATED:  { label: 'estimated',         tone: 'est' },
+    DEFAULT:    { label: 'default',           tone: 'est' },
+};
+
+function provenanceBadge(source, face, size) {
+    const entry = PROVENANCE[source] ?? { label: source, tone: 'sub' };
+    const badge = document.createElement('span');
+    badge.className = `pdf-prov pdf-prov-${entry.tone}`;
+
+    const dot = document.createElement('span');
+    dot.className = 'pdf-prov-dot';
+    const name = document.createElement('span');
+    name.className = 'pdf-prov-face';
+    name.textContent = face ?? '—';
+    const sep = document.createElement('span');
+    sep.className = 'pdf-prov-sep';
+    sep.textContent = '·';
+    const src = document.createElement('span');
+    src.className = 'pdf-prov-src';
+    src.textContent = size ? `${entry.label} · ${size}pt` : entry.label;
+
+    badge.append(dot, name, sep, src);
+    return badge;
+}
+
+/* Which mechanism is in play, stated rather than left to be inferred. */
+function mechanismChip(mode) {
+    const chip = document.createElement('span');
+    chip.className = `pdf-mech pdf-mech-${mode === 'edit' ? 'rep' : 'add'}`;
+    chip.textContent = mode === 'edit' ? 'Replaces the text' : 'Adds on top';
+    chip.title = mode === 'edit'
+        ? 'The old words are removed from the file, and the page\'s content stream is rewritten.'
+        : 'The page keeps its bytes exactly; the new text goes into a stream alongside them.';
+    return chip;
+}
+
 /* ── Editing text already on the page ────────────────────────────────────── */
 
 /* Click a word to change it. This is the one tool that rewrites the page's own
@@ -355,9 +438,26 @@ function renderEditPanel(panel) {
         return;
     }
 
-    panel.append(hint('Click a piece of text to change it. The replacement is drawn from the '
-        + 'same place in the same font, and nothing after it moves — so a longer '
-        + 'replacement runs on, and a shorter one leaves a gap.'));
+    const selectedId = Number(Object.keys(state.edits).find(
+        (id) => state.edits[id].pageIndex === state.editPage));
+    const selectedRun = runs.find((r) => r.id === selectedId);
+
+    const bar = document.createElement('div');
+    bar.className = 'pdf-context-bar';
+    bar.append(mechanismChip('edit'));
+    if (selectedRun) {
+        bar.append(provenanceBadge('original', selectedRun.font.name, selectedRun.size));
+    } else {
+        const idle = document.createElement('span');
+        idle.className = 'pdf-context-idle';
+        idle.textContent = `${runs.length} pieces of text found on this page — click one to change it`;
+        bar.append(idle);
+    }
+    panel.append(bar);
+
+    panel.append(hint('Every piece of text this tool can read is outlined. The replacement is '
+        + 'drawn from the same place in the same font, and nothing after it moves — so a '
+        + 'longer replacement runs on, and a shorter one leaves a gap.'));
 
     const stage = document.createElement('div');
     stage.className = 'pdf-place-stage';
@@ -367,7 +467,7 @@ function renderEditPanel(panel) {
     markers.className = 'pdf-place-markers';
     stage.append(canvas, markers);
     panel.append(stage);
-    paintEditSurface(entry, canvas, markers, stage, runs);
+    paintEditSurface(entry, canvas, markers, stage, runs, selectedId);
 
     const list = document.createElement('div');
     list.className = 'pdf-fields';
@@ -392,12 +492,15 @@ function renderEditPanel(panel) {
     }));
 }
 
-async function paintEditSurface(entry, canvas, markers, stage, runs) {
+async function paintEditSurface(entry, canvas, markers, stage, runs, selectedId) {
     try {
         if (!entry.pdf) entry.pdf = await openForPreview(entry.bytes);
         const viewport = await renderForPlacement(entry.pdf, state.editPage + 1, canvas, 520);
 
-        canvas.addEventListener('click', (event) => {
+        // The listener sits on the stage, not the canvas: the run boxes take
+        // pointer events so they can highlight under the cursor, which would
+        // otherwise stop a click on a box from ever reaching the canvas.
+        stage.addEventListener('click', (event) => {
             const rect = canvas.getBoundingClientRect();
             const [x, y] = viewport.convertToPdfPoint(
                 event.clientX - rect.left, event.clientY - rect.top);
@@ -410,16 +513,7 @@ async function paintEditSurface(entry, canvas, markers, stage, runs) {
         });
 
         markers.textContent = '';
-        for (const id of Object.keys(state.edits)) {
-            const run = runs.find((r) => r.id === Number(id));
-            if (!run) continue;
-            const [vx, vy] = viewport.convertToViewportPoint(run.x, run.y);
-            const box = document.createElement('span');
-            box.className = 'pdf-edit-marker';
-            box.style.left = `${vx}px`;
-            box.style.top = `${vy}px`;
-            markers.append(box);
-        }
+        drawRunBoxes(markers, viewport, runs, 'edit', selectedId);
     } catch {
         stage.append(hint('This page could not be rendered.'));
     }
@@ -520,8 +614,14 @@ function renderTextPanel(panel) {
         panel.append(bar);
     }
 
+    const contextBar = document.createElement('div');
+    contextBar.className = 'pdf-context-bar';
+    paintPlacementContext(entry, contextBar);
+    panel.append(contextBar);
+
     panel.append(hint('Click the page where the text should start. The click point is '
-        + 'the left end of the text baseline.'));
+        + 'the left end of the text baseline. Text already on the page is outlined: '
+        + 'anything placed over it is added on top, and the original stays.'));
 
     const stage = document.createElement('div');
     stage.className = 'pdf-place-stage';
@@ -537,7 +637,7 @@ function renderTextPanel(panel) {
     const list = document.createElement('div');
     list.className = 'pdf-fields';
     panel.append(list);
-    renderPlacementCards(entry, list);
+    renderPlacementCards(entry, list, contextBar);
 
     panel.append(runButton('Save PDF with the added text', async (button) => {
         await runOperation(button, async () => {
@@ -563,7 +663,7 @@ async function paintPlacementSurface(entry, canvas, markers, stage) {
             entry.pdf, state.placementPage + 1, canvas, 520);
         stage.dataset.ready = '1';
 
-        canvas.addEventListener('click', (event) => {
+        stage.addEventListener('click', (event) => {
             const rect = canvas.getBoundingClientRect();
             // pdf.js converts canvas pixels back to PDF user space, rotation
             // included; doing this arithmetic by hand is how a placement ends
@@ -581,6 +681,13 @@ async function paintPlacementSurface(entry, canvas, markers, stage) {
             renderTool();
         });
 
+        markers.textContent = '';
+        // The same measured boxes as the edit tab, drawn as a caution rather
+        // than a target: this text stays, and anything typed lands over it.
+        try {
+            const runs = readableRuns(entry.doc, entry.doc.getPage(state.placementPage));
+            drawRunBoxes(markers, viewport, runs, 'add', null);
+        } catch { /* a page whose text cannot be read simply gets no outlines */ }
         drawMarkers(markers, viewport);
     } catch {
         stage.append(hint('This page could not be rendered for placement.'));
@@ -588,7 +695,6 @@ async function paintPlacementSurface(entry, canvas, markers, stage) {
 }
 
 function drawMarkers(container, viewport) {
-    container.textContent = '';
     for (const placement of state.placements) {
         if (placement.pageIndex !== state.placementPage) continue;
         const [vx, vy] = viewport.convertToViewportPoint(placement.x, placement.y);
@@ -602,8 +708,34 @@ function drawMarkers(container, viewport) {
 }
 
 /* One card per placement: the text, and the two values the user may override. */
-function renderPlacementCards(entry, list) {
+/* The overlay context bar. Kept separate from the panel because a placement's
+ * font is only decided once there is text to write with it: the badge has to be
+ * repainted on every keystroke, and rebuilding the whole panel would take the
+ * focus out of the field being typed into. */
+function paintPlacementContext(entry, bar) {
+    bar.textContent = '';
+    bar.append(mechanismChip('add'));
+    const last = [...state.placements].reverse()
+        .find((p) => p.pageIndex === state.placementPage && p.text);
+    let plan = null;
+    try {
+        plan = last ? planOverlay(entry.doc, [last]).plans[0] : null;
+    } catch { /* a placement the planner refuses simply gets no badge */ }
+    if (plan) {
+        bar.append(provenanceBadge(plan.source, plan.face ?? plan.font?.name, plan.size));
+    } else {
+        const idle = document.createElement('span');
+        idle.className = 'pdf-context-idle';
+        idle.textContent = state.placements.length
+            ? 'Type the text — the font is read from the spot you clicked'
+            : 'Click the page to place text — the font is read from that spot';
+        bar.append(idle);
+    }
+}
+
+function renderPlacementCards(entry, list, bar) {
     list.textContent = '';
+    if (bar) paintPlacementContext(entry, bar);
     if (!state.placements.length) return;
 
     let plans = [];
@@ -651,7 +783,7 @@ function renderPlacementCards(entry, list) {
         input.placeholder = 'Text to add';
         input.addEventListener('input', () => {
             placement.text = input.value;
-            renderPlacementCards(entry, list);
+            renderPlacementCards(entry, list, bar);
         });
         card.append(input);
 
@@ -661,7 +793,7 @@ function renderPlacementCards(entry, list) {
             continue;
         }
 
-        if (plan) card.append(correctionControls(entry, list, placement, plan));
+        if (plan) card.append(correctionControls(entry, list, bar, placement, plan));
         list.append(card);
     }
 
@@ -671,7 +803,7 @@ function renderPlacementCards(entry, list) {
 }
 
 /* The controls that make an estimate correctable rather than merely announced. */
-function correctionControls(entry, list, placement, plan) {
+function correctionControls(entry, list, bar, placement, plan) {
     const wrap = document.createElement('div');
     wrap.className = 'pdf-correct';
 
@@ -704,7 +836,7 @@ function correctionControls(entry, list, placement, plan) {
     size.addEventListener('change', () => {
         const value = parseFloat(size.value);
         placement.sizeOverride = Number.isFinite(value) ? value : undefined;
-        renderPlacementCards(entry, list);
+        renderPlacementCards(entry, list, bar);
     });
     sizeLabel.append(size);
 
@@ -721,7 +853,7 @@ function correctionControls(entry, list, placement, plan) {
     }
     category.addEventListener('change', () => {
         placement.categoryOverride = category.value;
-        renderPlacementCards(entry, list);
+        renderPlacementCards(entry, list, bar);
     });
     catLabel.append(category);
 
@@ -735,7 +867,7 @@ function correctionControls(entry, list, placement, plan) {
         reset.addEventListener('click', () => {
             delete placement.sizeOverride;
             delete placement.categoryOverride;
-            renderPlacementCards(entry, list);
+            renderPlacementCards(entry, list, bar);
         });
         row.append(reset);
     }

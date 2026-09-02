@@ -158,6 +158,39 @@ export function runAtPoint(runs, x, y, tolerance = 6) {
     });
 }
 
+/* The rectangle to draw around a run, in PDF user space.
+ *
+ * Width is MEASURED, from the font's own /Widths — not the
+ * charCount * size * 0.5 estimate that extractRuns uses. That estimate is
+ * correct for what it does (proximity: is the click near this run) but drawing
+ * with it would put visibly crooked boxes around anything wider or narrower
+ * than an average Latin lowercase, which is most headings and all monospace.
+ *
+ * Height has no source in the document and is not given one: nothing here reads
+ * /Ascent or /Descent, by decision. It is derived from the type size purely to
+ * draw a box — a presentational approximation that never reaches the engine and
+ * never influences what is written. The proportions are the usual Latin ones,
+ * generous enough to clear ascenders and descenders at any size.
+ */
+export const BOX_ASCENT = 0.85;
+export const BOX_DESCENT = 0.25;
+
+export function runBox(run) {
+    const width = measure(run.codes, run.widths, run.size);
+    return {
+        x: run.x,
+        width,
+        top: run.y + run.size * BOX_ASCENT,
+        bottom: run.y - run.size * BOX_DESCENT,
+        height: run.size * (BOX_ASCENT + BOX_DESCENT),
+    };
+}
+
+/* Measured drawn width, in points, from the font's own advance widths. */
+export function measureRun(run) {
+    return measure(run.codes, run.widths, run.size);
+}
+
 /* Approximate drawn width, in points, from the font's own advance widths. */
 function measure(codes, widths, size) {
     let total = 0;

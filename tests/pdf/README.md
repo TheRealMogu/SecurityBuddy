@@ -83,3 +83,36 @@ in the XMP and `/Info` metadata it writes, and in how it generates the structure
 tree, and all three are things the block-1 checks make claims about. Nothing
 Word-specific has ever been exercised. If you have Word, regenerate that fixture
 from a real export and re-run; see the warning in `DEVELOPMENT.md`.
+
+## Checking the outlines drawn over recognised text
+
+The edit and overlay tabs outline every run they can read. Two tools check those
+rectangles against Poppler, which parses the file independently of this code:
+
+```bash
+node tests/pdf/boxes.mjs tests/fixtures/pdf/09-typographic-roles.pdf 0 > boxes.json
+python3 tools/pdf_boxes_check.py tests/fixtures/pdf/09-typographic-roles.pdf boxes.json
+python3 tools/pdf_boxes_ink.py   tests/fixtures/pdf/09-typographic-roles.pdf boxes.json \
+        --dpi 150 --out marked.png
+```
+
+`boxes.mjs` prints the rectangles from the same code the browser paints with —
+`readableRuns()` for which runs exist, `runBox()` for their geometry — so a
+disagreement is a disagreement about the page, not about the UI.
+
+`pdf_boxes_check.py` compares against `pdftotext -bbox-layout`. It attributes
+words to a box by TEXT, anchored at the run's left edge, never by an x-window:
+matching by position would let a too-narrow box exclude the word it fails to
+cover and then pass itself.
+
+`pdf_boxes_ink.py` rasterises with `pdftoppm` and counts dark pixels escaping to
+the right of each rectangle, and writes the page with the rectangles drawn on it
+so the fit can be looked at. Read the per-box figure, not the page-level share:
+a rule or a form-field border crossing a box's scan lines counts as escaped ink
+without being a character the box failed to cover.
+
+Fonts that carry a `/Widths` array measure exactly — 67/67 boxes on
+`01-word-export.pdf` and 12/12 on `04-accented-cjk.pdf` contain their ink to
+within an antialiasing fringe. Fonts that do not (the standard 14, used without
+embedding) fall back to 500/1000 per character inside `measure()`, and their
+boxes are wrong in both directions.
