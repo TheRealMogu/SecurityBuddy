@@ -111,8 +111,16 @@ so the fit can be looked at. Read the per-box figure, not the page-level share:
 a rule or a form-field border crossing a box's scan lines counts as escaped ink
 without being a character the box failed to cover.
 
-Fonts that carry a `/Widths` array measure exactly — 67/67 boxes on
-`01-word-export.pdf` and 12/12 on `04-accented-cjk.pdf` contain their ink to
-within an antialiasing fringe. Fonts that do not (the standard 14, used without
-embedding) fall back to 500/1000 per character inside `measure()`, and their
-boxes are wrong in both directions.
+Every fixture now passes both checks: no box cuts off its own text, and no ink
+escapes a rectangle beyond an antialiasing fringe. Read `pdf_boxes_ink.py`'s
+per-box figure rather than its page-level share on `02-fillable-form.pdf`, whose
+form-field borders cross the boxes' scan lines.
+
+A standard-14 font used without embedding carries no `/Widths` array — the
+metrics live in the font program every viewer has. `widthMap()` fills those
+codes from the AFM metrics pdf-lib bundles, keyed by character code like
+`/Widths` itself, so the engine keeps one measurement path. `/Widths` still wins
+wherever the document supplies it. Before that, the missing codes fell through
+to 500/1000 per character and the boxes were wrong in both directions: Courier
+10pt came out 10pt short over ten characters, a Times-Bold heading 32pt too
+wide.

@@ -17,6 +17,7 @@ import * as viewer from './viewer.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
 import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
 import { planOverlay, addOverlay } from './overlay.js';
+import { classifyPage } from './pagetype.js';
 import {
     readableRuns, runAtPoint, planReplacement, replaceText, runBox,
 } from './replace.js';
@@ -619,6 +620,22 @@ function renderTextPanel(panel) {
     paintPlacementContext(entry, contextBar);
     panel.append(contextBar);
 
+    // An OCR layer is text the page has and the user cannot see: it draws no
+    // ink, so nothing outlines it and nothing is clickable, yet it is there and
+    // it is what a copy-and-paste or a search will find. Saying so is the point
+    // — an outline that is simply absent reads as "no text here", which on this
+    // page is the opposite of the truth.
+    const hidden = hiddenTextLayer(entry.doc, state.placementPage);
+    if (hidden) {
+        panel.append(verdictBox(
+            'This page carries an invisible text layer',
+            `${hidden} text operation(s) on this page are drawn in an invisible render `
+            + 'mode — the signature of an OCR layer under a scan. That text is not '
+            + 'outlined and cannot be clicked, because there is no ink to point at, but '
+            + 'it is in the file and a search or a copy-and-paste will find it. Anything '
+            + 'you add here is written on top of it and leaves it in place.'));
+    }
+
     panel.append(hint('Click the page where the text should start. The click point is '
         + 'the left end of the text baseline. Text already on the page is outlined: '
         + 'anything placed over it is added on top, and the original stays.'));
@@ -708,6 +725,19 @@ function drawMarkers(container, viewport) {
 }
 
 /* One card per placement: the text, and the two values the user may override. */
+/* Text the page draws in an invisible render mode, counted from the same
+ * signals the TYPE A / TYPE B classifier already computes — no second reading
+ * of the content stream, and no separate idea of what "invisible" means. */
+function hiddenTextLayer(doc, pageIndex) {
+    try {
+        const { signals } = classifyPage(doc, doc.getPage(pageIndex));
+        const invisible = signals.textOps - signals.visibleTextOps;
+        return invisible > 0 && signals.visibleTextOps === 0 ? invisible : 0;
+    } catch {
+        return 0;
+    }
+}
+
 /* The overlay context bar. Kept separate from the panel because a placement's
  * font is only decided once there is text to write with it: the badge has to be
  * repainted on every keystroke, and rebuilding the whole panel would take the

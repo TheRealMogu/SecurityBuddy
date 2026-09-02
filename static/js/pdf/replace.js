@@ -108,10 +108,13 @@ export function readableRuns(doc, page) {
         if (!run.span || !run.fontName || run.invisible) return;
         if (!fontCache.has(run.fontName)) {
             const font = fontForRun(doc, page, run.fontName);
+            // The readable map feeds widthMap because a standard-14 font's
+            // widths have to be looked up by glyph, not by raw code.
+            const readable = font ? buildReadableMap(doc, font) : null;
             fontCache.set(run.fontName, font ? {
                 font,
-                readable: buildReadableMap(doc, font),
-                widths: widthMap(doc, font),
+                readable,
+                widths: widthMap(doc, font, readable),
                 twoByte: font.subtype === 'Type0',
             } : null);
         }
