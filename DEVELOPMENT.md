@@ -704,6 +704,79 @@ per caso era giusta — e non genera avviso, perché non è una supposizione del
 coordinate del click passano da `viewport.convertToPdfPoint()` di pdf.js, che gestisce anche
 la rotazione di pagina.
 
+### La postazione di lavoro
+
+`static/js/pdf/workbench.js` (documento e vista) + `static/js/pdf/shell.js` (guscio e
+strumenti). Prima gli strumenti erano un **modulo**: sceglievi una scheda, la compilavi e ti
+usciva un file da scaricare; per farne una seconda ricaricavi il file appena scaricato. Il
+documento a schermo non cambiava mai, non c'era zoom, non c'era annulla, non c'era tastiera.
+
+Adesso c'è **un documento**, le operazioni lo modificano, si salva alla fine.
+
+* **Documento di lavoro.** Ogni operazione passa dagli stessi motori verificati di prima; cambia
+  dove finisce l'output — dentro il documento, non in una card di download. I motori producono
+  già un documento nuovo invece di mutare quello ricevuto, quindi ogni passo resta la stessa
+  trasformazione verificata. Ricaricarne i byte è anche ciò che tiene onesta l'operazione
+  successiva: pianifica su cosa c'è davvero nel file adesso, non su cosa crediamo di avergli
+  fatto.
+* **Annulla e ripeti** su istantanee dei byte, tetto a 20 stati (una scansione pesa megabyte).
+* **Il rapporto si accumula.** Quattro operazioni lasciano quattro operazioni di conseguenze;
+  mostrare solo l'ultima farebbe sparire le altre in silenzio.
+* **Vista continua**, tutte le pagine in un unico scorrevole, disegnate quando si avvicinano
+  alla finestra: un file di 200 pagine non ne disegna 200 per mostrarne una. Le pagine hanno la
+  loro dimensione da subito, così la barra di scorrimento è giusta prima che qualcosa sia
+  disegnato — uno scorrevole che cresce mentre disegna salta sotto il cursore.
+* **Zoom** che tiene fermo il punto sotto il cursore; "adatta" considera anche l'altezza, perché
+  adattare solo la larghezza lascia una pagina verticale più alta della finestra.
+* **Tastiera**: `Ctrl+Z`/`Ctrl+Shift+Z`, `Ctrl+S`, `+`/`-`/`0`, `PagSu`/`PagGiù`, `1`–`5`. Le
+  scorciatoie tacciono mentre si scrive, così battere «3» in una sostituzione non cambia
+  strumento.
+
+**Assetto, sul modello standard degli editor PDF professionali:** rail sinistro = *cosa fai*
+(strumenti, e sotto le opzioni di quello in mano, così «dov'è quell'impostazione» ha sempre la
+stessa risposta); centro = la pagina, con menu contestuali sul tasto destro; rail destro = *come
+navighi* (pagine sopra, vista sotto). La barra di azioni rapide porta fuori le poche cose che si
+usano di continuo: il lavoro sulle pagine è la maggior parte dell'uso quotidiano e non deve
+stare due clic dentro uno strumento.
+
+> **Sotto i 900px il rail sinistro diventa una striscia orizzontale.** Su un 1366×768 un rail
+> verticale mangia il documento: è la lamentela numero uno degli utenti reali.
+
+> **La striscia della fedeltà** in fondo dice a ogni istante cosa l'operazione sta facendo al
+> file. Nessun altro editor PDF lo dice, ed è la ragione per cui questo esiste.
+
+### Ritaglio della pagina
+
+`static/js/pdf/crop.js`. Ritagliare un PDF si fa normalmente scrivendo un `/CropBox`, e qui
+sarebbe la cosa sbagliata: sposta il bordo che il viewer disegna e lascia nel file ogni parola e
+ogni immagine tolte, recuperabili da chiunque lo apra con qualcosa che non sia un viewer. Uno
+strumento che su un sito di sicurezza scrive «ritagliato» mentre il contenuto è ancora lì è
+peggio di nessuno strumento.
+
+Quindi il ritaglio **cancella le operazioni di disegno**, e quando non può si rifiuta invece di
+fingere:
+
+* Ciò di cui non si calcola l'estensione **non è rimovibile**. Mai cancellare su una supposizione.
+* Ciò che **attraversa** il bordo non è rimovibile qui: tagliare una Bézier o ricodificare metà
+  immagine è un lavoro diverso e molto più grosso. La risposta onesta è nominare cosa resterebbe
+  e fermarsi.
+* Un percorso usato come **clip** non si cancella mai: toglierlo cambierebbe cosa si vede nella
+  parte che l'utente ha chiesto di tenere.
+* Il **testo invisibile si rimuove come quello visibile**: un layer OCR è esattamente ciò che un
+  ritaglio deve togliere, e nessun viewer mostrerà mai all'utente che è ancora lì.
+* Una riga tagliata di lato si accorcia su un confine di carattere e viene riemessa con uno
+  spostamento `TJ`, non con un `Td`, che sposterebbe tutto ciò che è posizionato relativamente a
+  quella riga più avanti.
+
+Senza accettazione esplicita l'operazione **si rifiuta**; con l'accettazione il report porta una
+voce in evidenza che dice che l'output non è redatto.
+
+> **Come si verifica.** `pdftotext` non serve: rispetta il `/CropBox`, quindi riporta come
+> assente ciò che è soltanto nascosto — misura la visibilità, non la rimozione, che è la
+> distinzione per cui questo strumento esiste. `tests/pdf/crop.mjs` legge l'output con pypdf,
+> che decodifica il content stream e ignora il riquadro di pagina. Su `03-scanned-ocr.pdf` le
+> parole ricavabili passano da 368 a 190.
+
 ### Modifica del testo esistente
 
 `static/js/pdf/replace.js`. **È l'unica operazione che riscrive un content stream.** Tutte le
