@@ -63,6 +63,8 @@
                                 role="tab" aria-selected="false">Fill form</button>
                         <button type="button" class="pdf-tab" data-tool="text"
                                 role="tab" aria-selected="false">Add text</button>
+                        <button type="button" class="pdf-tab" data-tool="edit"
+                                role="tab" aria-selected="false">Edit text</button>
                     </div>
                     <div id="pdfToolPanel" class="pdf-panel"></div>
                     <div id="pdfError" hidden class="pdf-notice pdf-notice-block"
@@ -250,6 +252,71 @@
                         font-weight:700; line-height:17px; text-align:center;
                         box-shadow:0 0 0 2px rgba(255,255,255,.85); }
     .pdf-place-head { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+
+    /* Every run the extractor recognised gets an outline, drawn before any
+       click. The rectangle is the run's MEASURED width (from the font's own
+       /Widths) and a height derived from the type size for drawing only —
+       see runBox() in replace.js. */
+    /* outline, not border: the rectangle traces a run that can be 10px tall at
+       10pt, and a 2px border would eat four of those ten pixels and read as a
+       filled block rather than an outline. An outline is drawn outside the box,
+       so the ink inside stays legible whatever the type size. */
+    .pdf-run-box { position:absolute; border-radius:2px;
+                   pointer-events:auto; cursor:pointer;
+                   outline:1px dashed rgba(1,105,111,.30); outline-offset:1px;
+                   transition:background .12s, outline-color .12s; }
+    .pdf-run-box:hover { outline-color:var(--color-primary);
+                         background:var(--color-primary-dim); }
+    .pdf-run-box-add { outline-style:dotted; outline-color:rgba(183,121,31,.38); }
+    .pdf-run-box-add:hover { outline-color:#b7791f; background:rgba(183,121,31,.12); }
+    .pdf-run-box-sel { outline:2px solid var(--color-primary); outline-offset:1px;
+                       background:var(--color-primary-dim); }
+    .pdf-run-box-add.pdf-run-box-sel { outline:2px dashed #b7791f;
+                                       background:rgba(183,121,31,.12); }
+    /* The tag names the mechanism on the selected run, so "replaces" and
+       "adds on top" are never left to be inferred from the outline alone. It is
+       kept under 12px tall so it fits the leading of 10pt body text instead of
+       covering the line above it. */
+    .pdf-run-box-sel[data-tag]::after {
+        content:attr(data-tag); position:absolute; left:-1px; bottom:100%;
+        margin-bottom:2px; font-size:.53rem; font-weight:700; letter-spacing:.04em;
+        text-transform:uppercase; white-space:nowrap; line-height:1.35;
+        padding:0 .3rem; border-radius:3px; pointer-events:none;
+        background:var(--color-primary); color:#fff; }
+    .pdf-run-box-add.pdf-run-box-sel[data-tag]::after { background:#b7791f; }
+
+    .pdf-context-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem;
+                       margin:.15rem 0 .55rem; }
+    .pdf-context-idle { font-size:.8rem; color:var(--color-text-muted); }
+
+    /* Which mechanism is in play. Stated, not inferred. */
+    .pdf-mech { font-size:.62rem; font-weight:700; letter-spacing:.06em;
+                text-transform:uppercase; padding:.15rem .45rem;
+                border-radius:4px; color:#fff; }
+    .pdf-mech-rep { background:var(--color-primary); }
+    .pdf-mech-add { background:#b7791f; }
+
+    /* The provenance badge: the real detected font and where it came from,
+       one class per state the engine actually produces. */
+    .pdf-prov { display:inline-flex; align-items:center; gap:.4rem;
+                border:1px solid; border-radius: var(--radius-full);
+                padding:.2rem .55rem .2rem .45rem;
+                font-size:.72rem; font-weight:600; white-space:nowrap; }
+    .pdf-prov-dot { width:7px; height:7px; border-radius: var(--radius-full);
+                    background:currentColor; flex:none; }
+    .pdf-prov-face { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-weight:500; }
+    .pdf-prov-sep { opacity:.45; }
+    .pdf-prov-src { font-size:.65rem; letter-spacing:.05em; text-transform:uppercase; }
+    .pdf-prov-doc { color:var(--color-primary); border-color:rgba(1,105,111,.30);
+                    background:var(--color-primary-dim); }
+    .pdf-prov-sub { color:#b7791f; border-color:rgba(183,121,31,.36);
+                    background:rgba(183,121,31,.10); }
+    /* Dashed: the size was estimated or defaulted, not read from the file. */
+    .pdf-prov-est { color:#b7791f; border-color:rgba(183,121,31,.36);
+                    background:rgba(183,121,31,.10); border-style:dashed; }
+    .pdf-edit-before { margin:.3rem 0 0; font-size:.82rem; color:var(--color-text-muted);
+                       text-decoration:line-through; word-break:break-word; }
 
     .pdf-correct { margin-top:.55rem; display:flex; flex-direction:column; gap:.4rem; }
     .pdf-origin { align-self:flex-start; font-size:.68rem; font-weight:700;

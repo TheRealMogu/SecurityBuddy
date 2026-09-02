@@ -704,6 +704,42 @@ per caso era giusta — e non genera avviso, perché non è una supposizione del
 coordinate del click passano da `viewport.convertToPdfPoint()` di pdf.js, che gestisce anche
 la rotazione di pagina.
 
+### Modifica del testo esistente
+
+`static/js/pdf/replace.js`. **È l'unica operazione che riscrive un content stream.** Tutte le
+altre lasciano stare i byte della pagina: le strutturali li copiano, l'overlay ne affianca uno
+nuovo. Una sostituzione non può: l'operazione di disegno che mette quelle parole sulla pagina è
+proprio ciò che cambia. `pdf_compare.py` lo riporta come stream modificato, ed è voluto.
+
+> **Perché non coprire il testo vecchio.** La versione facile disegna un rettangolo del colore
+> di sfondo sopra le parole vecchie e scrive le nuove sopra. Sembra giusto ed è una bugia: il
+> testo originale resta nel content stream, recuperabile con copia-incolla o con qualsiasi
+> parser. Su un sito di sicurezza spedire una redazione che non redige non è un'opzione. La
+> stringa vecchia viene **rimossa dal file** — verificato con `pdftotext`, che sull'output non
+> trova più il testo sostituito.
+
+**Cosa non fa: il reflow.** La sostituzione è disegnata dalla stessa origine con lo stesso
+font, quindi una stringa più lunga prosegue oltre dove finiva l'originale e una più corta
+lascia un vuoto. Niente di ciò che segue si sposta. Quando la larghezza cambia oltre il 15% il
+piano lo dice **prima** di scrivere. Era l'esclusione posta all'inizio del progetto, e la
+ragione è quella: farlo davvero significa rimandare a capo i paragrafi, il che richiede le
+metriche e le regole di impaginazione del produttore originale.
+
+**Un sostituto non è ammesso qui.** Per il testo *nuovo* un font sostitutivo è un compromesso
+visibile e onesto. Per una *sostituzione* è un difetto: mezza riga di corpo in una faccia
+diversa non combacerebbe con le parole a destra e a sinistra sulla stessa riga. Se il font del
+documento non ha i glifi, l'operazione si **blocca** e dice quali caratteri mancano.
+
+**Il kerning si perde.** Misurato: `01-word-export.pdf` usa `TJ` con aggiustamenti di
+spaziatura su **23 array su 23** — è il caso normale in un export da word processor, non
+un'eccezione. Quegli aggiustamenti sono calcolati per quelle coppie di lettere e non si
+trasferiscono su parole diverse: il testo sostituito viene impostato con la spaziatura normale
+del font, cosa visibile da vicino su una riga giustificata. Riportato nel piano.
+
+Per **leggere** il testo esistente serve la `/ToUnicode` letta in avanti: i codici di un font
+sottoinsieme sono numeri di slot arbitrari, e senza quella mappa il testo già sulla pagina si
+legge come caratteri di controllo.
+
 ### Verifica: `tools/pdf_compare.py`
 
 Dipende da **pypdf**, dipendenza **solo di sviluppo** (`pyproject.toml`, mai

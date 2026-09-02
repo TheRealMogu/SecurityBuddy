@@ -28,7 +28,7 @@
 
 import {
     PDFDict, PDFName, PDFArray, PDFNumber, PDFStream, PDFRef, PDFRawStream,
-    StandardFonts, decodePDFRawStream,
+    StandardFonts, StandardFontEmbedder, decodePDFRawStream,
 } from './pdflib.js';
 
 /* ── Categories and their substitutes ────────────────────────────────────── */
@@ -238,6 +238,166 @@ function decodeStream(stream) {
         return new TextDecoder('latin1').decode(bytes);
     } catch {
         return '';
+    }
+}
+
+/* Read a /ToUnicode CMap forwards: code -> the character it draws.
+ *
+ * The inverse of buildWritableMap. Needed to show a user the text that is
+ * ALREADY on the page: a subset font's codes are arbitrary slot numbers, so
+ * without this the existing text reads as control characters. */
+export function buildReadableMap(doc, font) {
+    if (!font) return new Map();
+
+    const toUnicode = font.dict.lookup(N.ToUnicode);
+    if (toUnicode instanceof PDFStream) {
+        const forward = parseToUnicodeForward(decodeStream(toUnicode));
+        if (forward.size) return forward;
+    }
+
+    // No /ToUnicode: the encoding table read the other way round.
+    const map = new Map();
+    for (const [char, code] of encodingMap(doc, font)) {
+        if (!map.has(code)) map.set(code, char);
+    }
+    return map;
+}
+
+function parseToUnicodeForward(text) {
+    const map = new Map();
+    const fromHex = (hex) => {
+        let out = '';
+        for (let i = 0; i + 3 < hex.length; i += 4) out += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
+        return out || String.fromCharCode(parseInt(hex, 16));
+    };
+    for (const block of text.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+        for (const [, src, dst] of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+            map.set(parseInt(src, 16), fromHex(dst));
+        }
+    }
+    for (const block of text.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+        for (const [, lo, hi, dst] of
+             block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+            const start = parseInt(lo, 16);
+            const end = parseInt(hi, 16);
+            const base = parseInt(dst.slice(-4), 16);
+            for (let i = 0; i <= Math.min(end - start, 65535); i += 1) {
+                map.set(start + i, String.fromCharCode(base + i));
+            }
+        }
+    }
+    return map;
+}
+
+/* The AFM metrics to use for a standard-14 font that carries no font program.
+ *
+ * The aliases are not guesses. Arial was drawn to Helvetica's widths and Times
+ * New Roman to Times', which is why a viewer can substitute one for the other
+ * without reflowing a line; Courier New is likewise metric-compatible with
+ * Courier. Mapping them here reproduces what every conformant viewer already
+ * does when it meets the name without a font program.
+ */
+const STANDARD_METRICS = new Map([
+    ['Helvetica', 'Helvetica'],
+    ['Helvetica-Bold', 'Helvetica-Bold'],
+    ['Helvetica-Oblique', 'Helvetica-Oblique'],
+    ['Helvetica-BoldOblique', 'Helvetica-BoldOblique'],
+    ['Arial', 'Helvetica'],
+    ['ArialMT', 'Helvetica'],
+    ['Arial-Bold', 'Helvetica-Bold'],
+    ['Arial-BoldMT', 'Helvetica-Bold'],
+    ['Times-Roman', 'Times-Roman'],
+    ['Times-Bold', 'Times-Bold'],
+    ['Times-Italic', 'Times-Italic'],
+    ['Times-BoldItalic', 'Times-BoldItalic'],
+    ['TimesNewRoman', 'Times-Roman'],
+    ['TimesNewRomanPSMT', 'Times-Roman'],
+    ['Courier', 'Courier'],
+    ['Courier-Bold', 'Courier-Bold'],
+    ['Courier-Oblique', 'Courier-Oblique'],
+    ['Courier-BoldOblique', 'Courier-BoldOblique'],
+    ['CourierNew', 'Courier'],
+    ['CourierNewPSMT', 'Courier'],
+    ['Symbol', 'Symbol'],
+    ['ZapfDingbats', 'ZapfDingbats'],
+]);
+
+/* Parsing an AFM is not free and a page can name the same font in every
+ * drawing call, so the embedders are built once per process. */
+const embedderCache = new Map();
+
+function metricsFor(name) {
+    // The StandardFonts values ARE the PDF base names, so the mapped name goes
+    // straight to the embedder.
+    const key = STANDARD_METRICS.get(name);
+    if (!key) return null;
+    if (!embedderCache.has(key)) {
+        try {
+            embedderCache.set(key, StandardFontEmbedder.for(key));
+        } catch {
+            embedderCache.set(key, null);
+        }
+    }
+    return embedderCache.get(key);
+}
+
+/* Advance widths by character code, for judging whether a replacement will
+ * still fit the space the original occupied — and for drawing a box around it.
+ *
+ * A standard-14 font used without embedding legally carries no /Widths array:
+ * the metrics live in the font program every conformant viewer already has, so
+ * a PDF that omits the array is complete, not broken. pdf-lib bundles those
+ * same AFM metrics, so they are read here rather than assumed. Before this the
+ * missing entries fell through to an average character, and the error was not
+ * small in either direction: Courier 10pt came out 10pt short over ten
+ * characters, a Times-Bold heading 32pt too wide.
+ *
+ * The result is keyed by character code exactly like /Widths, so no caller can
+ * tell which of the two sources a width came from, and the engine keeps one
+ * measurement path. The code -> character step comes from the readable map,
+ * which has already resolved the font's /Encoding and /ToUnicode: an advance
+ * width belongs to a GLYPH, and the encoding only decides which byte selects
+ * it, so going through the character is what makes the lookup encoding-correct
+ * rather than an assumption that the file uses WinAnsi.
+ *
+ * /Widths still wins wherever it is present. A document that states a width is
+ * authoritative about its own rendering even when it disagrees with the AFM.
+ */
+export function widthMap(doc, font, readable) {
+    const widths = new Map();
+    if (!font) return widths;
+    const first = font.dict.lookupMaybe(N.FirstChar, PDFNumber)?.asNumber();
+    const array = font.dict.lookupMaybe(N.Widths, PDFArray);
+    if (first !== undefined && array) {
+        array.asArray().forEach((value, index) => {
+            if (value instanceof PDFNumber) widths.set(first + index, value.asNumber());
+        });
+    }
+
+    if (!font.standard14 || !readable) return widths;
+    const metrics = metricsFor(font.name);
+    if (!metrics) return widths;
+
+    for (const [code, char] of readable) {
+        if (widths.has(code)) continue;
+        const width = glyphWidth(metrics, char);
+        // A character the AFM has no glyph for is left out rather than guessed:
+        // measure() then falls back to its declared average, which is at least
+        // visible as a fallback instead of masquerading as a real metric.
+        if (width !== null) widths.set(code, width);
+    }
+    return widths;
+}
+
+function glyphWidth(metrics, char) {
+    if (!char || char.length !== 1) return null;
+    try {
+        // widthOfTextAtSize at size 1000 is the advance in glyph-space units,
+        // the same units /Widths uses.
+        const width = metrics.widthOfTextAtSize(char, 1000);
+        return Number.isFinite(width) && width > 0 ? width : null;
+    } catch {
+        return null;   // outside the font's encoding: not measurable here
     }
 }
 

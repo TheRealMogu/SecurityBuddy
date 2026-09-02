@@ -35,6 +35,7 @@ export const {
     EncryptedPDFError,
     degrees,
     StandardFonts,
+    StandardFontEmbedder,
     decodePDFRawStream,
 } = window.PDFLib;
 
