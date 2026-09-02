@@ -191,7 +191,7 @@ export function extractRuns(doc, page) {
                 // text: everything a replacement has to overwrite, operator
                 // included, so a new string can take its place verbatim.
                 const span = operandStart >= 0
-                    ? { start: operandStart, end: opEnd, operator }
+                    ? { start: spanStart(text, operandStart, operator), end: opEnd, operator }
                     : null;
                 runs.push({
                     span,
@@ -220,6 +220,26 @@ export function extractRuns(doc, page) {
 }
 
 /* Resolve a run's font resource name against the page's resources. */
+/* Where a show-text operator's operands really begin.
+ *
+ * The tokeniser does not emit "[" or "]" — they are not operands, they are the
+ * array that holds them — so the first token of a TJ is the first element
+ * INSIDE the array. A span starting there is right for reading the run and
+ * wrong for replacing it: cutting from the first element through the operator
+ * deletes the closing bracket and leaves the opening one, which produces
+ * "End of file inside array" and a page a viewer will not draw.
+ *
+ * This was a real defect, and a quiet one: a Tj run has no brackets, so every
+ * test that replaced text on a document without kerning passed while every
+ * kerned run in a Word or LibreOffice export would have been corrupted.
+ */
+function spanStart(text, operandStart, operator) {
+    if (operator !== 'TJ') return operandStart;
+    let i = operandStart - 1;
+    while (i >= 0 && /\s/.test(text[i])) i -= 1;
+    return text[i] === '[' ? i : operandStart;
+}
+
 export function fontForRun(doc, page, resourceName) {
     if (!resourceName) return null;
     const resources = page.node.lookup(N.Resources);

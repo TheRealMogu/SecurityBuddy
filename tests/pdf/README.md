@@ -14,7 +14,15 @@ node fill.mjs        # form filling: original font, forced substitution, untouch
 node roles.mjs       # baseline-first font lookup at a typographic role boundary
 node overlay.mjs     # free text: original / SUBSTITUTE / ESTIMATED / DEFAULT / USER
 node replace.mjs     # editing text already on the page
+node crop.mjs        # cropping by REMOVING what falls outside
 ```
+
+`crop.mjs` asks the question a crop tool has to answer on a security site: is
+the content outside the crop GONE, or merely not shown? `pdftotext` cannot
+answer it — it honours the CropBox, so it reports hidden content as absent. The
+test reads the output with pypdf instead, which decodes the content stream and
+ignores the page box. Getting this wrong once, in this very file, is what turned
+up the TJ-span defect below.
 
 `replace.mjs` covers the one operation that rewrites a content stream. Its most
 important assertion is not that the new text is present but that the OLD text is
@@ -74,6 +82,21 @@ five reference documents, and use `tools/pdf_compare.py` against them.
 
 Passing here means the logic is sound. It does not mean an operation is safe on
 an arbitrary document.
+
+## A defect these tests did not catch for three releases
+
+`extractRuns()` records the span of a show-text operator starting at its first
+operand token. The tokeniser never emits `[` or `]` — they are the array, not
+operands — so for a `TJ` that span began INSIDE the array. Replacing the run cut
+from there through the operator: the closing bracket went, the opening one
+stayed, and Poppler answered `End of file inside array`.
+
+Every replacement test used `09-typographic-roles.pdf`, whose runs are plain
+`Tj` with no brackets, and the one case on `01-word-export.pdf` was blocked by a
+missing glyph before anything was written. So the whole kerned path — which is
+every paragraph of a Word or LibreOffice export — shipped untested and broken.
+Case 5 of `replace.mjs` now covers it, and reads Poppler's **stderr**: a broken
+stream still prints text on stdout, and only stderr says the file is malformed.
 
 ## Known gap in the fixture set
 

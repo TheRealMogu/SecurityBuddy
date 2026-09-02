@@ -1,6 +1,7 @@
 /* Replacing text that is already on the page. */
 import { PDFLib } from './shim.mjs';
 import { readFile, writeFile, mkdir } from 'fs/promises';
+import { spawnSync } from 'child_process';
 import path from 'path';
 const { PDFDocument } = PDFLib;
 const { loadDocument } = await import('../../static/js/pdf/preserve.js');
@@ -81,6 +82,32 @@ console.log('\n=== 4. differenza di larghezza segnalata ===');
   console.log(`  note: ${plan.notes.length}`);
   for (const n of plan.notes) console.log(`     ${n.slice(0, 110)}`);
   check(plan.notes.length >= 1, 'una differenza forte deve produrre una nota');
+}
+
+console.log('\n=== 5. un run con array di kerning (TJ) non corrompe lo stream ===');
+{
+  // Un run Tj non ha parentesi quadre, quindi ogni test fatto su un documento
+  // senza kerning passava mentre ogni paragrafo di un export Word o LibreOffice
+  // sarebbe uscito con "[" aperta e "]" cancellata. Questo caso e' qui perche'
+  // il difetto e' arrivato in produzione senza che nessun test lo toccasse.
+  const doc = await open('01-word-export.pdf');
+  const runs = readableRuns(doc, doc.getPage(0));
+  const target = runs.find(r => r.kerned);
+  check(!!target, 'serve un run disegnato con TJ e aggiustamenti di coppia');
+  console.log(`  target: "${target.text.slice(0, 40)}" [${target.font.name}, TJ]`);
+
+  const { bytes } = await replaceText(doc, '01', [
+    { pageIndex: 0, runId: target.id, newText: 'Paragraph 1 with some ordinary' }]);
+  const file = path.join(OUT, '01-word-export--replaced-kerned.pdf');
+  await writeFile(file, bytes);
+
+  // Poppler segnala gli errori di sintassi su stderr: se lo stream e' rotto,
+  // il testo puo' comunque uscire e solo stderr lo dice.
+  const proc = spawnSync('pdftotext', [file, '-'], { encoding: 'utf8' });
+  const errors = (proc.stderr || '').trim();
+  if (errors) console.log(`  stderr di Poppler: ${errors.split('\n')[0]}`);
+  check(!/Syntax Error/.test(errors), 'Poppler legge lo stream senza errori di sintassi');
+  check(proc.stdout.includes('Paragraph 1 with some ordinary'), 'il testo nuovo c\'e\'');
 }
 
 console.log(fail ? `\n${fail} CHECK(S) FAILED` : '\nall in-process checks passed');
