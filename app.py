@@ -282,6 +282,15 @@ def _run_column_migrations():
         # Async micro-scan columns on scan_result (idempotent — ignored if present).
         'ALTER TABLE scan_result ADD COLUMN public_id VARCHAR(32)',
         "ALTER TABLE scan_result ADD COLUMN status VARCHAR(20) DEFAULT 'PROCESSING'",
+        'CREATE TABLE IF NOT EXISTS verified_domain ('
+        ' id INTEGER PRIMARY KEY,'
+        ' user_id INTEGER NOT NULL,'
+        ' domain VARCHAR(255) NOT NULL,'
+        ' token VARCHAR(80) NOT NULL,'
+        ' method VARCHAR(10),'
+        ' verified_at TIMESTAMP,'
+        ' created_at TIMESTAMP'
+        ')',
         'ALTER TABLE scan_result ADD COLUMN ssl_result TEXT',
         'ALTER TABLE scan_result ADD COLUMN headers_result TEXT',
         'ALTER TABLE scan_result ADD COLUMN ports_result TEXT',

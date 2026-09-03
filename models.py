@@ -88,6 +88,25 @@ class ScanResult(db.Model):
     def __repr__(self):
         return f'<ScanResult {self.target}>'
 
+class VerifiedDomain(db.Model):
+    """A domain a user has proved they control, so active penetration-test
+    probes may be fired at it. Without a verified row for the exact target, the
+    /pentest route refuses: a self-attestation checkbox is not authorisation."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    domain = db.Column(db.String(255), nullable=False)
+    token = db.Column(db.String(80), nullable=False)     # the proof to place
+    method = db.Column(db.String(10), nullable=True)     # 'dns' or 'file', once verified
+    verified_at = db.Column(db.DateTime, nullable=True)  # NULL until proved
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'domain', name='uix_user_domain'),)
+
+    @property
+    def is_verified(self):
+        return self.verified_at is not None
+
+
 class APIKey(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
