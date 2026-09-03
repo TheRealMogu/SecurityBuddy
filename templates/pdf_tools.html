@@ -86,6 +86,7 @@
                    would otherwise eat the document. -->
               <aside class="wb-left" id="wbLeft" aria-label="Tools">
                 <div class="wb-tools" id="wbToolbar" role="toolbar" aria-label="Tools"></div>
+                <input type="file" id="wbMergeInput" accept="application/pdf,.pdf" hidden>
                 <div class="wb-inspector" id="wbInspector" aria-label="Tool options"></div>
               </aside>
 
@@ -441,6 +442,10 @@
     .wb-inspector .btn { flex:none; }
     .wb-insp-title { font-size:.62rem; font-weight:700; letter-spacing:.13em;
                      text-transform:uppercase; color:var(--color-text-muted); margin:0; }
+    .wb-thumb[draggable="true"] { cursor:grab; }
+    .wb-thumb-dragging { opacity:.4; }
+    .wb-hint { margin:.1rem 0 .3rem; font-size:.72rem; line-height:1.5; color:var(--color-text-muted); }
+
     .wb-shape { position:absolute; box-sizing:border-box; pointer-events:none; }
     .wb-swatch-row { display:flex; align-items:center; gap:.5rem; font-size:.78rem;
                      color:var(--color-text-muted); }

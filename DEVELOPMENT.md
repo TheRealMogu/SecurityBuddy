@@ -704,6 +704,31 @@ per caso era giusta — e non genera avviso, perché non è una supposizione del
 coordinate del click passano da `viewport.convertToPdfPoint()` di pdf.js, che gestisce anche
 la rotazione di pagina.
 
+### Numeri di pagina, filigrane, intestazioni
+
+`static/js/pdf/stamp.js`. Tutto **timbra**: scrive in uno stream aggiunto dopo quello della
+pagina, quindi il documento tiene ogni byte con cui è arrivato, come le forme. Il testo è nostro
+— un numero, «BOZZA» in diagonale, un'intestazione — non del documento, quindi è impostato in
+Helvetica standard incorporata una volta e referenziata **a mano**: `newFontDictionary()` di
+pdf-lib chiamerebbe `normalizeContentStreams()`, che riscrive i byte della pagina in `q`/`Q`, e
+qui non serve.
+
+I token `{n}` e `{total}` si espandono nel numero di pagina e nel totale, con `startAt` e
+intervallo. La filigrana è una parola ruotata di 45° attorno al centro pagina, al 18% di
+opacità via un `ExtGState` — le due matrici di testo (ruota + centra) vanno **composte in una
+sola**, perché un secondo `Tm` sostituisce il primo invece di comporsi.
+
+> **pdftotext non estrae il testo ruotato**, quindi il test della filigrana verifica i byte
+> codificati nello stream (`<424F5A5A41>` = «BOZZA») e il render, non l'estrazione.
+
+### Riordino, merge
+
+`reorder`/`merge` erano già pronti e testati dal blocco 1: sono solo rientrati nella barra. Il
+riordino trascina le miniature nel rail destro e passa il nuovo ordine a `reorder`, che **copia
+le pagine, non le ricostruisce** — quindi le pagine riordinate sono identiche byte per byte. Il
+merge apre un secondo file con un input persistente nel markup (uno creato al volo non apre il
+dialogo in modo affidabile su tutti i browser) e accoda le sue pagine con `merge`.
+
 ### Forme
 
 `static/js/pdf/shapes.js`. Rettangolo, ellisse, linea, con riempimento e bordo. È

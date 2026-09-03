@@ -18,6 +18,7 @@ import * as fonts from './fontsource.js';
 import { planOverlay, addOverlay } from './overlay.js';
 import { planCrop, cropPages } from './crop.js';
 import { planShapes, addShapes } from './shapes.js';
+import { addStamp, POSITIONS } from './stamp.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
 import { classifyPage } from './pagetype.js';
 import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
@@ -41,6 +42,8 @@ const TOOLS = [
         '<rect x="3" y="4" width="10" height="10" rx="1.5"/><circle cx="15.5" cy="15.5" r="5.5"/>' },
     { id: 'form', label: 'Forms', key: '6', group: 1, icon:
         '<rect x="3" y="5" width="18" height="5" rx="1.5"/><rect x="3" y="14" width="18" height="5" rx="1.5"/>' },
+    { id: 'stamp', label: 'Stamp', key: '7', group: 2, icon:
+        '<path d="M12 3v6"/><path d="M8 9h8l-1 5H9z"/><path d="M5 20h14"/><path d="M5 17h14v3H5z"/>' },
 ];
 
 const ui = {
@@ -56,6 +59,10 @@ const ui = {
     cropRect: null,
     cropPlan: null,
     cropAccepted: false,
+    stampKind: 'number',
+    stampText: 'Page {n} of {total}',
+    stampPosition: 'bottom-center',
+    stampWatermark: 'DRAFT',
     shapes: [],
     shapeKind: 'rectangle',
     shapeFill: '#ffe08a',
@@ -209,6 +216,20 @@ function buildQuickBar() {
 
     add('Extract selected', '<rect x="3" y="4" width="11" height="15" rx="1.5"/><path d="M17 7h4v13H10"/>',
         () => keepSelected());
+
+    const sep2 = document.createElement('span');
+    sep2.className = 'wb-tsep';
+    bar.append(sep2);
+
+    const mergeBtn = document.createElement('button');
+    mergeBtn.type = 'button';
+    mergeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+        <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/>
+        <path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M9 12h6M12 9v6"/></svg><span>Merge another PDF</span>`;
+    mergeBtn.addEventListener('click', pickFileToMerge);
+    bar.append(mergeBtn);
+
     refreshQuickBar();
 }
 
@@ -259,6 +280,7 @@ function bindChrome() {
         $('wbRightToggle').title = collapsed ? 'Hide pages' : 'Show pages';
     });
     $('wbReport').addEventListener('click', showReport);
+    $('wbMergeInput').addEventListener('change', onMergeFile);
     $('wbScroller').addEventListener('contextmenu', onContextMenu);
     $('wbRail').addEventListener('contextmenu', onRailContextMenu);
     $('wbUndo').addEventListener('click', () => wb.undo());
@@ -349,7 +371,7 @@ function paintFidelity() {
     const cells = [];
 
     const rewrites = ui.tool === 'edit' || ui.tool === 'crop';
-    const appends = ui.tool === 'add' || ui.tool === 'shape';
+    const appends = ui.tool === 'add' || ui.tool === 'shape' || ui.tool === 'stamp';
     cells.push(['ok', 'Operation', rewrites
         ? 'Rewrites the page content stream'
         : appends ? 'Appends a content stream'
@@ -361,7 +383,8 @@ function paintFidelity() {
     } else if (appends) {
         cells.push(['ok', 'Page bytes',
             ui.tool === 'shape' ? 'Untouched — the shape goes alongside'
-                                : 'Untouched — the new text goes alongside']);
+                : ui.tool === 'stamp' ? 'Untouched — the stamp goes alongside'
+                : 'Untouched — the new text goes alongside']);
     } else {
         cells.push(['ok', 'Page bytes', 'Untouched']);
     }
@@ -414,7 +437,7 @@ function paintRail() {
     const rail = $('wbRail');
     if (rail.dataset.count !== String(wb.doc.pdf.numPages)) {
         rail.dataset.count = String(wb.doc.pdf.numPages);
-        wb.paintThumbnails(rail, { current: ui.page, onPick: pickPage });
+        wb.paintThumbnails(rail, { current: ui.page, onPick: pickPage, onReorder: reorderPages });
     }
     for (const [index, button] of [...rail.children].entries()) {
         button.setAttribute('aria-current', String(index === ui.page));
@@ -743,6 +766,7 @@ function paintInspector() {
     ({
         pages: inspectPages, edit: inspectEdit, add: inspectAdd,
         crop: inspectCrop, form: inspectForm, shape: inspectShapes,
+        stamp: inspectStamp,
     }[ui.tool])(panel);
 }
 
@@ -1221,6 +1245,109 @@ function inspectCrop(panel) {
         ui.cropAccepted = false;
         await wb.apply({ ...result, label: 'crop' });
     }, { disabled: blocked.length > 0 && !ui.cropAccepted }));
+}
+
+/* Reorder ----------------------------------------------------------------- */
+
+async function reorderPages(order) {
+    const result = await ops.reorder(wb.doc.lib, wb.doc.name, order);
+    ui.selection = new Set();
+    await wb.apply({ ...result, label: 'reorder pages' });
+}
+
+/* Merge ------------------------------------------------------------------- */
+
+/* The workbench holds one document; merging needs a second. The picker reads
+ * another PDF and the engine appends its pages — copied, never rebuilt — to the
+ * working document. */
+function pickFileToMerge() {
+    // A persistent hidden input in the markup; its change handler is wired once
+    // at mount (onMergeFile), so a dynamically-created input's dialog quirks
+    // never come into it.
+    $('wbMergeInput').click();
+}
+
+async function onMergeFile() {
+    const input = $('wbMergeInput');
+    if (!input.files?.length) return;
+    const file = input.files[0];
+    input.value = '';
+    await run(document.createElement('button'), async () => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const { loadDocument } = await import('./preserve.js');
+        const loaded = await loadDocument(bytes, file.name);
+        if (!loaded.doc) throw new Error('That PDF could not be opened — it may be encrypted.');
+        const result = await ops.merge([
+            { doc: wb.doc.lib, label: wb.doc.name,
+              indices: wb.doc.lib.getPages().map((_, i) => i) },
+            { doc: loaded.doc, label: file.name,
+              indices: loaded.doc.getPages().map((_, i) => i) },
+        ]);
+        await wb.apply({ ...result, label: `merge ${file.name}` });
+    });
+}
+
+/* Stamp ------------------------------------------------------------------- */
+
+function inspectStamp(panel) {
+    panel.append(title('Stamp'));
+
+    const kinds = h('div', 'pdf-actions-bar');
+    for (const [kind, label] of [['number', 'Page numbers'], ['watermark', 'Watermark'],
+                                 ['running', 'Header/footer']]) {
+        const b = h('button', 'pdf-small-btn', label);
+        b.type = 'button';
+        if (ui.stampKind === kind) b.classList.add('pdf-small-btn-active');
+        b.addEventListener('click', () => { ui.stampKind = kind; paintInspector(); });
+        kinds.append(b);
+    }
+    panel.append(kinds);
+
+    if (ui.stampKind === 'watermark') {
+        const row = h('div', 'pdf-field');
+        row.append(h('span', 'pdf-field-label', 'Watermark text'));
+        const input = h('input', 'pdf-field-input');
+        input.type = 'text';
+        input.value = ui.stampWatermark;
+        input.addEventListener('input', () => { ui.stampWatermark = input.value; });
+        row.append(input);
+        panel.append(row);
+        panel.append(note('info', 'A faint diagonal stamp',
+            'Set at 18% opacity behind the page, on a 45° diagonal. The page keeps its own '
+            + 'bytes; the watermark is a stream added on top.'));
+    } else {
+        const row = h('div', 'pdf-field');
+        row.append(h('span', 'pdf-field-label',
+            ui.stampKind === 'number' ? 'Format' : 'Header / footer text'));
+        const input = h('input', 'pdf-field-input');
+        input.type = 'text';
+        input.value = ui.stampText;
+        input.addEventListener('input', () => { ui.stampText = input.value; });
+        row.append(input);
+        panel.append(row);
+        panel.append(h('p', 'wb-hint', 'Use {n} for the page number and {total} for the count.'));
+
+        const posRow = h('div', 'pdf-field');
+        posRow.append(h('span', 'pdf-field-label', 'Position'));
+        const select = h('select', 'pdf-correct-select');
+        for (const pos of POSITIONS) {
+            const opt = h('option', null, pos.replace('-', ' '));
+            opt.value = pos;
+            if (pos === ui.stampPosition) opt.selected = true;
+            select.append(opt);
+        }
+        select.addEventListener('change', () => { ui.stampPosition = select.value; });
+        posRow.append(select);
+        panel.append(posRow);
+    }
+
+    panel.append(action('Apply to every page', async () => {
+        const job = ui.stampKind === 'watermark'
+            ? { kind: 'watermark', text: ui.stampWatermark }
+            : { kind: ui.stampKind, text: ui.stampText, position: ui.stampPosition };
+        const result = await addStamp(wb.doc.lib, wb.doc.name, job);
+        await wb.apply({ ...result, label: ui.stampKind });
+    }));
 }
 
 /* Shapes ------------------------------------------------------------------ */
