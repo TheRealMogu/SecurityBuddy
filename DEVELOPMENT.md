@@ -704,6 +704,27 @@ per caso era giusta — e non genera avviso, perché non è una supposizione del
 coordinate del click passano da `viewport.convertToPdfPoint()` di pdf.js, che gestisce anche
 la rotazione di pagina.
 
+### Forme
+
+`static/js/pdf/shapes.js`. Rettangolo, ellisse, linea, con riempimento e bordo. È
+l'operazione più economica da fare onestamente, e il motivo va scritto: **una forma non deve
+toccare niente di ciò che c'è già**. Va in un content stream **aggiunto** dopo quello della
+pagina, esattamente come il testo overlay, quindi ogni byte con cui il documento è arrivato è
+ancora lì — il rapporto può dire «byte della pagina intatti» e dirlo davvero.
+
+PDF non ha un operatore per l'ellisse: sono quattro archi di Bézier, con la costante 0.5523 che
+fa combaciare una cubica con un quarto di cerchio a meno di una parte su diecimila. Ogni forma è
+avvolta in `q`/`Q`, così il colore e lo spessore che imposta non colano su ciò che viene
+disegnato dopo.
+
+> **Coprire non è rimuovere, e va detto.** Un rettangolo pieno sopra del testo lo **nasconde**:
+> le parole restano nel file e un copia-incolla le trova ancora. È il modo più comune in cui una
+> persona crede di aver tolto qualcosa e non l'ha tolto. Il piano conta quali run finiscono
+> sotto una forma piena, il pannello lo dice mentre disegni, la striscia della fedeltà accende
+> la spia rossa, e il rapporto porta una voce in evidenza. `tests/pdf/shapes.mjs` chiude il
+> cerchio: dopo aver coperto il titolo, verifica con `pdftotext` che il testo **si estragga
+> ancora** — cioè che l'avviso non stia esagerando.
+
 ### La postazione di lavoro
 
 `static/js/pdf/workbench.js` (documento e vista) + `static/js/pdf/shell.js` (guscio e
