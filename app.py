@@ -277,7 +277,7 @@ def _run_column_migrations():
     """Safely add new columns to existing tables (idempotent, no data loss)."""
     from sqlalchemy import text
     candidates = [
-        'ALTER TABLE "user" ADD COLUMN tos_accepted_at DATETIME NULL',
+        'ALTER TABLE "user" ADD COLUMN tos_accepted_at TIMESTAMP NULL',
         'ALTER TABLE "user" ADD COLUMN email_notifications BOOLEAN NOT NULL DEFAULT TRUE',
         # Async micro-scan columns on scan_result (idempotent — ignored if present).
         'ALTER TABLE scan_result ADD COLUMN public_id VARCHAR(32)',
@@ -293,8 +293,9 @@ def _run_column_migrations():
             try:
                 conn.execute(text(stmt))
                 conn.commit()
-            except Exception:
-                conn.rollback()  # column already exists — safe to ignore
+            except Exception as e:
+                conn.rollback()
+                logging.debug("Column migration skipped (likely already exists): %s", e)
 
 
 # ─────────────────────────────────────────────────────────────────────────
