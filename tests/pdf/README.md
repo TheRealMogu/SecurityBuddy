@@ -17,6 +17,7 @@ node replace.mjs     # editing text already on the page
 node crop.mjs        # cropping by REMOVING what falls outside
 node glyphs.mjs      # writing characters the document's own subset lacks
 node shapes.mjs      # shapes, and the difference between covering and removing
+node stamp.mjs       # page numbers, watermarks, headers — appended, bytes intact
 ```
 
 `crop.mjs` asks the question a crop tool has to answer on a security site: is

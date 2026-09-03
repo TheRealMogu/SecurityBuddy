@@ -297,14 +297,16 @@ export class Viewer {
 
 /* ── Thumbnails ──────────────────────────────────────────────────────────── */
 
-export async function paintThumbnails(rail, { current, onPick }) {
+export async function paintThumbnails(rail, { current, onPick, onReorder }) {
     rail.textContent = '';
     const count = doc.pdf.numPages;
     for (let i = 0; i < count; i += 1) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'wb-thumb';
+        button.dataset.index = String(i);
         button.setAttribute('aria-current', String(i === current));
+        if (onReorder) button.draggable = true;
         const shell = document.createElement('span');
         shell.className = 'wb-thumb-page';
         const canvas = document.createElement('canvas');
@@ -317,4 +319,35 @@ export async function paintThumbnails(rail, { current, onPick }) {
         rail.append(button);
         renderThumbnail(doc.pdf, i + 1, canvas, 118).catch(() => {});
     }
+    if (onReorder) enableReorder(rail, onReorder);
+}
+
+/* Drag a thumbnail to a new position. The order it produces is the new page
+ * sequence, handed to the reorder engine, which copies pages — it never
+ * rebuilds them, so the reordered pages are byte-identical to the originals. */
+function enableReorder(rail, onReorder) {
+    let dragging = null;
+    rail.addEventListener('dragstart', (e) => {
+        dragging = e.target.closest('.wb-thumb');
+        if (dragging) dragging.classList.add('wb-thumb-dragging');
+    });
+    rail.addEventListener('dragend', () => {
+        dragging?.classList.remove('wb-thumb-dragging');
+        dragging = null;
+    });
+    rail.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const over = e.target.closest('.wb-thumb');
+        if (!over || over === dragging || !dragging) return;
+        const rect = over.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        rail.insertBefore(dragging, after ? over.nextSibling : over);
+    });
+    rail.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const order = [...rail.querySelectorAll('.wb-thumb')]
+            .map((t) => Number(t.dataset.index));
+        // No change if the sequence is still 0,1,2,…
+        if (order.some((v, i) => v !== i)) onReorder(order);
+    });
 }
