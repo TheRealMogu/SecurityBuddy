@@ -3,7 +3,7 @@
     "Pinned third-party JavaScript, committed to the repo instead of loaded from a CDN.",
     "Rationale: keeps the CSP at script-src 'self' (no widening), and stops a third party",
     "from learning that a user opened a PDF. The cost is that these files do NOT update",
-    "themselves — they parse untrusted input, so they must be reviewed on a schedule.",
+    "themselves \u2014 they parse untrusted input, so they must be reviewed on a schedule.",
     "Verify with:  python3 tools/verify_vendor.py",
     "Update with:  see DEVELOPMENT.md -> 'Dipendenze vendorizzate'"
   ],
@@ -29,7 +29,7 @@
       "notes": [
         "1.17.1 is the newest published release; upstream has been quiet since 2021.",
         "Because it is unmaintained AND parses untrusted files, all parsing happens in the",
-        "browser tab only — there is no server-side path that feeds it user input."
+        "browser tab only \u2014 there is no server-side path that feeds it user input."
       ]
     },
     {
@@ -59,6 +59,95 @@
         "ES modules, so no bundler and no build step are required.",
         "Worker is loaded same-origin from /static/vendor/pdfjs/pdf.worker.min.mjs, which",
         "keeps pdf.js off its cross-origin blob: fallback (see DEVELOPMENT.md)."
+      ]
+    },
+    {
+      "name": "@pdf-lib/fontkit",
+      "version": "1.1.1",
+      "pinned_on": "2026-09-03",
+      "license": "MIT",
+      "homepage": "https://github.com/Hopding/fontkit",
+      "registry": "https://registry.npmjs.org/@pdf-lib/fontkit",
+      "tarball": "https://registry.npmjs.org/@pdf-lib/fontkit/-/fontkit-1.1.1.tgz",
+      "tarball_integrity": "sha512-KjMd7grNapIWS/Dm0gvfHEilSyAmeLvrEGVcqLGi0VYebuqqzTbgF29efCx7tvx+IEbG3zQciRSWl3GkUSvjZg==",
+      "role": "Reads a font file so its glyphs can be embedded. Needed only when an edit uses characters the document's own subset does not contain.",
+      "files": [
+        {
+          "path": "fontkit/fontkit.umd.min.js",
+          "source_in_tarball": "package/dist/fontkit.umd.min.js",
+          "sha256": "d8df561b9fba98e24f2e5130e40948809281bbbc55a20c412359f1a0a5eb35a6"
+        }
+      ],
+      "notes": [
+        "Loaded on demand, not with the page: 740KB that a user who never edits text never pays for.",
+        "It parses font files, which are untrusted input when the user supplies one, so it runs in the browser tab only \u2014 there is no server-side path that feeds it anything."
+      ]
+    },
+    {
+      "name": "dejavu-fonts-ttf",
+      "version": "2.37.3",
+      "pinned_on": "2026-09-03",
+      "license": "Bitstream Vera / Arev (permissive, redistribution allowed)",
+      "homepage": "https://dejavu-fonts.github.io/",
+      "registry": "https://registry.npmjs.org/dejavu-fonts-ttf",
+      "tarball": "https://registry.npmjs.org/dejavu-fonts-ttf/-/dejavu-fonts-ttf-2.37.3.tgz",
+      "tarball_integrity": "sha512-f1hd7jJbeQa1VWcw+K2KrTXS50zTMaHpVC4XIKJpNcDeYR5ajMtj/iLlQDYNvLOKamUB3ARVVCf79lNwNVztSQ==",
+      "role": "Source of real glyph outlines when a document's own subset lacks them. Used ONLY when the document names one of these faces \u2014 a lookalike embedded under another name would be the silent substitution this feature refuses.",
+      "files": [
+        {
+          "path": "fonts/DejaVuSans-Bold.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSans-Bold.ttf",
+          "sha256": "e6476c1b80502924294eed40894c5b18e06c181444ca953e5334262df9c27724"
+        },
+        {
+          "path": "fonts/DejaVuSans-BoldOblique.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSans-BoldOblique.ttf",
+          "sha256": "eb436dca0c2594b73d8b603b892e374fdfd8d885d25ffb4f18df4c4c0b49e50f"
+        },
+        {
+          "path": "fonts/DejaVuSans-Oblique.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSans-Oblique.ttf",
+          "sha256": "4af75fa16ee6d3ad43e1ecec41862c24954af26a55c6bb1ebb27bd486a50f5f4"
+        },
+        {
+          "path": "fonts/DejaVuSans.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSans.ttf",
+          "sha256": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954"
+        },
+        {
+          "path": "fonts/DejaVuSansMono-Bold.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSansMono-Bold.ttf",
+          "sha256": "bce60f1b4421acd9ea51ba6623d7024ecbe6817a953e3654df62a5e6bdf8f769"
+        },
+        {
+          "path": "fonts/DejaVuSansMono.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSansMono.ttf",
+          "sha256": "b4a6c3e4faab8773f4ff761d56451646409f29abedd68f05d38c2df667d3c582"
+        },
+        {
+          "path": "fonts/DejaVuSerif-Bold.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSerif-Bold.ttf",
+          "sha256": "c47b5527bcdc8dcf9ea8c77054454c5a884beaca2f44851a2a823ee639cbf07f"
+        },
+        {
+          "path": "fonts/DejaVuSerif-Italic.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSerif-Italic.ttf",
+          "sha256": "2e39b1d50f90b933b00c7bb54a96afd3f86419b3d717c7cf202e36f2d4973e47"
+        },
+        {
+          "path": "fonts/DejaVuSerif.ttf",
+          "source_in_tarball": "package/ttf/DejaVuSerif.ttf",
+          "sha256": "42d1edeb7952f31b1f96d767ed7030b08a39e0c372b0071641518864e2bffb51"
+        },
+        {
+          "path": "fonts/LICENSE",
+          "source_in_tarball": "package/LICENSE",
+          "sha256": "7a083b136e64d064794c3419751e5c7dd10d2f64c108fe5ba161eae5e5958a93"
+        }
+      ],
+      "notes": [
+        "Fetched on demand, one face at a time.",
+        "These are the faces LibreOffice produces by default. A document naming Calibri or Arial still stops, and the panel offers to read that font from the machine (Local Font Access) or from a file the user picks."
       ]
     }
   ]

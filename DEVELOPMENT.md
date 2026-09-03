@@ -798,6 +798,41 @@ piano lo dice **prima** di scrivere. Era l'esclusione posta all'inizio del proge
 ragione è quella: farlo davvero significa rimandare a capo i paragrafi, il che richiede le
 metriche e le regole di impaginazione del produttore originale.
 
+**I glifi che il sottoinsieme non ha.** Un font incorporato come subset contiene **solo i
+glifi che il documento usava già**. Misurato sul corpus: `DejaVuSans` arriva con 42 caratteri
+scrivibili e **3 maiuscole su 26**; `DejaVuSans-Bold` con 19 e una. Prima di `fontsource.js`,
+«modifica testo» significava quindi *riscrivi usando i quaranta caratteri già presenti in questa
+pagina*: **139 run su 156 cliccabili rifiutavano qualsiasi parola nuova**, cioè il 100% degli
+export Word/LibreOffice.
+
+Bloccare era giusto — un sostituto silenzioso resta il bug peggiore possibile — ma bloccare
+**senza una via d'uscita** non è uno strumento. La via d'uscita è quella di un editor da
+scrivania: prendere i glifi veri da un file di font vero e incorporarli. Il subset del documento
+non può fornirli (non contiene le curve), quindi il file arriva, in quest'ordine:
+
+1. da un font **installato sulla macchina**, letto con la Local Font Access API del browser —
+   è ciò che fa Acrobat implicitamente, e dà *la stessa faccia* che il documento nomina;
+2. da un **file scelto dall'utente**;
+3. dalla famiglia **DejaVu spedita con lo strumento**.
+
+> **La regola che non si muove:** una sorgente si usa solo se il suo **nome combacia** con il
+> font che il documento nomina. Una faccia somigliante incorporata sotto un altro nome è la
+> sostituzione silenziosa che questo progetto rifiuta, solo nascosta meglio. Quando non combacia
+> nulla, l'operazione si ferma comunque e dice *quale* font le serve.
+
+Dopo: **145 run su 156 accettano testo nuovo**. Gli 11 che restano sono 7 CJK (non esiste una
+faccia CJK standard e non ne spediamo una) e 4 LiberationSerif, che non è sul registry npm.
+
+> **Attenzione a `newFontDictionary()` di pdf-lib.** È la strada comoda per registrare la
+> risorsa font, e chiama `normalizeContentStreams()`, che avvolge il contenuto della pagina in
+> `q`/`Q`. Riscrive byte che nessuno ha chiesto di cambiare **e** sposta ogni offset nello
+> stream, quindi gli span misurati un istante prima finiscono nel posto sbagliato — il file
+> esce corrotto e Poppler dice `Unknown operator`. La risorsa va registrata a mano.
+
+**Il font va rimesso a posto dopo.** `Tf` è stato grafico: scrivere la sostituzione con la
+faccia incorporata e non riselezionare quella originale ri-farebbe silenziosamente ogni run
+successivo dello stesso blocco di testo — le parti di pagina che nessuno ha chiesto di toccare.
+
 **Un sostituto non è ammesso qui.** Per il testo *nuovo* un font sostitutivo è un compromesso
 visibile e onesto. Per una *sostituzione* è un difetto: mezza riga di corpo in una faccia
 diversa non combacerebbe con le parole a destra e a sinistra sulla stessa riga. Se il font del

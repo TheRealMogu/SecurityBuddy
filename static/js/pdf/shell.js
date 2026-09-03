@@ -13,7 +13,8 @@
 
 import * as wb from './workbench.js';
 import * as ops from './operations.js';
-import { readableRuns, runAtPoint, planReplacement, replaceText, runBox } from './replace.js';
+import { readableRuns, runAtPoint, planEdit, replaceText, runBox } from './replace.js';
+import * as fonts from './fontsource.js';
 import { planOverlay, addOverlay } from './overlay.js';
 import { planCrop, cropPages } from './crop.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
@@ -54,6 +55,7 @@ const ui = {
     cropAccepted: false,
     busy: false,
     timer: 0,
+    planToken: 0,
 };
 
 /* ── Mounting ────────────────────────────────────────────────────────────── */
@@ -791,12 +793,23 @@ function inspectEdit(panel) {
     const edit = ui.edits[run_.id];
     panel.append(provenance('original', run_.font.name, run_.size));
 
+    const slot = h('div', 'wb-plan');
+    panel.append(slot);
+    paintPlan(slot, run_, edit.text);
+}
+
+/* The verdict for the text as typed. Asynchronous, because answering it may
+ * mean fetching a font file to see whether the missing glyphs can be had. */
+async function paintPlan(slot, run_, text) {
+    const token = ++ui.planToken;
     let plan = null;
     try {
-        plan = planReplacement(wb.doc.lib, wb.doc.lib.getPage(run_.pageIndex), run_, edit.text);
-    } catch { /* reported below */ }
+        plan = await planEdit(wb.doc.lib, wb.doc.lib.getPage(run_.pageIndex), run_, text);
+    } catch { /* shown as "could not be planned" below */ }
+    if (token !== ui.planToken || !slot.isConnected) return;
 
-    panel.append(metrics([
+    slot.textContent = '';
+    slot.append(metrics([
         ['Size', `${run_.size} pt`],
         ['Origin', `${run_.x.toFixed(1)}, ${run_.y.toFixed(1)} pt`],
         ['Width', plan && !plan.blocked
@@ -804,12 +817,13 @@ function inspectEdit(panel) {
     ]));
 
     if (plan?.blocked) {
-        panel.append(note('block', 'This font cannot write that text', plan.explain));
+        slot.append(note('block', 'This font cannot write that text', plan.explain));
+        if (plan.needsFont) slot.append(fontSearch(slot, run_, text, plan.needsFont));
     } else if (plan) {
-        for (const item of plan.notes) panel.append(note('warn', 'Worth knowing', item));
+        for (const item of plan.notes) slot.append(note('warn', 'Worth knowing', item));
     }
 
-    panel.append(action('Apply this change', async () => {
+    slot.append(action('Apply this change', async () => {
         commitField();
         const list = Object.entries(ui.edits)
             .filter(([, v]) => v.text && v.text !== v.original)
@@ -820,6 +834,56 @@ function inspectEdit(panel) {
         ui.activeRun = null;
         await wb.apply({ ...result, label: 'edit text' });
     }, { disabled: !plan || plan.blocked }));
+}
+
+/* When the document's subset lacks the glyphs and we have no copy of the face,
+ * the way forward is to find one — not to quietly write something else. */
+function fontSearch(slot, run_, text, needed) {
+    const wrap = h('div', 'wb-fontsearch');
+    wrap.append(h('p', 'wb-insp-title', `Find ${needed}`));
+
+    if (fonts.canReadLocalFonts() && !fonts.localFontsReady()) {
+        const grant = h('button', 'btn btn-secondary', 'Use the fonts on this computer');
+        grant.type = 'button';
+        grant.addEventListener('click', () => run(grant, async () => {
+            const result = await fonts.grantLocalFonts();
+            if (!result.granted) {
+                throw new Error(result.reason === 'denied'
+                    ? 'Permission to read this computer\'s fonts was declined.'
+                    : 'This browser could not list the fonts on this computer.');
+            }
+            paintPlan(slot, run_, text);
+        }));
+        wrap.append(grant);
+        wrap.append(h('p', 'wb-hint', 'The browser asks first, and the font is read here in '
+            + 'the tab — nothing about it is sent anywhere.'));
+    }
+
+    const pick = h('label', 'btn btn-secondary wb-filebtn');
+    pick.append(document.createTextNode('Choose a font file…'));
+    const input = h('input');
+    input.type = 'file';
+    input.accept = '.ttf,.otf,.ttc,font/ttf,font/otf';
+    input.hidden = true;
+    input.addEventListener('change', async () => {
+        if (!input.files?.length) return;
+        try {
+            const loaded = await fonts.addUserFont(input.files[0]);
+            paintPlan(slot, run_, text);
+            if (fonts.normaliseName(loaded) !== fonts.normaliseName(needed)) {
+                slot.prepend(note('warn', `That file is ${loaded}, not ${needed}`,
+                    'It was added to the list, but it will not be used for this text: a '
+                    + 'different face embedded under this one\'s name is the silent '
+                    + 'substitution these tools refuse.'));
+            }
+        } catch (err) {
+            slot.prepend(note('block', 'That file could not be read', err.message));
+        }
+        input.value = '';
+    });
+    pick.append(input);
+    wrap.append(pick);
+    return wrap;
 }
 
 const PROVENANCE = {
