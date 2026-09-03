@@ -119,6 +119,10 @@
                         </li>
                         {% if current_user.is_authenticated %}
                         <li>
+                            <a class="nav-link{% if request.endpoint and request.endpoint.startswith('pentest') %} nav-link-active{% endif %}"
+                               href="{{ url_for('pentest_home') }}">Pentest</a>
+                        </li>
+                        <li>
                             <a class="nav-link{% if request.endpoint == 'dashboard' %} nav-link-active{% endif %}"
                                href="{{ url_for('dashboard') }}">Dashboard</a>
                         </li>

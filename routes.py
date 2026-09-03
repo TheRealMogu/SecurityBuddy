@@ -10,7 +10,7 @@ from flask import render_template, request, redirect, url_for, flash, session, m
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import app, db, rate_limit
-from models import User, ScanResult, APIKey, MonitoringConfig, GmailCredential
+from models import User, ScanResult, APIKey, MonitoringConfig, GmailCredential, VerifiedDomain
 from scanner import SecurityScanner
 from seo_analyzer import SEOAnalyzer
 from validators import AdvancedValidator, clean_target
@@ -594,6 +594,110 @@ def account_export():
     resp.headers['Content-Type'] = 'application/json'
     resp.headers['Content-Disposition'] = 'attachment; filename="securitybuddy-export.json"'
     return resp
+
+
+@app.route('/pentest')
+@login_required
+def pentest_home():
+    """The active-test console: the domains this user has proved they control,
+    and the ones still waiting on proof."""
+    domains = VerifiedDomain.query.filter_by(user_id=current_user.id) \
+        .order_by(VerifiedDomain.created_at.desc()).all()
+    return render_template('pentest.html', domains=domains)
+
+
+@app.route('/pentest/domains/add', methods=['POST'])
+@login_required
+def pentest_add_domain():
+    import domain_ownership as ownership
+    domain = ownership.normalise_domain(request.form.get('domain', ''))
+    if not domain:
+        flash('Enter a domain name, not an IP address or URL.', 'error')
+        return redirect(url_for('pentest_home'))
+
+    existing = VerifiedDomain.query.filter_by(user_id=current_user.id, domain=domain).first()
+    if existing:
+        flash('That domain is already on your list.', 'info')
+        return redirect(url_for('pentest_home'))
+
+    row = VerifiedDomain(user_id=current_user.id, domain=domain, token=ownership.new_token())
+    db.session.add(row)
+    db.session.commit()
+    flash(f'Added {domain}. Place either proof below, then check it.', 'info')
+    return redirect(url_for('pentest_home', show=row.id))
+
+
+@app.route('/pentest/domains/<int:domain_id>/verify', methods=['POST'])
+@login_required
+def pentest_verify_domain(domain_id):
+    import domain_ownership as ownership
+    row = VerifiedDomain.query.filter_by(id=domain_id, user_id=current_user.id).first_or_404()
+    if row.is_verified:
+        flash(f'{row.domain} is already verified.', 'info')
+        return redirect(url_for('pentest_home'))
+
+    ok, detail = ownership.verify(row.domain, row.token)
+    if ok:
+        row.verified_at = datetime.utcnow()
+        row.method = 'dns' if 'TXT' in detail else 'file'
+        db.session.commit()
+        flash(f'{row.domain} verified — you can now run active tests against it.', 'success')
+    else:
+        flash(f'Could not verify {row.domain} yet. {detail}', 'warning')
+    return redirect(url_for('pentest_home', show=row.id))
+
+
+@app.route('/pentest/domains/<int:domain_id>/delete', methods=['POST'])
+@login_required
+def pentest_delete_domain(domain_id):
+    row = VerifiedDomain.query.filter_by(id=domain_id, user_id=current_user.id).first_or_404()
+    db.session.delete(row)
+    db.session.commit()
+    flash(f'Removed {row.domain}.', 'info')
+    return redirect(url_for('pentest_home'))
+
+
+@app.route('/pentest/run', methods=['POST'])
+@login_required
+def pentest_run():
+    """Run the active probes — but ONLY against a domain this user has verified.
+    The verified row is the authorisation. There is deliberately no checkbox
+    that substitutes for it: a self-attestation is not proof of control, and
+    firing SQLi/XSS payloads at a target you do not own is an intrusion, not a
+    test."""
+    import domain_ownership as ownership
+    domain = ownership.normalise_domain(request.form.get('target', ''))
+    if not domain:
+        flash('Enter one of your verified domains.', 'error')
+        return redirect(url_for('pentest_home'))
+
+    row = VerifiedDomain.query.filter_by(user_id=current_user.id, domain=domain).first()
+    if not row or not row.is_verified:
+        flash('Active testing is only allowed on a domain you have verified. '
+              'Add it and prove control first.', 'error')
+        return redirect(url_for('pentest_home'))
+
+    try:
+        from pentest_scanner import run_pentest
+        scanner = SecurityScanner()
+        scan_results = scanner.scan_target(domain)
+        pentest_results = run_pentest(f"https://{domain}")
+
+        combined = min(scan_results.get('overall_score', 50),
+                       pentest_results.get('pentest_score', 50))
+        record = ScanResult(
+            target=domain, scan_type='pentest',
+            results=json.dumps({'scan': scan_results, 'pentest': pentest_results}),
+            security_score=combined,
+            user_id=current_user.id,
+        )
+        db.session.add(record)
+        db.session.commit()
+        return render_template('pentest_result.html', results=scan_results,
+                               pentest=pentest_results, scan_id=record.id, target=domain)
+    except Exception as e:
+        flash(f'Penetration test failed: {e}', 'error')
+        return redirect(url_for('pentest_home'))
 
 
 @app.route('/notifications/unsubscribe', methods=['GET', 'POST'])
