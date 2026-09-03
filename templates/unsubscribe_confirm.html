@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Unsubscribe — Security Buddy{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:520px;padding-top:4rem;padding-bottom:4rem;text-align:center;">
+    <div class="card">
+        <div class="card-body" style="padding:2.5rem 2rem;">
+            <i data-lucide="bell-off" style="width:40px;height:40px;color:var(--color-text-muted);margin-bottom:1.25rem;"></i>
+            <h1 style="font-size:1.4rem;margin-bottom:.5rem;">Unsubscribe from emails?</h1>
+            <p class="text-muted" style="margin-bottom:1.75rem;font-size:.925rem;">
+                You will no longer receive security alerts and scan summary emails from Security Buddy.
+                You can re-enable them at any time in your
+                <a href="{{ url_for('account') }}">account settings</a>.
+            </p>
+            <form method="POST" action="{{ url_for('notifications_unsubscribe') }}?uid={{ uid }}&token={{ token }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;">
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Yes, unsubscribe me</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
