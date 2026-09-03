@@ -15,6 +15,7 @@ node roles.mjs       # baseline-first font lookup at a typographic role boundary
 node overlay.mjs     # free text: original / SUBSTITUTE / ESTIMATED / DEFAULT / USER
 node replace.mjs     # editing text already on the page
 node crop.mjs        # cropping by REMOVING what falls outside
+node glyphs.mjs      # writing characters the document's own subset lacks
 ```
 
 `crop.mjs` asks the question a crop tool has to answer on a security site: is

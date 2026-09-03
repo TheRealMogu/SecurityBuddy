@@ -41,6 +41,7 @@ import {
     describeFont, planText, substituteFor, buildReadableMap, widthMap, CATEGORIES,
 } from './fonts.js';
 import { classifyPage } from './pagetype.js';
+import { hasSource, findSource, embedSource, normaliseName } from './fontsource.js';
 import { extractRuns, fontForRun, locateOffset, pageContentText } from './textruns.js';
 
 const N = {
@@ -232,14 +233,21 @@ export function planReplacement(doc, page, run, newText) {
      * match the words either side of them on the same line. So this stops
      * instead, and says which characters the document's own font is missing. */
     if (decision.substituted) {
+        // A source font with the SAME name can supply the real glyphs, which is
+        // what a desktop editor does. That is not a substitution: the face the
+        // document names is the face that gets written. planEdit() resolves it;
+        // this reports whether one is available so the panel can say so.
+        const source = hasSource(run.font.name);
         return {
             blocked: true, reason: decision.reason, category: decision.category,
-            missing: decision.missing,
-            explain: `${decision.explain} Replacing text is different from adding it: `
-                   + 'a substitute face here would leave the new words looking unlike the '
-                   + 'words either side of them on the same line. Change the wording to '
-                   + `characters this font has, or add the text as a new overlay instead, `
-                   + 'where a substitute is an honest compromise.',
+            missing: decision.missing, needsFont: run.font.name, sourceAvailable: source,
+            explain: source
+                ? `${decision.explain} The glyphs can be taken from a copy of `
+                  + `"${run.font.name}" and embedded, which keeps the face the document uses.`
+                : `${decision.explain} Replacing text is different from adding it: a `
+                  + 'substitute face here would leave the new words looking unlike the words '
+                  + `either side of them. Supply a copy of "${run.font.name}" and the real `
+                  + 'glyphs can be embedded instead.',
         };
     }
 
@@ -275,6 +283,65 @@ export function planReplacement(doc, page, run, newText) {
     };
 }
 
+/* The plan the UI and the writer both use.
+ *
+ * planReplacement() answers from the document alone. This adds the one thing
+ * the document cannot answer: whether a real copy of its own font is reachable,
+ * so the glyphs its subset lacks can be embedded rather than the edit refused.
+ * Only a name match counts — a lookalike under another name would be the silent
+ * substitution this refuses.
+ */
+export async function planEdit(doc, page, run, newText) {
+    const plan = planReplacement(doc, page, run, newText);
+    if (!plan.blocked || !plan.sourceAvailable) return plan;
+
+    const source = await findSource(run.font.name);
+    if (!source) return plan;                     // it went away since hasSource()
+
+    let font;
+    try {
+        font = await embedSource(doc, run.font.name, source);
+    } catch (err) {
+        return { ...plan, explain: `${plan.explain} (${err.message})` };
+    }
+
+    const oldWidth = measure(run.codes, run.widths, run.size);
+    const newWidth = font.widthOfTextAtSize(newText, run.size);
+    const delta = oldWidth === 0 ? 0 : (newWidth - oldWidth) / oldWidth;
+    const notes = widthNotes(delta, oldWidth, newWidth);
+    if (run.kerned) notes.push(KERNING_NOTE);
+    notes.push(`The glyphs missing from the document's own subset — `
+             + `${plan.missing.map((c) => JSON.stringify(c)).join(', ')} — are taken from a `
+             + `${source.origin === 'installed' ? 'copy of the font installed on this computer'
+                 : source.origin === 'file' ? 'font file you supplied'
+                 : 'copy of the font shipped with this tool'} and embedded into the output. `
+             + 'The face is the one the document names; only the outlines are new.');
+
+    return {
+        blocked: false, docType: classifyPage(doc, page).type,
+        category: plan.category, face: run.font.name, size: run.size,
+        oldText: run.text, newText,
+        oldWidth: Number(oldWidth.toFixed(2)), newWidth: Number(newWidth.toFixed(2)),
+        widthDelta: Number((delta * 100).toFixed(1)),
+        notes, embed: { font, origin: source.origin, missing: plan.missing },
+    };
+}
+
+function widthNotes(delta, oldWidth, newWidth) {
+    if (Math.abs(delta) <= WIDTH_TOLERANCE) return [];
+    return [newWidth > oldWidth
+        ? `The replacement is about ${Math.round(delta * 100)}% wider than what it replaces `
+          + `(${oldWidth.toFixed(1)}pt to ${newWidth.toFixed(1)}pt). Nothing after it moves, `
+          + 'so it will run on past where the original ended and may overlap what follows.'
+        : `The replacement is about ${Math.round(-delta * 100)}% narrower than what it `
+          + `replaces (${oldWidth.toFixed(1)}pt to ${newWidth.toFixed(1)}pt). Nothing after `
+          + 'it moves, so it will leave a gap.'];
+}
+
+const KERNING_NOTE = 'The original was drawn with per-pair spacing adjustments, which cannot '
+    + 'be carried onto different words. The replacement is set with the font\'s normal '
+    + 'spacing, which is visible up close on a justified line.';
+
 /* ── Writing ─────────────────────────────────────────────────────────────── */
 
 /* `edits` is [{ pageIndex, runId, newText }]. */
@@ -307,7 +374,7 @@ export async function replaceText(doc, label, edits) {
         for (const edit of pageEdits) {
             const run = byId.get(edit.runId);
             if (!run) continue;
-            const plan = planReplacement(destDoc, page, run, edit.newText);
+            const plan = await planEdit(destDoc, page, run, edit.newText);
             if (plan.blocked) {
                 const error = new Error(plan.explain);
                 error.blocked = [{ ...plan, edit }];
@@ -317,7 +384,8 @@ export async function replaceText(doc, label, edits) {
             written.push({
                 page: pageIndex, x: run.x, y: run.y,
                 oldText: run.text, newText: edit.newText,
-                docType: plan.docType, fontSource: 'original',
+                docType: plan.docType,
+                fontSource: plan.embed ? `embedded:${plan.embed.origin}` : 'original',
                 category: plan.category, face: plan.face, size: plan.size,
                 reason: 'replaced-in-place', widthDelta: plan.widthDelta,
                 kerned: plan.kerned, notes: plan.notes,
@@ -356,8 +424,53 @@ function applyPatches(destDoc, page, patches, bounds) {
     rewriteSpans(destDoc, page, bounds, patches.map((patch) => ({
         start: patch.run.span.start,
         end: patch.run.span.end,
-        replacement: `${encodeCodes(patch.plan, patch.run)} Tj`,
+        replacement: showText(destDoc, page, patch.plan, patch.run),
     })));
+}
+
+/* The operators that draw the replacement.
+ *
+ * With the document's own font that is one show-text operator. With an embedded
+ * face it also has to select that font and then PUT THE ORIGINAL BACK: /Tf is
+ * graphics state, so leaving it switched would silently re-face every later run
+ * in the same text block — the parts of the page nobody asked to change. */
+function showText(destDoc, page, plan, run) {
+    if (!plan.embed) return `${encodeCodes(plan, run)} Tj`;
+
+    const resource = addFontResource(destDoc, page, plan.embed.font);
+    const encoded = plan.embed.font.encodeText(plan.newText);
+    const size = run.size;
+    return `/${resource} ${size} Tf ${encoded} Tj /${run.fontName} ${size} Tf`;
+}
+
+/* Put a font in the page's resources and answer the name to select it by.
+ *
+ * pdf-lib's own newFontDictionary() would do this, and would also call
+ * normalizeContentStreams(), which wraps the page's content in q/Q streams it
+ * did not have. That rewrites bytes nobody asked to change — and it moves every
+ * offset in the stream, so the spans measured a moment earlier would land in
+ * the wrong place. Registering the resource by hand leaves the page's own
+ * content exactly as it was.
+ */
+function addFontResource(destDoc, page, font) {
+    let resources = page.node.lookupMaybe(N.Resources, PDFDict);
+    if (!resources) {
+        resources = destDoc.context.obj({});
+        page.node.set(N.Resources, resources);
+    }
+    let fonts = resources.lookupMaybe(N.Font, PDFDict);
+    if (!fonts) {
+        fonts = destDoc.context.obj({});
+        resources.set(N.Font, fonts);
+    }
+
+    // A name the page does not already use, so nothing it draws is re-faced.
+    const taken = new Set([...fonts.keys()].map((k) => k.asString().replace(/^\//, '')));
+    let name = `SBF${font.ref.objectNumber}`;
+    let n = 0;
+    while (taken.has(name)) name = `SBF${font.ref.objectNumber}_${++n}`;
+    fonts.set(PDFName.of(name), font.ref);
+    return name;
 }
 
 /* Replace byte ranges of a page's content streams.
