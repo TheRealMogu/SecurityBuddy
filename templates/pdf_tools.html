@@ -411,6 +411,15 @@
     .wb-inspector .btn { flex:none; }
     .wb-insp-title { font-size:.62rem; font-weight:700; letter-spacing:.13em;
                      text-transform:uppercase; color:var(--color-text-muted); margin:0; }
+    .wb-shape { position:absolute; box-sizing:border-box; pointer-events:none; }
+    .wb-swatch-row { display:flex; align-items:center; gap:.5rem; font-size:.78rem;
+                     color:var(--color-text-muted); }
+    .wb-swatch-row span { flex:1; }
+    .wb-swatch { width:40px; height:26px; padding:0; border:1px solid var(--color-border, #d2d8d7);
+                 border-radius:5px; background:none; cursor:pointer; }
+    .wb-swatch:disabled { opacity:.4; cursor:default; }
+    .wb-swatch-row .pdf-correct-num { width:70px; }
+
     .wb-plan { display:flex; flex-direction:column; gap:.7rem; }
     .wb-fontsearch { display:flex; flex-direction:column; gap:.45rem;
                      padding:.6rem; border:1px solid var(--color-border, #d2d8d7);

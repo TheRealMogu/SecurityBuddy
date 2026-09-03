@@ -17,6 +17,7 @@ import { readableRuns, runAtPoint, planEdit, replaceText, runBox } from './repla
 import * as fonts from './fontsource.js';
 import { planOverlay, addOverlay } from './overlay.js';
 import { planCrop, cropPages } from './crop.js';
+import { planShapes, addShapes } from './shapes.js';
 import { listTextFields, planFill, fillForm } from './fill.js';
 import { classifyPage } from './pagetype.js';
 import { CATEGORIES, CHOOSABLE_CATEGORIES } from './fonts.js';
@@ -36,7 +37,9 @@ const TOOLS = [
         '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M14.5 6.5l3 3"/>' },
     { id: 'add', label: 'Add text', key: '4', group: 1, icon:
         '<path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/>' },
-    { id: 'form', label: 'Forms', key: '5', group: 1, icon:
+    { id: 'shape', label: 'Shapes', key: '5', group: 1, icon:
+        '<rect x="3" y="4" width="10" height="10" rx="1.5"/><circle cx="15.5" cy="15.5" r="5.5"/>' },
+    { id: 'form', label: 'Forms', key: '6', group: 1, icon:
         '<rect x="3" y="5" width="18" height="5" rx="1.5"/><rect x="3" y="14" width="18" height="5" rx="1.5"/>' },
 ];
 
@@ -53,6 +56,14 @@ const ui = {
     cropRect: null,
     cropPlan: null,
     cropAccepted: false,
+    shapes: [],
+    shapeKind: 'rectangle',
+    shapeFill: '#ffe08a',
+    shapeStroke: '#01696f',
+    shapeStrokeWidth: 1.5,
+    shapeFilled: true,
+    shapeOutlined: true,
+    drawing: null,
     busy: false,
     timer: 0,
     planToken: 0,
@@ -338,18 +349,35 @@ function paintFidelity() {
     const cells = [];
 
     const rewrites = ui.tool === 'edit' || ui.tool === 'crop';
+    const appends = ui.tool === 'add' || ui.tool === 'shape';
     cells.push(['ok', 'Operation', rewrites
         ? 'Rewrites the page content stream'
-        : ui.tool === 'add' ? 'Appends a content stream'
+        : appends ? 'Appends a content stream'
         : ui.tool === 'form' ? 'Writes field values'
         : 'Copies pages, never rebuilds them']);
 
-    if (!rewrites && ui.tool !== 'add') {
-        cells.push(['ok', 'Page bytes', 'Untouched']);
-    } else if (ui.tool === 'add') {
-        cells.push(['ok', 'Page bytes', 'Untouched — the new text goes alongside']);
-    } else {
+    if (rewrites) {
         cells.push(['ok', 'Old content', 'Removed from the file, not covered over']);
+    } else if (appends) {
+        cells.push(['ok', 'Page bytes',
+            ui.tool === 'shape' ? 'Untouched — the shape goes alongside'
+                                : 'Untouched — the new text goes alongside']);
+    } else {
+        cells.push(['ok', 'Page bytes', 'Untouched']);
+    }
+
+    // A filled shape over words hides them and nothing more. Saying so in the
+    // strip, while it is being drawn, is the point of having the strip.
+    if (ui.tool === 'shape' && ui.shapes.length) {
+        let covering = 0;
+        try {
+            covering = planShapes(wb.doc.lib, ui.shapes).plans
+                .reduce((n, p) => n + (p.covered?.length ?? 0), 0);
+        } catch { /* the panel reports it too */ }
+        if (covering) {
+            cells.push(['bad', 'Text underneath',
+                `${covering} piece(s) hidden, not removed`]);
+        }
     }
 
     if (ui.tool === 'crop' && ui.cropPlan?.blocked.length) {
@@ -606,6 +634,13 @@ function paintOverlay(index, layer, viewport) {
         }
     }
 
+    if (ui.tool === 'shape') {
+        for (const shape of [...ui.shapes, ui.drawing].filter(Boolean)) {
+            if (shape.pageIndex !== index) continue;
+            layer.append(shapePreview(shape, viewport));
+        }
+    }
+
     if (ui.tool === 'crop' && ui.cropRect && ui.cropRect.pageIndex === index) {
         const r = ui.cropRect;
         const [x1, y1] = viewport.convertToViewportPoint(r.x, r.y + r.height);
@@ -635,6 +670,44 @@ function paintOverlay(index, layer, viewport) {
     }
 }
 
+/* The shape as it will be written, drawn with the page's own geometry so what
+ * is on screen is where the ink will land. */
+function shapePreview(shape, viewport) {
+    const [x1, y1] = viewport.convertToViewportPoint(shape.x, shape.y);
+    const [x2, y2] = viewport.convertToViewportPoint(shape.x + shape.width,
+                                                     shape.y + shape.height);
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const w = Math.abs(x2 - x1);
+    const hgt = Math.abs(y2 - y1);
+    const scale = viewport.scale;
+
+    if (shape.kind === 'line') {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'wb-shape');
+        Object.assign(svg.style, { left: `${left}px`, top: `${top}px`,
+                                   width: `${Math.max(w, 1)}px`, height: `${Math.max(hgt, 1)}px` });
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(x1 - left));
+        line.setAttribute('y1', String(y1 - top));
+        line.setAttribute('x2', String(x2 - left));
+        line.setAttribute('y2', String(y2 - top));
+        line.setAttribute('stroke', shape.stroke ?? '#000');
+        line.setAttribute('stroke-width', String((shape.strokeWidth ?? 1) * scale));
+        svg.append(line);
+        return svg;
+    }
+
+    const el = h('span', 'wb-shape');
+    Object.assign(el.style, {
+        left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${hgt}px`,
+        background: shape.fill ?? 'transparent',
+        border: shape.stroke ? `${(shape.strokeWidth ?? 1) * scale}px solid ${shape.stroke}` : '0',
+        borderRadius: shape.kind === 'ellipse' ? '50%' : '0',
+    });
+    return el;
+}
+
 /* ── Clicking the document ───────────────────────────────────────────────── */
 
 function onStageClick(event) {
@@ -653,11 +726,13 @@ function onStageClick(event) {
 }
 
 function onStagePointerDown(event) {
-    if (ui.tool !== 'crop' || event.button !== 0) return;
+    if (event.button !== 0) return;
+    if (ui.tool !== 'crop' && ui.tool !== 'shape') return;
     const hit = ui.viewer.locate(event);
     if (!hit) return;
     event.preventDefault();
-    startCrop(hit, event);
+    if (ui.tool === 'crop') startCrop(hit, event);
+    else startShape(hit, event);
 }
 
 /* ── The inspector ───────────────────────────────────────────────────────── */
@@ -667,7 +742,7 @@ function paintInspector() {
     panel.textContent = '';
     ({
         pages: inspectPages, edit: inspectEdit, add: inspectAdd,
-        crop: inspectCrop, form: inspectForm,
+        crop: inspectCrop, form: inspectForm, shape: inspectShapes,
     }[ui.tool])(panel);
 }
 
@@ -1146,6 +1221,138 @@ function inspectCrop(panel) {
         ui.cropAccepted = false;
         await wb.apply({ ...result, label: 'crop' });
     }, { disabled: blocked.length > 0 && !ui.cropAccepted }));
+}
+
+/* Shapes ------------------------------------------------------------------ */
+
+/* Drawn by dragging, like a crop, but the result is added to the page rather
+ * than taken out of it: the shape goes into a content stream appended after the
+ * page's own, so the document's bytes are untouched. */
+function startShape(hit, event) {
+    const box = hit.layer.getBoundingClientRect();
+    const originX = event.clientX - box.left;
+    const originY = event.clientY - box.top;
+    const viewport = hit.viewport;
+
+    const move = (e) => {
+        const x = Math.max(0, Math.min(e.clientX - box.left, box.width));
+        const y = Math.max(0, Math.min(e.clientY - box.top, box.height));
+        const [ax, ay] = viewport.convertToPdfPoint(originX, originY);
+        const [bx, by] = viewport.convertToPdfPoint(x, y);
+        ui.drawing = {
+            kind: ui.shapeKind, pageIndex: hit.pageIndex,
+            x: ui.shapeKind === 'line' ? ax : Math.min(ax, bx),
+            y: ui.shapeKind === 'line' ? ay : Math.min(ay, by),
+            width: ui.shapeKind === 'line' ? bx - ax : Math.abs(bx - ax),
+            height: ui.shapeKind === 'line' ? by - ay : Math.abs(by - ay),
+            fill: ui.shapeFilled && ui.shapeKind !== 'line' ? ui.shapeFill : null,
+            stroke: ui.shapeOutlined ? ui.shapeStroke : null,
+            strokeWidth: ui.shapeStrokeWidth,
+        };
+        ui.viewer.redrawOverlays();
+    };
+    const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        const drawn = ui.drawing;
+        ui.drawing = null;
+        // A stray click leaves nothing behind rather than a dot nobody can see.
+        if (drawn && (Math.abs(drawn.width) > 2 || Math.abs(drawn.height) > 2)) {
+            ui.shapes.push(drawn);
+        }
+        ui.viewer.redrawOverlays();
+        paintInspector();
+        paintFidelity();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+}
+
+function inspectShapes(panel) {
+    panel.append(title('Shape'));
+
+    const kinds = h('div', 'pdf-actions-bar');
+    for (const [kind, label] of [['rectangle', 'Rectangle'], ['ellipse', 'Ellipse'], ['line', 'Line']]) {
+        const b = h('button', 'pdf-small-btn', label);
+        b.type = 'button';
+        if (ui.shapeKind === kind) b.classList.add('pdf-small-btn-active');
+        b.addEventListener('click', () => { ui.shapeKind = kind; paintInspector(); });
+        kinds.append(b);
+    }
+    panel.append(kinds);
+
+    if (ui.shapeKind !== 'line') {
+        panel.append(colourRow('Fill', 'shapeFilled', 'shapeFill'));
+    }
+    panel.append(colourRow('Outline', 'shapeOutlined', 'shapeStroke'));
+
+    const widthRow = h('label', 'wb-swatch-row');
+    widthRow.append(h('span', null, 'Outline width'));
+    const width = h('input', 'pdf-correct-num');
+    width.type = 'number';
+    width.min = '0.25';
+    width.max = '20';
+    width.step = '0.25';
+    width.value = String(ui.shapeStrokeWidth);
+    width.addEventListener('change', () => {
+        const value = parseFloat(width.value);
+        if (Number.isFinite(value) && value > 0) ui.shapeStrokeWidth = value;
+    });
+    widthRow.append(width);
+    panel.append(widthRow);
+
+    if (!ui.shapes.length) {
+        panel.append(note('info', 'Drag on the page to draw',
+            'The shape is written into a content stream added after the page\'s own, so the '
+            + 'document keeps every byte it arrived with.'));
+        return;
+    }
+
+    let plans = [];
+    try { plans = planShapes(wb.doc.lib, ui.shapes).plans; } catch { /* */ }
+    const covering = plans.reduce((n, p) => n + (p.covered?.length ?? 0), 0);
+
+    panel.append(metrics([
+        ['Drawn', `${ui.shapes.length}`],
+        ['Over text', covering ? `${covering} piece(s)` : 'nothing'],
+    ]));
+
+    if (covering) {
+        panel.append(note('block', 'Covering text is not removing it',
+            'The words under a filled shape are still in the file, and a copy-and-paste or '
+            + 'any parser still finds them. If the point is to take the text out, edit or '
+            + 'crop it instead — a filled rectangle is not a redaction.'));
+    }
+
+    const undo = h('button', 'btn btn-secondary', 'Remove the last shape');
+    undo.type = 'button';
+    undo.addEventListener('click', () => {
+        ui.shapes.pop();
+        ui.viewer.redrawOverlays();
+        paintInspector();
+    });
+    panel.append(undo);
+
+    panel.append(action('Add the shapes', async () => {
+        const result = await addShapes(wb.doc.lib, wb.doc.name, ui.shapes);
+        ui.shapes = [];
+        await wb.apply({ ...result, label: 'add shapes' });
+    }));
+}
+
+function colourRow(label, toggleKey, colourKey) {
+    const row = h('label', 'wb-swatch-row');
+    const on = h('input');
+    on.type = 'checkbox';
+    on.checked = ui[toggleKey];
+    on.addEventListener('change', () => { ui[toggleKey] = on.checked; paintInspector(); });
+    const swatch = h('input', 'wb-swatch');
+    swatch.type = 'color';
+    swatch.value = ui[colourKey];
+    swatch.disabled = !ui[toggleKey];
+    swatch.addEventListener('input', () => { ui[colourKey] = swatch.value; });
+    row.append(on, h('span', null, label), swatch);
+    return row;
 }
 
 /* Forms ------------------------------------------------------------------- */
